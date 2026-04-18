@@ -58,6 +58,13 @@
 					"verified": "5.3.0"
 				}
 			}
+		],
+		"recommends": [
+			{
+				"id": "dice-so-nice",
+				"type": "module",
+				"reason": "Enables 3D dice animations for rolls from character sheets and chat commands."
+			}
 		]
 	},
 	"url": "https://github.com/arrowedisgaming/RSReforged",

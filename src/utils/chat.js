@@ -916,7 +916,7 @@ async function _processRetroCritButtonEvent(message, event) {
             newRolls[originalRolls.indexOf(baseRoll)] = critRoll;
         }
 
-        await CoreUtility.tryRollDice3D(crits);
+        await CoreUtility.tryRollDice3D(crits, message.id);
 
         message.flags[MODULE_SHORT].rolls = newRolls.map(r => r.toJSON ? r.toJSON() : r);
 

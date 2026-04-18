@@ -138,6 +138,7 @@ export class ActivityUtility {
      */
     static async runActivityActions(message) {
         let currentRolls = Array.from(message.flags[MODULE_SHORT]?.rolls || []);
+        const newRolls = [];
 
         if (message.flags[MODULE_SHORT].renderAttack) {
             const rawAttack = await ActivityUtility.getAttackFromMessage(message);
@@ -145,6 +146,7 @@ export class ActivityUtility {
 
             if (attackRolls.length > 0) {
                 currentRolls = _injectRollsToArray(currentRolls, attackRolls, CONFIG.Dice.D20Roll);
+                newRolls.push(...attackRolls);
                 // dual flag means a multi-roll was enforced by ALWAYS_ROLL_MULTIROLL;
                 // in that case isCritical is determined later during rendering.
                 message.flags[MODULE_SHORT].isCritical = message.flags[MODULE_SHORT].dual
@@ -161,6 +163,7 @@ export class ActivityUtility {
 
             if (damageRolls.length > 0) {
                 currentRolls = _injectRollsToArray(currentRolls, damageRolls, CONFIG.Dice.DamageRoll);
+                newRolls.push(...damageRolls);
             }
         }
 
@@ -170,6 +173,19 @@ export class ActivityUtility {
 
             if (formulaRolls.length > 0) {
                 currentRolls = _injectRollsToArray(currentRolls, formulaRolls, CONFIG.Dice.BasicRoll);
+                newRolls.push(...formulaRolls);
+            }
+        }
+
+        // dnd5e's rollAttack/rollDamage/rollFormula were called with create: false, so no
+        // ChatMessage was created for these rolls and Dice So Nice's createChatMessage
+        // hook never fires. Trigger the 3D animation manually and fall back to playing
+        // the dice sound when DSN is absent. Mirrors the retro-crit pattern in chat.js.
+        if (newRolls.length > 0) {
+            await CoreUtility.tryRollDice3D(newRolls, message.id);
+
+            if (!game.dice3d || !game.dice3d.isEnabled()) {
+                CoreUtility.playRollSound();
             }
         }
 
@@ -187,6 +203,7 @@ export class ActivityUtility {
      */
     static async runActivityAction(message, action) {
         let currentRolls = Array.from(message.flags[MODULE_SHORT]?.rolls || []);
+        const newRolls = [];
 
         switch (action) {
             case ROLL_TYPE.DAMAGE: {
@@ -195,8 +212,19 @@ export class ActivityUtility {
 
                 if (damageRolls.length > 0) {
                     currentRolls = _injectRollsToArray(currentRolls, damageRolls, CONFIG.Dice.DamageRoll);
+                    newRolls.push(...damageRolls);
                 }
                 break;
+            }
+        }
+
+        // create: false suppresses the chat-message-creation path that Dice So Nice hooks
+        // into; trigger the 3D animation manually and play the dice sound as a fallback.
+        if (newRolls.length > 0) {
+            await CoreUtility.tryRollDice3D(newRolls, message.id);
+
+            if (!game.dice3d || !game.dice3d.isEnabled()) {
+                CoreUtility.playRollSound();
             }
         }
 

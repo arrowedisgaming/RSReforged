@@ -146,6 +146,33 @@ export class HooksUtility {
         Hooks.on("preCreateChatMessage", (message, data, options, userId) => {
             if (userId !== game.user.id) return;
 
+            // Forward-compat hygiene: dnd5e 5.3's D20Roll constructs its d20 term using
+            // Foundry's legacy `Die` class, while Foundry V14 canonicalises on `BasicDie`
+            // (the subclass registered at CONFIG.Dice.terms.d, which extends Die with
+            // modifier aliases). Sheet-initiated roll messages therefore serialise with
+            // `term.class === "Die"` while chat-command rolls serialise as `"BasicDie"`.
+            // Rewriting the serialised class so Foundry rebuilds sheet-roll terms as
+            // BasicDie aligns RSR-processed messages with the V14 canonical and keeps
+            // the stored representation consistent across entry points. The swap is
+            // safe because BasicDie extends Die — every method, modifier, and behaviour
+            // is inherited, and dnd5e-specific behaviour (advantage mode, elven accuracy,
+            // halfling lucky, crit/fumble thresholds) lives on `term.options` as data
+            // and is consumed at D20Roll level, not on the Die class itself.
+            if (message.rolls?.length) {
+                let changed = false;
+                const patched = message.rolls.map(roll => {
+                    const json = typeof roll.toJSON === "function" ? roll.toJSON() : roll;
+                    for (const term of json.terms ?? []) {
+                        if (term.class === "Die") {
+                            term.class = "BasicDie";
+                            changed = true;
+                        }
+                    }
+                    return json;
+                });
+                if (changed) message.updateSource({ rolls: patched });
+            }
+
             const t = message.type;
             // dnd5e 5.3.0: Usage cards are typed as "usage" (plain string, set in
             // Activity#_createUsageMessage). The "dnd5e.usage" variant and the
