@@ -1,0 +1,106 @@
+{
+    "rsreforged": {        
+        "settings": {
+            "enableSkillQuickRoll.name": "Enable Quick Roll for Skills",
+            "enableSkillQuickRoll.hint": "When clicking on a skill check, automatically roll to chat instead of using the normal roll dialog. This functionality can be bypassed by holding the 'Skip Dialog' key modifier when clicking.",
+            "enableAbilityQuickRoll.name": "Enable Quick Roll for Abilities",
+            "enableAbilityQuickRoll.hint": "When clicking on an ability check or saving throw, quick roll to chat instead of using the normal roll dialog. This functionality can be bypassed by holding the 'Skip Dialog' key modifier when clicking.",
+            "enableToolQuickRoll.name": "Enable Quick Roll for Tool Checks",
+            "enableToolQuickRoll.hint": "When clicking on a tool check, quick roll to chat instead of using the normal roll dialog. This functionality can be bypassed by holding the 'Skip Dialog' key modifier when clicking.",
+            "enableActivityQuickRoll.name": "Enable Quick Roll for Activities",
+            "enableActivityQuickRoll.hint": "When clicking on an activity for an item, automatically roll to chat instead of using the normal roll dialog. This functionality can be bypassed by holding the 'Skip Dialog' key modifier when clicking.",
+            "enableVanillaQuickRoll.name": "Enable Content on Vanilla Rolls",
+            "enableVanillaQuickRoll.hint": "When outputting a vanilla roll, attempt to still apply module content, functionality, and styling. This setting will apply for any vanilla rolls, even those made by bypassing a quick roll.",
+            "alwaysRollMulti.name": "Always Roll Multiple Dice",
+            "alwaysRollMulti.hint": "When outputting a quick roll, always roll two dice (or three for Elven Accuracy) even when advantage/disadvantage is not applied.",
+            "manualDamageMode.name": "Roll Damage Manually",
+            "manualDamageMode.hint": "When outputting a quick roll, do not quick roll damage. Instead, show a damage button to manually roll if there is damage available.",
+            "aggregateDamage.name": "Aggregate Damage Fields",
+            "aggregateDamage.hint": "When outputting a quick roll, combine all damage fields of the same type into a single field.",
+            "enableD20Icons.name": "Show D20 Rolls for Quick Rolls",
+            "enableD20Icons.hint": "When outputting a quick roll, display an icon showing the natural die roll next to the total result.",
+            "enableHideFinalResult.name": "Hide Result of NPC Attacks",
+            "enableHideFinalResult.hint": "When outputting a quick roll with an attack made by an actor that a player does not own, hide the final modified result of the roll so that only the result of the d20 is visible.",
+            "enableDiceReroll.name": "Enable Dice Rerolling",
+            "enableDiceReroll.hint": "When outputting a quick roll, enable the ability to click a specific die in the chat message tooltip to reroll that die in place.",
+            "enableOverlayButtons.name": "Enable Overlay Buttons",
+            "enableOverlayButtons.hint": "When outputting a quick roll, enable overlay buttons on the chat message that offer additional functionality for the roll.",
+            "enableDamageButtons.name": "Enable Damage Apply Buttons",
+            "enableDamageButtons.hint": "When outputting a quick roll with damage, enable buttons on the chat message that allow for that damage to be applied to tokens.",
+            "alwaysShowButtons.name": "Always Show Apply Buttons",
+            "alwaysShowButtons.hint": "When outputting a quick roll chat card, always show the damage apply buttons, instead of only on hover.",
+            "applyDamageTo.name": "Apply Damage Options",
+            "applyDamageTo.hint": "Determines which tokens damage is applied to when applying damage via the chat overlay buttons.",
+            "confirmRetroAdv.name": "Confirm Retroactive Advantage",
+            "confirmRetroAdv.hint": "Show a confirmation dialog when retroactively changing a roll to advantage or disadvantage.",
+            "confirmRetroCrit.name": "Confirm Retroactive Crits",
+            "confirmRetroCrit.hint": "Show a confirmation dialog when retroactively changing a roll to critical damage."
+        },
+        "choices": {
+            "rollModifierMode": {
+                "shiftAdv": "Shift ➔ Advantage, Ctrl/Cmd ➔ Disadvantage",
+                "ctrlAdv": "Ctrl/Cmd ➔ Advantage, Shift ➔ Disadvantage"
+            },
+            "apply": {
+                "0": "Apply to Selected Tokens",
+                "1": "Apply to Targeted Tokens",
+                "2": "Apply to Both",
+                "3": "Prioritise Selected Tokens",
+                "4": "Prioritise Targeted Tokens"
+            },
+            "manual": {
+                "0": "Never",
+                "1": "Attack Rolls Only",
+                "2": "Always"
+            }
+        },
+        "sheet": {
+            "tab": {
+                "title": "Quick Roll",
+                "section": {
+                    "defaultRoll": "Default Roll Options",
+                    "alternateRoll": "Alternate Roll Options"
+                },
+                "subsection": {
+                    "main": "Main Content",
+                    "damage": "Damage Rolls"
+                }
+            },
+            "placeholder": {
+                "context": "Context",
+                "label": "Label"
+            }
+        },
+        "chat": {
+            "buttons": {
+                "damageFull": "Click to apply full damage to selected token(s).",
+                "damageHalf": "Click to apply half damage to selected token(s).",
+                "damageQuarter": "Click to apply quarter damage to selected token(s).",
+                "damageDouble": "Click to apply double damage to selected token(s).",
+                "healing": "Click to apply healing to selected token(s).",
+                "healingTemp": "Click to apply temporary hitpoints to selected token(s).",
+                "rollCrit": "Click to roll critical damage.",
+                "rollAdvantage": "Click to roll with advantage.",
+                "rollDisadvantage": "Click to roll with disadvantage.",
+                "repeat": "Click to repeat the quick roll."
+            },
+            "prompts": {
+                "retroCrit": "Upgrade to Crit?",
+                "retroAdv": "Roll {target}?"
+            },
+            "hide": "???"
+        },
+        "messages": {
+            "error": {
+                "incorrectTargetState": "Cannot ugprade a roll to target state '{state}' because it is not a valid state (advantage or disadvantage).",
+                "rollIsNullOrUndefined": "The given roll is null or undefined.",
+                "termIsNullOrUndefined": "The given term is null or undefined.",
+                "applyDamageNoPermission": "You do not have permission to apply damage from this message.",
+                "applyDamageNoTokens": "You have no tokens selected or targeted to apply damage to."
+            },
+            "warning": {
+                "emptyDamageField": "One or more damage fields on this item are empty! To roll damage, ensure all damage fields are filled."
+            }
+        }
+    }
+}

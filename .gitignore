@@ -1,0 +1,8 @@
+*.bak
+*.lock
+*.code-workspace
+.DS_Store
+*.zip
+node_modules/
+.idea/
+.vscode/
