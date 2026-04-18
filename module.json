@@ -2,7 +2,7 @@
 	"id": "rsreforged",
 	"title": "RSReforged",
 	"description": "Quality-of-life roll automation for the dnd5e system. A maintained fork of Ready Set Roll for D&D5e by MangoFVTT (itself a rewrite of Better Rolls for 5e by RedReign). Targets Foundry VTT v14+ and dnd5e 5.3+.",
-	"version": "4.0.0",
+	"version": "4.1.0",
 	"compatibility": {
 		"minimum": "14",
 		"verified": "14.539",
@@ -69,7 +69,7 @@
 	},
 	"url": "https://github.com/arrowedisgaming/RSReforged",
 	"manifest": "https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/module.json",
-	"download": "https://github.com/arrowedisgaming/RSReforged/releases/download/release-4.0.0/rsreforged-release-4.0.0.zip",
+	"download": "https://github.com/arrowedisgaming/RSReforged/releases/download/release-4.1.0/rsreforged-release-4.1.0.zip",
 	"bugs": "https://github.com/arrowedisgaming/RSReforged/issues",
 	"readme": "https://github.com/arrowedisgaming/RSReforged/blob/master/README.md",
 	"license": "LICENSE"
