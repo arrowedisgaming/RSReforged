@@ -300,7 +300,7 @@ export class ActivityUtility {
         // Stamp scaling onto the item clone so rollData.scaling is populated correctly
         // for formula resolution (see getDamageConfig → getRollData path).
         activity.item.flags.dnd5e ??= {};
-        if (activity.item.flags.dnd5e.scaling !== scaling) {
+        if (scaling > 0 && activity.item.flags.dnd5e.scaling !== scaling) {
             activity.item.flags.dnd5e.scaling = scaling;
         }
 
@@ -308,7 +308,14 @@ export class ActivityUtility {
             isCritical: message.flags[MODULE_SHORT].isCritical ?? false,
             // Pass the live Item document so rollDamage can read ammo properties.
             ammunition: actor.items?.get(message.flags[MODULE_SHORT].ammunition),
-            scaling,
+            // Only override rollConfig.scaling when there's an upcast delta. For
+            // cantrips and base-level casts, leave scaling undefined so dnd5e's
+            // _processDamagePart falls through to rollData.scaling (the Scaling
+            // instance auto-computed by Item5e#scalingIncrease → SpellData, which
+            // applies Math.floor((cantripLevel + 1) / 6) for cantrips). Passing
+            // scaling: 0 forces scaledFormula(0) because rollConfig.scaling is
+            // nullish-coalesced with rollData.scaling at dnd5e.mjs:12545.
+            ...(scaling > 0 ? { scaling } : {}),
             midiOptions: CoreUtility.hasModule(MODULE_MIDI)
                 ? { isCritical: message.flags[MODULE_SHORT].isCritical ?? false }
                 : undefined
@@ -336,11 +343,13 @@ export class ActivityUtility {
         const scaling = message.system?.scaling ?? message.flags?.dnd5e?.scaling ?? 0;
 
         activity.item.flags.dnd5e ??= {};
-        if (activity.item.flags.dnd5e.scaling !== scaling) {
+        if (scaling > 0 && activity.item.flags.dnd5e.scaling !== scaling) {
             activity.item.flags.dnd5e.scaling = scaling;
         }
 
-        const config        = { scaling };
+        // See getDamageFromMessage for rationale — only pass scaling when > 0 so
+        // cantrips fall through to rollData.scaling for auto-computation.
+        const config        = scaling > 0 ? { scaling } : {};
         const dialogConfig  = { configure: false };
         const messageConfig = { create: false, data: { flags: {} }, flags: {} };
         messageConfig.data.flags[MODULE_SHORT] = { quickRoll: true };

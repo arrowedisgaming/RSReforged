@@ -606,8 +606,8 @@ async function _injectDamageRoll(message, html) {
     const header = message.flags[MODULE_SHORT].isHealing
         ? {            
             section: `rsr-section-${ROLL_TYPE.DAMAGE}`,
-            title: CoreUtility.localize("DND5E.Healing"),
-            icon: "<dnd5e-icon src=\"systems/dnd5e/icons/svg/damage/healing.svg\"></dnd5e-icon>"
+            title: CoreUtility.localize("DND5E.HEAL.HealingButton"),
+            icon: "<i class=\"fas fa-heart\"></i>"
         } 
         : {
             section: `rsr-section-${ROLL_TYPE.DAMAGE}`,
@@ -626,8 +626,8 @@ async function _injectDamageRoll(message, html) {
 async function _injectDamageButton(message, html) {
     const button = message.flags[MODULE_SHORT].isHealing
         ? {
-            title: CoreUtility.localize("DND5E.Healing"),
-            icon: "<dnd5e-icon src=\"systems/dnd5e/icons/svg/damage/healing.svg\"></dnd5e-icon>"
+            title: CoreUtility.localize("DND5E.HEAL.HealingButton"),
+            icon: "<i class=\"fas fa-heart\"></i>"
         } 
         : {
             title: CoreUtility.localize("DND5E.Damage"),

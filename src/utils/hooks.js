@@ -87,7 +87,17 @@ export class HooksUtility {
             // _triggerSubsequentActions call (line 16848 in dnd5e.mjs), not message creation.
             Hooks.on(HOOKS_DND5E.PRE_USE_ACTIVITY, (activity, usageConfig, dialogConfig, messageConfig) => {
                 if (!SettingsUtility.getSettingValue(SETTING_NAMES.QUICK_VANILLA_ENABLED)) {
-                    dialogConfig.configure = false;
+                    // Preserve dnd5e's usage-configuration dialog for *leveled* spells so
+                    // the player can select an upcast slot; the dialog writes the chosen
+                    // upcast delta to message.system.scaling, which ActivityUtility then
+                    // passes to rollDamage. Cantrips skip the dialog — they have no slot
+                    // choice and ActivityUtility falls through to rollData.scaling, which
+                    // SpellData#scalingIncrease auto-computes from actor.cantripLevel.
+                    const isLeveledSpell = activity?.item?.type === "spell"
+                        && (activity.item.system?.level ?? 0) > 0;
+                    if (!isLeveledSpell) {
+                        dialogConfig.configure = false;
+                    }
                     usageConfig.subsequentActions = false;
                 }
                 return true;

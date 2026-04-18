@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.1] — 2026-04-18
+
+### Changed
+- Healing roll section headers now render a `fa-heart` FontAwesome icon and the localized "Healing" label, matching the `fa-burst` + "Damage" pattern used for damage sections. The previous `<dnd5e-icon>` reference to `systems/dnd5e/icons/svg/damage/healing.svg` wasn't rendering in the section template, and the `DND5E.Healing` i18n key was moved into the `DND5E.HEAL` block in dnd5e 5.3 (its old root-level entry now resolves to "Hit Points" under `DND5E.HEAL.Type.Healing`), so headers displayed the raw key uppercased by `.rsr-title`'s `text-transform`. Headers now call `DND5E.HEAL.HealingButton`, which resolves to "Healing".
+
+### Fixed
+- Spells now apply scaling correctly when *Enable Content on Vanilla Rolls* is disabled. Two related regressions from the v4.0.0 port — one per scaling mode:
+  - **Upcasting leveled spells.** `dnd5e.preUseActivity` was suppressing `dialogConfig.configure` for every activity, so leveled spells never got the usage dialog that writes `message.system.scaling`. The hook now preserves the dialog for leveled spells only (cantrips have no slot choice and are handled below), letting players pick a higher slot and letting dnd5e populate the upcast delta on the message.
+  - **Cantrip damage scaling.** `ActivityUtility.getDamageFromMessage` was passing `scaling: 0` in the rollDamage config for cantrips. In `dnd5e.mjs:12545` that value is nullish-coalesced with `rollData.scaling` (`rollConfig.scaling ?? rollData.scaling`), so `0` won over the auto-computed `Scaling` instance that `SpellData#scalingIncrease` derives from `actor.cantripLevel` — cantrips always rolled at base dice regardless of character level. The config now omits `scaling` unless there's an actual upcast delta (`scaling > 0`), letting rollData drive cantrip scaling. Same fix applied to `getFormulaFromMessage` for utility-activity consistency.
+  - Fixes [#1](https://github.com/arrowedisgaming/RSReforged/issues/1).
+
 ## [4.1.0] — 2026-04-18
 
 ### Added
@@ -59,6 +70,7 @@ The first RSReforged release. Forked from [MangoFVTT/fvtt-ready-set-roll-5e@v3.5
 - **MangoFVTT** — author and maintainer of upstream Ready Set Roll for D&D5e (the direct ancestor of this fork).
 - **RedReign** — author of the original [Better Rolls for 5e](https://github.com/RedReign/FoundryVTT-BetterRolls5e), which RSR is a rewrite of.
 
-[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.1.0...HEAD
+[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.1.1...HEAD
+[4.1.1]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.1.0...release-4.1.1
 [4.1.0]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.0.0...release-4.1.0
 [4.0.0]: https://github.com/arrowedisgaming/RSReforged/releases/tag/release-4.0.0
