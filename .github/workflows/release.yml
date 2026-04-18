@@ -1,0 +1,104 @@
+name: Release
+
+# Triggered by pushing a tag of the form `release-X.Y.Z`. The tagged commit's
+# module.json must already declare the matching version — the workflow refuses
+# to publish if they disagree, which catches the very common mistake of
+# tagging a release without bumping module.json first.
+#
+# What it produces, attached to a GitHub Release:
+#   - rsreforged-release-<version>.zip   (the module distribution)
+#   - module.json                         (alternate install path for Forge etc.)
+#
+# Security note: all step `run:` blocks read template-substituted values via
+# env: passthroughs rather than splicing `${{ ... }}` expressions directly
+# into shell, so a tag whose name contained shell metacharacters cannot
+# inject commands. (See: https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/)
+
+on:
+  push:
+    tags:
+      - 'release-*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tag
+        uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag="$REF_NAME"
+          version="${tag#release-}"
+          if [ -z "$version" ] || [ "$version" = "$tag" ]; then
+            echo "Tag '$tag' does not match expected pattern release-X.Y.Z" >&2
+            exit 1
+          fi
+          # Reject tag names that contain anything other than digits, dots, or
+          # hyphens, so a hostile tag like 'release-1.0;rm' can't sneak through.
+          if ! printf '%s' "$version" | grep -Eq '^[0-9A-Za-z.+-]+$'; then
+            echo "Refusing version '$version': contains unexpected characters" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Derived version: $version"
+
+      - name: Verify module.json version matches tag
+        env:
+          TAG_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          manifest_version=$(jq -r .version module.json)
+          if [ "$manifest_version" != "$TAG_VERSION" ]; then
+            echo "module.json says version=$manifest_version but tag says version=$TAG_VERSION" >&2
+            echo "Bump module.json before tagging." >&2
+            exit 1
+          fi
+          echo "module.json version matches tag: $manifest_version"
+
+      - name: Build distribution zip
+        env:
+          TAG_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          zip_name="rsreforged-release-${TAG_VERSION}.zip"
+
+          # What ships in the zip: only what Foundry needs at runtime, plus
+          # LICENSE (legally required to ship with the redistribution) and
+          # README (so the in-Foundry "View Module" pane has something useful).
+          # Excludes docs/ (upstream snapshot, dev-only), CHANGELOG, dotfiles,
+          # and the .github/ directory.
+          zip -r "$zip_name" \
+            module.json \
+            LICENSE \
+            README.md \
+            src \
+            css \
+            lang \
+            templates
+
+          ls -la "$zip_name"
+          echo "ZIP_NAME=$zip_name" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: RSReforged ${{ steps.version.outputs.version }}
+          body: |
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/master/CHANGELOG.md) for the full release notes.
+
+            **Install / update via manifest URL:**
+            ```
+            https://raw.githubusercontent.com/${{ github.repository }}/master/module.json
+            ```
+          draft: false
+          prerelease: false
+          files: |
+            ${{ env.ZIP_NAME }}
+            module.json
+          fail_on_unmatched_files: true
