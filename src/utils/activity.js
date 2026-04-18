@@ -5,179 +5,346 @@ import { CoreUtility } from "./core.js";
 import { ROLL_TYPE } from "./roll.js";
 import { SETTING_NAMES, SettingsUtility } from "./settings.js";
 
-/**
- * Utility class to handle quick rolling functionality for activities.
- */
 export class ActivityUtility {
-    static setRenderFlags(activity, message) {
-        if (!message.data.flags || !message.data.flags[MODULE_SHORT]) {
-            return;
+
+    /**
+     * Resolve the activity associated with a chat message.
+     *
+     * dnd5e 5.3.0: `getAssociatedActivity()` is now a native ChatMessage5e method
+     * (line 69694 of dnd5e.mjs). It tries `fromUuidSync(flags.dnd5e.activity.uuid)`
+     * first, then falls back to `getAssociatedItem()?.system.activities?.get(flags.dnd5e.activity.id)`.
+     * We call it directly and only fall through to manual UUID/id resolution when the
+     * message object is a plain data object (e.g. during preCreateChatMessage before the
+     * document is instantiated) where the method may not exist.
+     *
+     * NOTE: `message.system.activity` is intentionally NOT used as a primary path.
+     * In 5.3.0 it is a getter on UsageMessageData that itself calls
+     * `this.parent.getAssociatedActivity()` — identical to calling the method directly,
+     * but with the added risk of throwing when `message.system` is undefined (non-usage
+     * messages) or when the system data model is not yet initialised (preCreate hooks).
+     */
+    static _getActivityFromMessage(message) {
+        // Primary: native ChatMessage5e method available on instantiated documents.
+        if (typeof message.getAssociatedActivity === "function") {
+            const act = message.getAssociatedActivity();
+            if (act) return act;
         }
-        
-        if (!message.data.flags[MODULE_SHORT].quickRoll) {
-            return;
-        }        
 
-        const hasAttack = activity.hasOwnProperty(ROLL_TYPE.ATTACK);
-        const hasDamage = activity.hasOwnProperty(ROLL_TYPE.DAMAGE);
-        const hasHealing = activity.hasOwnProperty(ROLL_TYPE.HEALING);
-        const hasFormula = activity.hasOwnProperty(ROLL_TYPE.FORMULA);
+        // Fallback A: resolve via item UUID + activity id (covers preCreate where the
+        // document method above may not yet exist, or may return null because flags
+        // haven't been saved to the database yet and fromUuidSync can't find the UUID).
+        let item = null;
+        if (typeof message.getAssociatedItem === "function") item = message.getAssociatedItem();
+        if (!item && message.flags?.dnd5e?.item?.uuid) item = fromUuidSync(message.flags.dnd5e.item.uuid, { strict: false });
+        if (!item && message.flags?.dnd5e?.use?.itemUuid) item = fromUuidSync(message.flags.dnd5e.use.itemUuid, { strict: false });
 
-        if (hasAttack) {            
-            message.data.flags[MODULE_SHORT].renderAttack = true;
+        const activityId = message.flags?.dnd5e?.activity?.id;
+        if (item && activityId) {
+            const act = item.system?.activities?.get(activityId);
+            if (act) return act;
+        }
+
+        // Fallback B: resolve directly via activity UUID stored in flags.
+        // dnd5e 5.3.0: the activity UUID is stored at flags.dnd5e.activity.uuid
+        // (set by Activity#messageFlags getter, line 16711 of dnd5e.mjs).
+        const activityUuid = message.flags?.dnd5e?.activity?.uuid;
+        if (activityUuid) {
+            const act = fromUuidSync(activityUuid, { strict: false });
+            if (act) return act;
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve the actor associated with a chat message.
+     *
+     * dnd5e 5.3.0: delegates to ChatUtility.getActorFromMessage which already uses the
+     * native getAssociatedActor() method with a proper null-safe manual fallback.
+     */
+    static _getActorFromMessage(message) {
+        return ChatUtility.getActorFromMessage(message);
+    }
+
+    /**
+     * Extract Roll instances from the raw return value of rollAttack / rollDamage /
+     * rollFormula. In dnd5e 5.3.0 all three methods return Roll[] directly when
+     * messageConfig.create is false, so the array branch is hit in the normal case.
+     * The other branches are kept for defensive compatibility.
+     */
+    static _extractRolls(result) {
+        let extracted = [];
+        if (!result) return extracted;
+        const items = Array.isArray(result) ? result : [result];
+        for (const item of items) {
+            if (!item) continue;
+            if (item instanceof Roll) {
+                extracted.push(item);
+            } else if (item.rolls && Array.isArray(item.rolls)) {
+                extracted.push(...item.rolls);
+            } else if (item.roll && item.roll instanceof Roll) {
+                extracted.push(item.roll);
+            } else if (item.class && item.formula) {
+                try { extracted.push(Roll.fromData(item)); } catch(e) {}
+            }
+        }
+        return extracted;
+    }
+
+    /**
+     * Set RSR render flags on the message based on the activity's capabilities.
+     * Called from processChatMessage when flags haven't been written yet (i.e. the
+     * message was not caught by preCreateChatMessage, which can happen when another
+     * module creates a usage message programmatically after the fact).
+     */
+    static setRenderFlags(activity, message) {
+        if (!message || !activity) return;
+        const flags = message.flags;
+        if (!flags || !flags[MODULE_SHORT] || !flags[MODULE_SHORT].quickRoll) return;
+
+        const hasAttack  = activity.type === "attack"  || !!activity.attack   || activity.hasOwnProperty(ROLL_TYPE.ATTACK);
+        const hasDamage  = activity.type === "damage"  || !!activity.damage   || activity.type === "attack" || activity.type === "save" || activity.hasOwnProperty(ROLL_TYPE.DAMAGE);
+        const hasHealing = activity.type === "heal"    || !!activity.healing  || activity.hasOwnProperty(ROLL_TYPE.HEALING);
+        const hasFormula = activity.type === "utility" || !!activity.roll     || activity.hasOwnProperty(ROLL_TYPE.FORMULA);
+
+        if (hasAttack) {
+            flags[MODULE_SHORT].renderAttack = true;
         }
 
         const manualDamageMode = SettingsUtility.getSettingValue(SETTING_NAMES.MANUAL_DAMAGE_MODE);
 
-        if (hasDamage && activity[ROLL_TYPE.DAMAGE]?.parts?.length > 0) {            
-            message.data.flags[MODULE_SHORT].manualDamage = (manualDamageMode === 2 || (manualDamageMode === 1 && hasAttack));
-            message.data.flags[MODULE_SHORT].renderDamage = !message.data.flags[MODULE_SHORT].manualDamage;
+        if (hasDamage) {
+            flags[MODULE_SHORT].manualDamage = (manualDamageMode === 2 || (manualDamageMode === 1 && hasAttack));
+            flags[MODULE_SHORT].renderDamage = !flags[MODULE_SHORT].manualDamage;
         }
 
         if (hasHealing) {
-            message.data.flags[MODULE_SHORT].isHealing = true;
-            message.data.flags[MODULE_SHORT].renderDamage = true; 
+            flags[MODULE_SHORT].isHealing = true;
+            flags[MODULE_SHORT].renderDamage = true;
         }
 
-        if (hasFormula && activity[ROLL_TYPE.FORMULA]?.formula !== '') {
-            message.data.flags[MODULE_SHORT].renderFormula = true;
-
-            if (activity.roll?.name && activity.roll.name !== "") {
-                message.data.flags[MODULE_SHORT].formulaName = activity.roll?.name;
+        if (hasFormula) {
+            flags[MODULE_SHORT].renderFormula = true;
+            const fName = activity.roll?.name || activity[ROLL_TYPE.FORMULA]?.name;
+            if (fName && fName !== "") {
+                flags[MODULE_SHORT].formulaName = fName;
             }
         }
     }
 
+    /**
+     * Execute all pending roll actions for a usage message (attack, damage, formula)
+     * and persist the resulting rolls back to the message flags.
+     */
     static async runActivityActions(message) {
-        if (message.flags[MODULE_SHORT].renderAttack) {
-            const attackRolls = await ActivityUtility.getAttackFromMessage(message);
-            _injectRollsToMessage(message, attackRolls, CONFIG.Dice.D20Roll);
+        let currentRolls = Array.from(message.flags[MODULE_SHORT]?.rolls || []);
 
-            message.flags[MODULE_SHORT].isCritical = message.flags[MODULE_SHORT].dual ? false : attackRolls[0].isCritical
+        if (message.flags[MODULE_SHORT].renderAttack) {
+            const rawAttack = await ActivityUtility.getAttackFromMessage(message);
+            const attackRolls = ActivityUtility._extractRolls(rawAttack);
+
+            if (attackRolls.length > 0) {
+                currentRolls = _injectRollsToArray(currentRolls, attackRolls, CONFIG.Dice.D20Roll);
+                // dual flag means a multi-roll was enforced by ALWAYS_ROLL_MULTIROLL;
+                // in that case isCritical is determined later during rendering.
+                message.flags[MODULE_SHORT].isCritical = message.flags[MODULE_SHORT].dual
+                    ? false
+                    : attackRolls[0].isCritical;
+            } else {
+                message.flags[MODULE_SHORT].isCritical = false;
+            }
         }
 
         if (message.flags[MODULE_SHORT].renderDamage) {
-            const damageRolls = await ActivityUtility.getDamageFromMessage(message);
-            _injectRollsToMessage(message, damageRolls, CONFIG.Dice.DamageRoll);
+            const rawDamage = await ActivityUtility.getDamageFromMessage(message);
+            const damageRolls = ActivityUtility._extractRolls(rawDamage);
+
+            if (damageRolls.length > 0) {
+                currentRolls = _injectRollsToArray(currentRolls, damageRolls, CONFIG.Dice.DamageRoll);
+            }
         }
 
         if (message.flags[MODULE_SHORT].renderFormula) {
-            const formulaRolls = await ActivityUtility.getFormulaFromMessage(message);
-            _injectRollsToMessage(message, formulaRolls, CONFIG.Dice.BasicRoll);
+            const rawFormula = await ActivityUtility.getFormulaFromMessage(message);
+            const formulaRolls = ActivityUtility._extractRolls(rawFormula);
+
+            if (formulaRolls.length > 0) {
+                currentRolls = _injectRollsToArray(currentRolls, formulaRolls, CONFIG.Dice.BasicRoll);
+            }
         }
 
         message.flags[MODULE_SHORT].processed = true;
+        message.flags[MODULE_SHORT].rolls = currentRolls.map(r => r.toJSON ? r.toJSON() : r);
 
-        ChatUtility.updateChatMessage(message, { 
-            flags: message.flags,
-            rolls: message.rolls,
+        await ChatUtility.updateChatMessage(message, {
+            flags: message.flags
         });
-    }    
+    }
 
-    static async runActivityAction(message, action) {        
+    /**
+     * Execute a single on-demand roll action (currently only ROLL_TYPE.DAMAGE, triggered
+     * by the manual damage button) and persist the result.
+     */
+    static async runActivityAction(message, action) {
+        let currentRolls = Array.from(message.flags[MODULE_SHORT]?.rolls || []);
+
         switch (action) {
-            case ROLL_TYPE.DAMAGE:
-                const damageRolls = await ActivityUtility.getDamageFromMessage(message);
-                _injectRollsToMessage(message, damageRolls, CONFIG.Dice.DamageRoll);
-                break;
-        }  
+            case ROLL_TYPE.DAMAGE: {
+                const rawDamage = await ActivityUtility.getDamageFromMessage(message);
+                const damageRolls = ActivityUtility._extractRolls(rawDamage);
 
-        ChatUtility.updateChatMessage(message, { 
-            flags: message.flags,
-            rolls: message.rolls
+                if (damageRolls.length > 0) {
+                    currentRolls = _injectRollsToArray(currentRolls, damageRolls, CONFIG.Dice.DamageRoll);
+                }
+                break;
+            }
+        }
+
+        message.flags[MODULE_SHORT].rolls = currentRolls.map(r => r.toJSON ? r.toJSON() : r);
+
+        await ChatUtility.updateChatMessage(message, {
+            flags: message.flags
         });
     }
 
+    /**
+     * Roll the attack for the activity associated with this message.
+     *
+     * dnd5e 5.3.0: rollAttack() merges our config object into its own rollConfig via
+     * foundry.utils.mergeObject, then passes config.advantage / config.disadvantage
+     * into D20Roll.applyKeybindings() (line 78549), which sets roll.options.advantageMode.
+     * Passing them at the top level of the config object is therefore the correct approach.
+     *
+     * The ammunition field passed here is the item ID stored during the
+     * activityConsumption hook. rollAttack() looks up the ammo item internally when
+     * needed; passing the ID in config means it reaches roll.options.ammunition for
+     * the PRE_ROLL_ATTACK hook to see.
+     */
     static getAttackFromMessage(message) {
-        const activity = message.getAssociatedActivity();
+        const activity = ActivityUtility._getActivityFromMessage(message);
+        if (!activity || typeof activity.rollAttack !== "function") return null;
 
-        const usageConfig = { 
-            advantage: message.flags[MODULE_SHORT].advantage ?? false,
-            disadvantage: message.flags[MODULE_SHORT].disadvantage ?? false,            
-            ammunition: message.flags[MODULE_SHORT].ammunition
-        }
+        const config = {
+            advantage:    message.flags[MODULE_SHORT].advantage    ?? false,
+            disadvantage: message.flags[MODULE_SHORT].disadvantage ?? false,
+            ammunition:   message.flags[MODULE_SHORT].ammunition
+        };
 
-        const dialogConfig = {
-            configure: false
-        }
+        const dialogConfig  = { configure: false };
+        const messageConfig = { create: false, data: { flags: {} }, flags: {} };
+        messageConfig.data.flags[MODULE_SHORT] = { quickRoll: true };
+        messageConfig.flags[MODULE_SHORT]      = { quickRoll: true };
 
-        const messageConfig = {
-            create: false,
-            data: {
-                flags: {}
-            }
-        }
-
-        messageConfig.data.flags[MODULE_SHORT] = {
-            quickRoll: true
-        }
-
-        return activity.rollAttack(usageConfig, dialogConfig, messageConfig);
+        return activity.rollAttack(config, dialogConfig, messageConfig);
     }
 
+    /**
+     * Roll damage for the activity associated with this message.
+     *
+     * dnd5e 5.3.0: scaling is stored in message.system.scaling (a NumberField on
+     * UsageMessageData, written at line 17085 of dnd5e.mjs). The legacy path
+     * message.flags?.dnd5e?.scaling is kept as a fallback for older persisted messages.
+     *
+     * Scaling is applied two ways:
+     *   1. usageConfig.scaling   → used by getDamageConfig → _processDamagePart via
+     *                              `rollConfig.scaling ?? rollData.scaling` (line 12494).
+     *   2. activity.item.flags.dnd5e.scaling → populates rollData.scaling through
+     *                              getRollData() on the item clone, which is the path
+     *                              `rollData.scaling` in _processDamagePart falls back to.
+     *
+     * Both paths remain necessary: (1) is authoritative when the activity is called
+     * outside a full use() workflow (as RSR does), and (2) ensures the item's own
+     * formula variables resolve correctly for cantrips and other scaling modes that
+     * read rollData rather than rollConfig.
+     *
+     * midiOptions is not part of the dnd5e 5.3.0 API but is read by midi-qol from the
+     * config object when that module is active; it is left in place.
+     */
     static getDamageFromMessage(message) {
-        const activity = message.getAssociatedActivity();
-        const actor = message.getAssociatedActor();
-    
+        const activity = ActivityUtility._getActivityFromMessage(message);
+        const actor    = ActivityUtility._getActorFromMessage(message);
+
+        if (!activity || !actor || typeof activity.rollDamage !== "function") return null;
+
+        // Resolve scaling from system data (5.3.0 canonical) with flags fallback.
+        const scaling = message.system?.scaling ?? message.flags?.dnd5e?.scaling ?? 0;
+
+        // Stamp scaling onto the item clone so rollData.scaling is populated correctly
+        // for formula resolution (see getDamageConfig → getRollData path).
         activity.item.flags.dnd5e ??= {};
-        activity.item.flags.dnd5e.scaling = message.flags.dnd5e.scaling;
+        if (activity.item.flags.dnd5e.scaling !== scaling) {
+            activity.item.flags.dnd5e.scaling = scaling;
+        }
 
-        const usageConfig = {
+        const config = {
             isCritical: message.flags[MODULE_SHORT].isCritical ?? false,
-            ammunition: actor.items.get(message.flags[MODULE_SHORT].ammunition),
-            scaling: message.flags.dnd5e.scaling,
-            midiOptions: CoreUtility.hasModule(MODULE_MIDI) ? { isCritical: message.flags[MODULE_SHORT].isCritical ?? false } : undefined
-        }
+            // Pass the live Item document so rollDamage can read ammo properties.
+            ammunition: actor.items?.get(message.flags[MODULE_SHORT].ammunition),
+            scaling,
+            midiOptions: CoreUtility.hasModule(MODULE_MIDI)
+                ? { isCritical: message.flags[MODULE_SHORT].isCritical ?? false }
+                : undefined
+        };
 
-        const dialogConfig = { 
-            configure: false 
-        }
+        const dialogConfig  = { configure: false };
+        const messageConfig = { create: false, data: { flags: {} }, flags: {} };
+        messageConfig.data.flags[MODULE_SHORT] = { quickRoll: true };
+        messageConfig.flags[MODULE_SHORT]      = { quickRoll: true };
 
-        const messageConfig = {
-            create: false,
-            data: {
-                flags: {}
-            }
-        }
-
-        messageConfig.data.flags[MODULE_SHORT] = {
-            quickRoll: true
-        }
-    
-        return activity.rollDamage(usageConfig, dialogConfig, messageConfig);
+        return activity.rollDamage(config, dialogConfig, messageConfig);
     }
 
+    /**
+     * Roll the utility formula for the activity associated with this message.
+     *
+     * dnd5e 5.3.0: UtilityActivity.rollFormula() uses rollConfig.scaling (passed via
+     * getRollData / scaledFormula) but does not explicitly consume a scaling field from
+     * config the way rollDamage does. Passing it anyway is harmless and future-proof.
+     */
     static getFormulaFromMessage(message) {
-        const activity = message.getAssociatedActivity();
+        const activity = ActivityUtility._getActivityFromMessage(message);
+        if (!activity || typeof activity.rollFormula !== "function") return null;
+
+        const scaling = message.system?.scaling ?? message.flags?.dnd5e?.scaling ?? 0;
 
         activity.item.flags.dnd5e ??= {};
-        activity.item.flags.dnd5e.scaling = message.flags.dnd5e.scaling;
-
-        const usageConfig = {
-            scaling: message.flags.dnd5e.scaling
+        if (activity.item.flags.dnd5e.scaling !== scaling) {
+            activity.item.flags.dnd5e.scaling = scaling;
         }
 
-        const dialogConfig = {
-            configure: false
-        }
+        const config        = { scaling };
+        const dialogConfig  = { configure: false };
+        const messageConfig = { create: false, data: { flags: {} }, flags: {} };
+        messageConfig.data.flags[MODULE_SHORT] = { quickRoll: true };
+        messageConfig.flags[MODULE_SHORT]      = { quickRoll: true };
 
-        const messageConfig = {
-            create: false
-        }
-
-        return activity.rollFormula(usageConfig, dialogConfig, messageConfig);
+        return activity.rollFormula(config, dialogConfig, messageConfig);
     }
 }
 
-function _injectRollsToMessage(message, rolls, cleanType)
-{
-    if (!message || !CoreUtility.isIterable(rolls)) {
-        return;
+/**
+ * Merge a set of new rolls into an existing roll array, first removing any rolls of the
+ * same class so that re-rolls replace rather than duplicate the previous result.
+ *
+ * @param {Roll[]|object[]} existingRolls  Current serialised or live roll array.
+ * @param {Roll[]}          newRolls       Fresh rolls to inject.
+ * @param {typeof Roll}     cleanType      Roll class whose existing entries to evict.
+ * @returns {Roll[]}
+ */
+function _injectRollsToArray(existingRolls, newRolls, cleanType) {
+    if (!CoreUtility.isIterable(newRolls)) {
+        return existingRolls;
     }
+
+    let processedRolls = Array.from(existingRolls);
 
     if (cleanType) {
-        message.rolls = message.rolls.filter(r => !(r instanceof cleanType))
+        processedRolls = processedRolls.filter(r => {
+            const isTargetType = r instanceof cleanType || r.class === cleanType.name;
+            return !isTargetType;
+        });
     }
 
-    message.rolls.push(...rolls);
+    processedRolls.push(...newRolls);
+    return processedRolls;
 }

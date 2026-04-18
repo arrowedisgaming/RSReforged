@@ -24,7 +24,12 @@ export const SETTING_NAMES = {
     APPLY_DAMAGE_TO: "applyDamageTo",
     ALWAYS_ROLL_MULTIROLL: "alwaysRollMulti",
     CONFIRM_RETRO_ADV: "confirmRetroAdv",
-    CONFIRM_RETRO_CRIT: "confirmRetroCrit"
+    CONFIRM_RETRO_CRIT: "confirmRetroCrit",
+
+    // Interactive dice (added in 4.0.0)
+    REROLL_EVERYONE: "rerollEveryone",
+    REROLL_PLAYERS: "rerollPlayers",
+    FUDGE_GM: "fudgeGM"
 }
 
 /**
@@ -128,6 +133,24 @@ export class SettingsUtility {
                 3: CoreUtility.localize(`${MODULE_SHORT}.choices.apply.3`),
                 4: CoreUtility.localize(`${MODULE_SHORT}.choices.apply.4`)
             }
+        });
+
+        // INTERACTIVE DICE OPTIONS (4.0.0+)
+        const interactiveDiceOptions = [
+            { name: SETTING_NAMES.REROLL_EVERYONE, default: true },
+            { name: SETTING_NAMES.REROLL_PLAYERS,  default: false },
+            { name: SETTING_NAMES.FUDGE_GM,        default: false }
+        ];
+
+        interactiveDiceOptions.forEach(option => {
+            game.settings.register(MODULE_NAME, option.name, {
+                name: CoreUtility.localize(`${MODULE_SHORT}.settings.${option.name}.name`),
+                hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${option.name}.hint`),
+                scope: "world",
+                config: true,
+                type: Boolean,
+                default: option.default
+            });
         });
     }
     

@@ -249,3 +249,64 @@
 .rsr-hide {
     display: none !important;
 }
+
+/* ==========================================
+   ADDON STYLES (Reroll, Bonuses, Splitting)
+   ========================================== */
+
+/* Reroll Styling - Target the structure directly */
+.dice-tooltip .dice-rolls .roll {
+    cursor: pointer !important; /* Changed from context-menu to pointer for better UX */
+    transition: all 0.2s;
+    position: relative;
+    /* CRITICAL FIX: Forces the die to receive mouse clicks */
+    pointer-events: auto !important; 
+}
+
+.dice-tooltip .dice-rolls .roll:hover {
+    text-shadow: 0 0 5px red; /* Updated to match your JS injection style */
+    transform: scale(1.2);    /* Updated scale to match your JS injection */
+    color: white;             /* Updated color to match your JS injection */
+    z-index: 100;
+    font-weight: bold;
+}
+
+.dice-tooltip .dice-rolls .roll.rsr-ready {
+    /* Marker class to ensure styles apply if needed specifically */
+}
+
+/* Retroactive Bonus Button in Headers */
+.rsr-addon-bonus-btn {
+    display: inline-block;
+    margin-left: 8px; /* Standardized margin */
+    cursor: pointer;
+    font-size: 0.9em; /* Matching JS injection */
+    opacity: 0.6;     /* Matching JS injection */
+    transition: opacity 0.2s;
+}
+
+.rsr-addon-bonus-btn:hover {
+    opacity: 1;
+    color: var(--color-text-hyperlink, #ff6400); /* Fallback color added */
+    text-shadow: 0 0 8px var(--color-shadow-highlight, #ff0000);
+}
+
+/* Application V2 Window Styles */
+.rsr-bonus-window .form-group {
+    transition: background 0.2s;
+}
+.rsr-bonus-window .form-group:hover {
+    background: var(--color-bg-light-2) !important;
+}
+/* Ensure RSR titles have enough space for the addon buttons */
+.rsr-title {
+    position: relative;
+    padding-right: 25px; /* Creates a gutter for the button */
+}
+
+.rsr-addon-bonus-btn {
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+}

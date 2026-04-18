@@ -34,7 +34,13 @@
             "confirmRetroAdv.name": "Confirm Retroactive Advantage",
             "confirmRetroAdv.hint": "Show a confirmation dialog when retroactively changing a roll to advantage or disadvantage.",
             "confirmRetroCrit.name": "Confirm Retroactive Crits",
-            "confirmRetroCrit.hint": "Show a confirmation dialog when retroactively changing a roll to critical damage."
+            "confirmRetroCrit.hint": "Show a confirmation dialog when retroactively changing a roll to critical damage.",
+            "rerollEveryone.name": "Enable Interactive Dice (Master Switch)",
+            "rerollEveryone.hint": "Master switch for clickable dice rerolling and GM fudging. If disabled, no one can reroll dice by clicking, regardless of the per-role settings below.",
+            "rerollPlayers.name": "Allow Players to Reroll Their Own Dice",
+            "rerollPlayers.hint": "If enabled, players can left-click any die in the chat tooltip of a roll they made to reroll that die in place. GMs can always reroll any die.",
+            "fudgeGM.name": "Allow GM Dice Fudging",
+            "fudgeGM.hint": "If enabled, the GM can right-click any die in the chat tooltip to manually set its result via a prompt."
         },
         "choices": {
             "rollModifierMode": {
