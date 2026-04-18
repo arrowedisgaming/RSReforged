@@ -1,0 +1,8 @@
+# Revisions to ignore when running `git blame`.
+# Configure git to use this file with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Initial import of upstream MangoFVTT/fvtt-ready-set-roll-5e@v3.5.0 + RSReforged rebrand.
+# Skipping this commit keeps git blame showing the real authors of each line
+# (upstream contributors) rather than the wholesale rename pass.
+e7d9c2c
