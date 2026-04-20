@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.2] — 2026-04-20
+
+### Added
+- **Automatic publishing to the Foundry VTT package browser.** After `release-X.Y.Z` creates the GitHub Release, the workflow POSTs the new version to Foundry's [Package Release API](https://foundryvtt.com/article/package-release-api/) so it appears in Foundry's in-app *Install Module* browser without a manual click-through on foundryvtt.com. The payload's `release.manifest` URL is pinned to the version-specific `module.json` attached to each release (not the moving `master/` URL) so Foundry records a stable pointer per version; the `compatibility` block is pulled live from `module.json` via `jq` so the API value can't drift from the manifest's declared support window. Gated on a `FOUNDRY_RELEASE_TOKEN` repo secret so forks without it fall back to a GitHub-release-only flow with a skip notice. `4.1.2` is the first version to appear in the Foundry browser; earlier releases — including `4.1.1`, which was tagged before this capability was added — remain installable via manifest URL.
+
 ## [4.1.1] — 2026-04-18
 
 ### Changed
@@ -70,7 +75,8 @@ The first RSReforged release. Forked from [MangoFVTT/fvtt-ready-set-roll-5e@v3.5
 - **MangoFVTT** — author and maintainer of upstream Ready Set Roll for D&D5e (the direct ancestor of this fork).
 - **RedReign** — author of the original [Better Rolls for 5e](https://github.com/RedReign/FoundryVTT-BetterRolls5e), which RSR is a rewrite of.
 
-[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.1.1...HEAD
+[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.1.2...HEAD
+[4.1.2]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.1.1...release-4.1.2
 [4.1.1]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.1.0...release-4.1.1
 [4.1.0]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.0.0...release-4.1.0
 [4.0.0]: https://github.com/arrowedisgaming/RSReforged/releases/tag/release-4.0.0

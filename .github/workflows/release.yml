@@ -9,6 +9,12 @@ name: Release
 #   - rsreforged-release-<version>.zip   (the module distribution)
 #   - module.json                         (alternate install path for Forge etc.)
 #
+# If the repo has a FOUNDRY_RELEASE_TOKEN secret configured, the workflow also
+# POSTs the new version to Foundry's Package Release API so it appears in
+# Foundry's in-app module browser. The step is skipped (with a notice) when
+# the secret is absent, so this workflow still works on forks and before the
+# initial package submission is approved.
+#
 # Security note: all step `run:` blocks read template-substituted values via
 # env: passthroughs rather than splicing `${{ ... }}` expressions directly
 # into shell, so a tag whose name contained shell metacharacters cannot
@@ -102,3 +108,66 @@ jobs:
             ${{ env.ZIP_NAME }}
             module.json
           fail_on_unmatched_files: true
+
+      # Detect whether a Foundry Package Release Token is configured. If not,
+      # skip the publish step with a notice — this is the normal state for
+      # forks, PR builds, and for this repo before the initial package
+      # submission at foundryvtt.com/packages/submit is approved.
+      - name: Detect Foundry release token
+        id: foundry
+        env:
+          FOUNDRY_RELEASE_TOKEN: ${{ secrets.FOUNDRY_RELEASE_TOKEN }}
+        run: |
+          if [ -n "$FOUNDRY_RELEASE_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::FOUNDRY_RELEASE_TOKEN not set; skipping Foundry package browser publish."
+          fi
+
+      # Publishes the new version to Foundry's Package Release API so it
+      # appears in the in-app module browser. Docs: https://foundryvtt.com/article/package-release-api/
+      #
+      # Notes on the payload:
+      #   - `release.manifest` must point to the version-specific module.json
+      #     attached to THIS GitHub release (not the moving master/ URL), so
+      #     Foundry records a stable pointer for each version.
+      #   - `compatibility` is pulled live from module.json via jq so the
+      #     API version can't drift from the manifest's declared support
+      #     window.
+      #   - The payload is assembled with `jq -n --arg` / `--argjson` so
+      #     dynamic values can't corrupt the JSON structure.
+      - name: Publish release to Foundry package browser
+        if: steps.foundry.outputs.available == 'true'
+        env:
+          FOUNDRY_RELEASE_TOKEN: ${{ secrets.FOUNDRY_RELEASE_TOKEN }}
+          TAG_VERSION: ${{ steps.version.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          compatibility=$(jq -c '.compatibility' module.json)
+          manifest_url="https://github.com/${REPOSITORY}/releases/download/release-${TAG_VERSION}/module.json"
+          notes_url="https://github.com/${REPOSITORY}/releases/tag/release-${TAG_VERSION}"
+
+          payload=$(jq -n \
+            --arg version "$TAG_VERSION" \
+            --arg manifest "$manifest_url" \
+            --arg notes "$notes_url" \
+            --argjson compatibility "$compatibility" \
+            '{
+              id: "rsreforged",
+              release: {
+                version: $version,
+                manifest: $manifest,
+                notes: $notes,
+                compatibility: $compatibility
+              }
+            }')
+
+          echo "Publishing to Foundry package browser:"
+          echo "$payload" | jq .
+
+          curl -sS -X POST https://foundryvtt.com/_api/packages/release_version/ \
+            -H "Authorization: ${FOUNDRY_RELEASE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --fail-with-body \
+            -d "$payload"
