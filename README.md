@@ -7,6 +7,34 @@
 ![dnd5e](https://img.shields.io/badge/dnd5e-5.3%2B-red?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green?style=for-the-badge)
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/assets/screenshots/npc-quick-roll-overview.png"
+       alt="NPC sheet alongside an RSReforged quick-roll chat card showing an attack, damage by type, and per-damage apply buttons"
+       width="100%">
+</p>
+
+<p align="center"><em>Quick rolls drop straight into chat — attack, damage split by type, and per-target apply buttons in one card.</em></p>
+
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <img src="https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/assets/screenshots/per-type-damage-apply.png"
+           alt="Close-up of damage rolls split by type with independent apply buttons">
+      <br><sub>Damage splits by type — apply fire here, cold there, independently.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/assets/screenshots/quick-roll-card.png"
+           alt="Collapsed quick-roll chat card showing attack and damage rolled in one go">
+      <br><sub>Collapsed default: one click to roll, one click to apply.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/assets/screenshots/pc-quick-roll-card.png"
+           alt="Player-character quick-roll chat card with a natural 1 on the attack die">
+      <br><sub>Works for PCs and NPCs alike.</sub>
+    </td>
+  </tr>
+</table>
+
 ## Lineage and credit
 
 RSReforged stands on the shoulders of two prior projects, both of which deserve full credit:

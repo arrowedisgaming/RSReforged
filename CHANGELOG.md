@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Screenshots at the top of the README** and declared in `module.json` via the Manifest+ `media` array. Images live in `assets/screenshots/` and are referenced with absolute `raw.githubusercontent.com` URLs so they render in GitHub, Foundry's in-app README pane, and The Forge's Bazaar listing. Foundry's own package listing at foundryvtt.com does not consume `media` and has no public API for media uploads, so the cover/screenshot gallery there still requires a manual edit via the package admin form on foundryvtt.com.
+
 ### Changed
 - **CI: bumped workflow actions to Node.js 24-compatible majors.** `actions/checkout@v4` → `@v6` and `softprops/action-gh-release@v2` → `@v3`. Both majors ship `using: node24` in their `action.yml` and addressed GitHub's 2026-04 deprecation notice that Node.js 20 stops being the default Actions runtime on 2026-06-02 and is removed from runners on 2026-09-16. No parameter changes were required — the upgrade is a pure runtime bump for both actions; our no-config `actions/checkout` and core-option-only `softprops/action-gh-release` usage patterns are unaffected.
 

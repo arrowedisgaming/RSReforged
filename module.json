@@ -72,5 +72,27 @@
 	"download": "https://github.com/arrowedisgaming/RSReforged/releases/download/release-4.1.2/rsreforged-release-4.1.2.zip",
 	"bugs": "https://github.com/arrowedisgaming/RSReforged/issues",
 	"readme": "https://github.com/arrowedisgaming/RSReforged/blob/master/README.md",
+	"media": [
+		{
+			"type": "screenshot",
+			"url": "https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/assets/screenshots/npc-quick-roll-overview.png",
+			"caption": "NPC sheet with an RSReforged quick-roll chat card — attack, damage by type, per-target apply buttons."
+		},
+		{
+			"type": "screenshot",
+			"url": "https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/assets/screenshots/per-type-damage-apply.png",
+			"caption": "Damage rolls split by type with independent apply buttons."
+		},
+		{
+			"type": "screenshot",
+			"url": "https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/assets/screenshots/quick-roll-card.png",
+			"caption": "Default collapsed quick-roll card."
+		},
+		{
+			"type": "screenshot",
+			"url": "https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/assets/screenshots/pc-quick-roll-card.png",
+			"caption": "Works for PCs and NPCs alike."
+		}
+	],
 	"license": "LICENSE"
 }
