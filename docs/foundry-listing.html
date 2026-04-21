@@ -1,0 +1,185 @@
+<!--
+  GENERATED FROM README.md by scripts/generate-foundry-listing.sh.
+  Do not edit by hand. Edit README.md and rerun the script.
+  Paste this file's contents into the Description field at
+  https://foundryvtt.com/packages/rsreforged (Edit mode).
+-->
+<blockquote>
+<p>Quality-of-life roll automation for Foundry VTT&#39;s D&amp;D 5e system.</p>
+</blockquote>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/assets/screenshots/npc-quick-roll-overview.png"
+       alt="NPC sheet alongside an RSReforged quick-roll chat card showing an attack, damage by type, and per-damage apply buttons"
+       width="100%">
+</p><p align="center"><em>Quick rolls drop straight into chat — attack, damage split by type, and per-target apply buttons in one card.</em></p><table>
+  <tr>
+    <td width="33%" align="center">
+      <img src="https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/assets/screenshots/per-type-damage-apply.png"
+           alt="Close-up of damage rolls split by type with independent apply buttons">
+      <br><sub>Damage splits by type — apply fire here, cold there, independently.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/assets/screenshots/quick-roll-card.png"
+           alt="Collapsed quick-roll chat card showing attack and damage rolled in one go">
+      <br><sub>Collapsed default: one click to roll, one click to apply.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/assets/screenshots/pc-quick-roll-card.png"
+           alt="Player-character quick-roll chat card with a natural 1 on the attack die">
+      <br><sub>Works for PCs and NPCs alike.</sub>
+    </td>
+  </tr>
+</table><h2>What it does</h2>
+<p>RSReforged removes clicks from D&amp;D 5e rolls in Foundry VTT.</p>
+<ul>
+<li><strong>One-click rolls.</strong> Skill checks, saves, attacks, and damage go to chat without the usual dnd5e dialog.</li>
+<li><strong>Damage split by type.</strong> If an attack deals fire and cold, apply each to different tokens.</li>
+<li><strong>Edit rolls after they land.</strong> Turn a flat roll into advantage, promote a hit to a crit, or add a Bless die you forgot.</li>
+</ul>
+<h2>Compatibility</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Minimum</th>
+<th>Verified</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Foundry VTT</td>
+<td><strong>14</strong></td>
+<td>14.539</td>
+</tr>
+<tr>
+<td>dnd5e system</td>
+<td><strong>5.3.0</strong></td>
+<td>5.3.0</td>
+</tr>
+</tbody></table>
+<p><strong>RSReforged does not work on Foundry v13</strong> or <strong>dnd5e 5.0–5.2</strong>. If you&#39;re on those versions, stay on <a href="https://github.com/MangoFVTT/fvtt-ready-set-roll-5e/releases/tag/release-3.5.0">upstream RSR v3.5.0</a> until you upgrade.</p>
+<p>RSReforged also conflicts with other modules that overhaul the dnd5e roll pipeline, most notably <a href="https://gitlab.com/tposney/midi-qol">Midi-QOL</a>. They will fight each other in unpredictable ways. Pick one.</p>
+<h2>Install</h2>
+<p>In Foundry&#39;s <em>Add-on Modules → Install Module</em> dialog, paste this into the <strong>Manifest URL</strong> field:</p>
+<pre><code>https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/module.json
+</code></pre>
+<p>Click <em>Install</em>. Foundry downloads the latest release and adds RSReforged to your module list.</p>
+<h2>Features</h2>
+<h3>Quick rolls</h3>
+<p>Skill checks, ability checks, saving throws, tool checks, and item activities all roll straight to chat without the standard dnd5e dialog. Each category can be toggled independently in the module settings. The dnd5e <em>Skip Dialog</em> modifier still bypasses RSReforged when you want the full dialog for a one-off roll.</p>
+<p>Hold the <em>Advantage</em> or <em>Disadvantage</em> modifier while clicking to roll in that mode, including any extra dice from features like Elven Accuracy. The chat card highlights the kept die.</p>
+<h3>Always roll two dice</h3>
+<p>A setting shows two d20s on every roll (three with Elven Accuracy), even without advantage or disadvantage. Hold a modifier to designate which die is kept.</p>
+<h3>Edit rolls after they land</h3>
+<p>Upgrade a quick roll after it&#39;s been made: turn a flat roll into advantage or disadvantage, promote a hit to a critical, or change which die is kept. The chat card updates in place and shows the new state next to the old.</p>
+<h3>Apply damage per target</h3>
+<p>Each damage and healing field in a quick-roll chat card has its own apply button (overlay on hover, or always-on per setting). Apply each damage type to selected or targeted tokens independently. Useful for &quot;this 1d8 is fire and that 1d4 is cold and only one of them resists.&quot;</p>
+<h3>Add a bonus after the roll</h3>
+<p>A <code>+</code> icon on every rolled card opens a dialog to add a bonus to the check, save, attack, or damage after it&#39;s rolled. You can type a <strong>custom formula</strong> (e.g. <code>1d4</code>, <code>+2</code>, <code>1d6 + @prof</code>), or pick a <strong>pre-defined bonus</strong> you&#39;ve registered on an Active Effect.</p>
+<p>See <a href="https://github.com/arrowedisgaming/RSReforged#setting-up-pre-defined-bonuses">Setting up pre-defined bonuses</a> below for how to register them.</p>
+<h3>Clickable dice in chat</h3>
+<p>With this feature enabled, you can click any die shown in a chat tooltip:</p>
+<ul>
+<li><strong>Left-click</strong> a die in a roll you made to reroll that die in place. The chat card recalculates.</li>
+<li><strong>Right-click</strong> a die (GM only, when <em>Allow GM Dice Fudging</em> is on) to set its value via a prompt. Useful for narrative course-correction.</li>
+</ul>
+<p>Three settings gate the feature:</p>
+<ul>
+<li><strong>Enable Interactive Dice (Master Switch)</strong> — kill switch for the whole feature</li>
+<li><strong>Allow Players to Reroll Their Own Dice</strong> — players can left-click their own dice</li>
+<li><strong>Allow GM Dice Fudging</strong> — GM gets the right-click &quot;set value&quot; option</li>
+</ul>
+<h2>Configuration</h2>
+<p>All settings live under <em>Configure Settings → Module Settings → RSReforged</em>. The ones worth knowing:</p>
+<ul>
+<li><strong>Quick Roll for {Skills, Abilities, Tools, Activities}</strong> — toggle each category independently</li>
+<li><strong>Always Roll Multiple Dice</strong> — show two d20s on every roll, not just advantage or disadvantage</li>
+<li><strong>Hide Final Result</strong> — hide the rolled total until the GM reveals it (good for blind checks)</li>
+<li><strong>Manual Damage Mode</strong> — require an explicit click to roll damage, instead of auto-rolling on hit</li>
+<li><strong>Apply Damage Options</strong> — selected vs. targeted tokens, with priority modes</li>
+<li><strong>Confirm Retroactive {Advantage, Crits}</strong> — gate retroactive edits behind a confirm dialog</li>
+</ul>
+<h2>Setting up pre-defined bonuses</h2>
+<p>This is optional. Use it when you want Bless, Bardic Inspiration, Guidance, and similar to appear as one-click options in the Bonus Manager instead of typing the formula each time.</p>
+<p>Add an Active Effect change on the actor (or on an item that grants the effect) with:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Attribute Key</td>
+<td><code>flags.rsreforged.bonus</code></td>
+</tr>
+<tr>
+<td>Change Mode</td>
+<td><em>Custom</em></td>
+</tr>
+<tr>
+<td>Effect Value</td>
+<td>A semicolon-delimited string (see below)</td>
+</tr>
+</tbody></table>
+<p>Effect Value format:</p>
+<pre><code>&lt;formula&gt;; type:&lt;roll-type[,roll-type...]&gt;; consume:&lt;origin|item-id|item-name&gt;; once
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Token</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>&lt;formula&gt;</code></td>
+<td>A Roll formula. May reference <code>@actor.system.*</code> etc.</td>
+</tr>
+<tr>
+<td><code>type:check</code></td>
+<td>Ability, skill, tool, and initiative checks</td>
+</tr>
+<tr>
+<td><code>type:save</code></td>
+<td>Saves, including death saves and concentration</td>
+</tr>
+<tr>
+<td><code>type:attack</code>, <code>type:damage</code>, <code>type:initiative</code></td>
+<td>That roll type only</td>
+</tr>
+<tr>
+<td><code>type:any</code> (default)</td>
+<td>Any roll type</td>
+</tr>
+<tr>
+<td><code>consume:origin</code></td>
+<td>Consume one charge of the originating item when applied</td>
+</tr>
+<tr>
+<td><code>consume:&lt;id-or-name&gt;</code></td>
+<td>Consume one charge of a different item</td>
+</tr>
+<tr>
+<td><code>once</code></td>
+<td>Delete the effect after a single use</td>
+</tr>
+</tbody></table>
+<p>Examples:</p>
+<ul>
+<li><strong>Bless:</strong> <code>1d4; type:check, save, attack</code> (no consumption, since Bless is a duration spell)</li>
+<li><strong>Bardic Inspiration (d8):</strong> <code>1d8; type:any; consume:origin; once</code></li>
+<li><strong>Guidance:</strong> <code>1d4; type:check; consume:origin; once</code></li>
+</ul>
+<h2>Known issues</h2>
+<ul>
+<li><strong>Typed damage splitting</strong> (separate visual chips for <code>1d8[fire] + 1d4[cold]</code>) isn&#39;t in the current release. It was intended to ship when the fork started, but the implementation file was missing from the source PR. It may land in a future release.</li>
+<li>See the <a href="https://github.com/arrowedisgaming/RSReforged/issues">issue tracker</a> for everything else.</li>
+</ul>
+<h2>Contributing</h2>
+<p>Issues and PRs welcome at <a href="https://github.com/arrowedisgaming/RSReforged">github.com/arrowedisgaming/RSReforged</a>. If a fix is also relevant upstream, consider opening it against <a href="https://github.com/MangoFVTT/fvtt-ready-set-roll-5e">MangoFVTT/fvtt-ready-set-roll-5e</a> too. Keeping the codebases close benefits everyone.</p>
+<h2>Credits</h2>
+<p>RSReforged is a maintained fork of <a href="https://github.com/MangoFVTT/fvtt-ready-set-roll-5e">Ready Set Roll for D&amp;D5e</a> by <a href="https://github.com/MangoFVTT">MangoFVTT</a>, itself a rewrite of <a href="https://github.com/RedReign/FoundryVTT-BetterRolls5e">Better Rolls for 5e</a> by <a href="https://github.com/RedReign">RedReign</a>. The fork started in early 2026 to keep the module working on Foundry v14 and dnd5e 5.3; the compatibility work came from <a href="https://github.com/MangoFVTT/fvtt-ready-set-roll-5e/pull/619">PR #619</a> by <a href="https://github.com/maxobremer">maxobremer</a>. Huge thanks to all three.</p>
+<p>A read-only snapshot of the upstream v3.5.0 source is kept at <a href="docs/upstream-v3.5.0-snapshot/"><code>docs/upstream-v3.5.0-snapshot/</code></a> for reference and diffing.</p>
+<h2>License</h2>
+<p>RSReforged is licensed under <strong>GPL-3.0</strong>, inherited from upstream RSR. Any derivative works must remain GPL-3.0. See <a href="LICENSE"><code>LICENSE</code></a> for the full text.</p>
+
