@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.3] — 2026-05-03
+
 ### Added
 - **Foundry package-listing HTML artifact and generator.** `scripts/generate-foundry-listing.sh` converts `README.md` to `docs/foundry-listing.html` via `npx --yes marked --gfm` (no local install), then applies three cleanup filters on top of the raw output: strips the duplicated `<h1>RSReforged</h1>` (Foundry shows the package name above the description already), strips the shields.io badges paragraph (Foundry surfaces version/compatibility/license through its own UI), and rewrites the `#setting-up-pre-defined-bonuses` in-page anchor to an absolute github.com URL (marked does not emit `id=` attributes on headings, so the bare anchor would be dead on Foundry's page). The artifact is committed so the paste-ready HTML for `foundryvtt.com/packages/rsreforged` stays in version control — Foundry's description field has no public API, so the listing has to be hand-edited via the admin form. Regenerate (`./scripts/generate-foundry-listing.sh`) and commit `docs/foundry-listing.html` in the same commit as any README change so the two can't drift.
 - **Screenshots at the top of the README** and declared in `module.json` via the Manifest+ `media` array. Images live in `assets/screenshots/` and are referenced with absolute `raw.githubusercontent.com` URLs so they render in GitHub, Foundry's in-app README pane, and The Forge's Bazaar listing. Foundry's own package listing at foundryvtt.com does not consume `media` and has no public API for media uploads, so the cover/screenshot gallery there still requires a manual edit via the package admin form on foundryvtt.com.
