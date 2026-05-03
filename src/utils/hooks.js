@@ -93,9 +93,16 @@ export class HooksUtility {
                     // passes to rollDamage. Cantrips skip the dialog — they have no slot
                     // choice and ActivityUtility falls through to rollData.scaling, which
                     // SpellData#scalingIncrease auto-computes from actor.cantripLevel.
+                    // Also preserve it for OrderActivity (bastion facility orders):
+                    // OrderUsageDialog is the only path that populates usageConfig.costs /
+                    // craft / trade, OrderActivity._prepareUsageScaling writes those
+                    // straight into the message flags, and _usageChatContext destructures
+                    // costs.days unconditionally — skipping the dialog leaves costs
+                    // undefined and crashes order resolution.
                     const isLeveledSpell = activity?.item?.type === "spell"
                         && (activity.item.system?.level ?? 0) > 0;
-                    if (!isLeveledSpell) {
+                    const isOrderActivity = activity?.type === "order";
+                    if (!isLeveledSpell && !isOrderActivity) {
                         dialogConfig.configure = false;
                     }
                     usageConfig.subsequentActions = false;
