@@ -27,3 +27,26 @@ export const MODULE_DEBUG_TAG = [
  * Path to the default image to use when an actor/item image isn't available.
  */
 export const DEFAULT_IMG = "icons/svg/mystery-man.svg";
+
+/**
+ * Enumerable of identifiers for different roll types that can be made.
+ * Lives here (rather than roll.js, which re-exports it) so that settings.js can
+ * consume it without creating a roll.js <-> settings.js import cycle.
+ * @enum {String}
+ */
+export const ROLL_TYPE = {
+    SKILL: "skill",
+    ABILITY_TEST: "ability",
+    ABILITY_SAVE: "save",
+    DEATH_SAVE: "death",
+    TOOL: "tool",
+    ACTIVITY: "activity",
+    CHECK: "check",
+    ATTACK: "attack",
+    DAMAGE: "damage",
+    VERSATILE: "versatile",
+    OTHER: "formula",
+    CONCENTRATION: "concentration",
+    HEALING: "healing",
+    FORMULA: "roll"
+}

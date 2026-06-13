@@ -590,17 +590,30 @@ async function _injectContent(message, type, html) {
         case ROLL_TYPE.ABILITY_TEST:
         case ROLL_TYPE.DEATH_SAVE:
         case ROLL_TYPE.TOOL:
+        // dnd5e currently stamps concentration saves as "save", but route the
+        // dedicated type here too so D20_NPC_ROLL_TYPES coverage is honored if a
+        // future system version stamps them directly.
+        case ROLL_TYPE.CONCENTRATION:
             if (!message.isContentVisible) return;
 
             const roll = ChatUtility.getMessageRolls(message)[0];
             if (!roll) return;
-            
+
+            // Wire the display options first; _configureRollVisibility overrides
+            // them when the roll should be hidden from this user.
             roll.options.displayChallenge = message.flags[MODULE_SHORT].displayChallenge;
             roll.options.forceSuccess = message.flags?.dnd5e?.roll?.forceSuccess ?? message.system?.roll?.forceSuccess;
+
+            const checkActor = ChatUtility.getActorFromMessage(message);
+            _configureRollVisibility(roll, type, checkActor);
 
             const render = await RenderUtility.render(TEMPLATE.MULTIROLL, { roll, key: type })
             html.find('.dice-total').replaceWith(render);
             html.find('.dice-tooltip').prepend(html.find('.dice-formula'));
+
+            if (roll.options.hideFinalResult) {
+                _applyHiddenRollPresentation(html, roll);
+            }
 
             if (message.flags[MODULE_SHORT].isConcentration)
             {
@@ -716,10 +729,10 @@ async function _injectAttackRoll(message, html, { contentHtml = html } = {}) {
 
     // dnd5e 5.3.0: Use getAssociatedActor() instead of game.actors.get(speaker.actor) so
     // that token actors (which are not in game.actors) are correctly resolved. Previously
-    // this always returned null for unlinked tokens, causing hideFinalAttack to silently
+    // this always returned null for unlinked tokens, causing hideFinalResult to silently
     // default to false for GMs viewing other players' rolls.
     const actor = ChatUtility.getActorFromMessage(message);
-    roll.options.hideFinalAttack = SettingsUtility.getSettingValue(SETTING_NAMES.HIDE_FINAL_RESULT_ENABLED) && !actor?.isOwner;
+    _configureRollVisibility(roll, ROLL_TYPE.ATTACK, actor);
 
     const render = await RenderUtility.render(TEMPLATE.MULTIROLL, { roll, key: ROLL_TYPE.ATTACK });
     const chatData = await roll.toMessage({}, { create: false });
@@ -733,9 +746,8 @@ async function _injectAttackRoll(message, html, { contentHtml = html } = {}) {
     rollHTML.find('.dice-total').replaceWith(render);
     rollHTML.find('.dice-tooltip').prepend(rollHTML.find('.dice-formula'));
 
-    if (roll.options.hideFinalAttack) {
-        rollHTML.find('.dice-tooltip').find('.tooltip-part.constant').remove();
-        rollHTML.find('.dice-formula').text("1d20 + " + CoreUtility.localize(`${MODULE_SHORT}.chat.hide`));
+    if (roll.options.hideFinalResult) {
+        _applyHiddenRollPresentation(rollHTML, roll);
     }   
 
     // dnd5e 5.3.0: getAssociatedActor() correctly resolves token actors.
@@ -753,6 +765,30 @@ async function _injectAttackRoll(message, html, { contentHtml = html } = {}) {
     _safeInsert(sectionHTML, html);
 
     Hooks.callAll(`${MODULE_SHORT}.renderRoll`, message, contentHtml, ROLL_TYPE.ATTACK, sectionHTML);
+}
+
+function _configureRollVisibility(roll, rollType, actor) {
+    roll.options.hideFinalResult = SettingsUtility.shouldHideNpcRollForActor(actor, rollType);
+    if (roll.options.hideFinalResult) {
+        // Suppress everything that would reveal the outcome of a hidden roll:
+        // the DC pass/fail icon and forced-success crit styling.
+        roll.options.displayChallenge = false;
+        roll.options.forceSuccess = false;
+    }
+}
+
+function _applyHiddenRollPresentation(rollHTML, roll) {
+    if (!roll?.options?.hideFinalResult) return;
+
+    // Reveal only the natural d20. Removing flat modifiers (.tooltip-part.constant)
+    // is not enough: bonus dice such as Bless or Guidance render as their own
+    // non-constant tooltip part (li.roll.die.dN) and would otherwise leak both the
+    // buff and the rolled value. Drop every tooltip part that is not a d20 die.
+    rollHTML.find('.dice-tooltip .tooltip-part').each((_i, el) => {
+        const part = $(el);
+        if (part.find('.roll.d20').length === 0) part.remove();
+    });
+    rollHTML.find('.dice-formula').text("1d20 + " + CoreUtility.localize(`${MODULE_SHORT}.chat.hide`));
 }
 
 async function _injectFormulaRoll(message, html, { contentHtml = html } = {}) {
@@ -782,7 +818,7 @@ async function _injectFormulaRoll(message, html, { contentHtml = html } = {}) {
 }
 
 async function _injectDamageRoll(message, html, { mode = "rsr", contentHtml = html } = {}) {
-    const rolls = ChatUtility.getMessageRolls(message).filter(r => r instanceof CONFIG.Dice.DamageRoll || r.class === "DamageRoll" || r.constructor?.name === "DamageRoll");
+    const rolls = _getDamageRolls(message);
 
     if (!rolls || rolls.length === 0) return;
 
@@ -962,7 +998,7 @@ async function _processApplyButtonEvent(message, event) {
     
     const button = event.currentTarget;
     const action = button.dataset.action;
-    const multiplier = button.dataset.multiplier;
+    const multiplier = Number(button.dataset.multiplier);
     const dice = $(button).closest('.tooltip-part').find('.dice');
 
     if (action !== "rsr-apply-damage" && action !== "rsr-apply-temp") return;
@@ -971,12 +1007,21 @@ async function _processApplyButtonEvent(message, event) {
 
     if (targets.size === 0) return;
 
-    const isTempHP = action === "rsr-apply-temp";
     const damage = _getApplyDamage(message, dice, multiplier);
 
+    // These are invariant across targets — compute once instead of per-token. The
+    // multiplier MAGNITUDE is what applyDamage scales by; heal-vs-damage direction
+    // is carried by the damage type / the only:"healing" option, not the sign (the
+    // total-button path already passes the magnitude, so the two paths now match).
+    const applyAsTempHP = _shouldApplyAsTempHP(action, [damage]);
+    const tempHPValue = Math.floor(damage.value * Math.abs(multiplier));
+    const applyOptions = _getApplyDamageOptions(message, [damage], Math.abs(multiplier), multiplier < 0);
+
     await Promise.all(Array.from(targets).map(async t => {
-        const target = t.actor;        
-        return isTempHP ? await target.applyTempHP(damage.value) : await target.applyDamage([ damage ], { multiplier });
+        const target = t.actor;
+        return applyAsTempHP
+            ? await target.applyTempHP(tempHPValue)
+            : await target.applyDamage([ damage ], applyOptions);
     }));
 
     setTimeout(() => {
@@ -1000,20 +1045,27 @@ async function _processApplyTotalButtonEvent(message, event) {
 
     if (targets.size === 0) return;
     
-    const isTempHP = action === "rsr-apply-temp";
     const damages = [];
 
+    // Deserialize the message rolls once for the whole loop instead of re-fetching
+    // (and re-deserializing) them inside _getApplyDamage for every damage die.
+    const damageRolls = _getDamageRolls(message);
     const children = $(button).closest('.dice-roll').find('.rsr-damage .dice-tooltip .tooltip-part .dice');
 
     children.each((i, el) => {
-        damages.push(_getApplyDamage(message, $(el), multiplier));
+        damages.push(_getApplyDamage(message, $(el), multiplier, damageRolls));
     })
 
+    // Invariant across targets — compute once instead of per-token.
+    const applyAsTempHP = _shouldApplyAsTempHP(action, damages);
+    const tempHPValue = Math.floor(damages.reduce((accumulator, currentValue) => accumulator + currentValue.value, 0) * Math.abs(multiplier));
+    const applyOptions = _getApplyDamageOptions(message, damages, Math.abs(multiplier), multiplier < 0);
+
     await Promise.all(Array.from(targets).map(async t => {
-        const target = t.actor;        
-        return isTempHP 
-            ? await target.applyTempHP(damages.reduce((accumulator, currentValue) => accumulator + currentValue.value, 0)) 
-            : await target.applyDamage(damages, { multiplier: Math.abs(multiplier) });
+        const target = t.actor;
+        return applyAsTempHP
+            ? await target.applyTempHP(tempHPValue)
+            : await target.applyDamage(damages, applyOptions);
     }));
 
     setTimeout(() => {
@@ -1023,14 +1075,116 @@ async function _processApplyTotalButtonEvent(message, event) {
     }, 50);
 }
 
-function _getApplyDamage(message, dice, multiplier) {
+function _getApplyDamage(message, dice, multiplier, damageRolls = _getDamageRolls(message)) {
     const total = dice.find('.total')
-    const value = parseInt(total.find('.value').text());
-    const type = total.find('.label').text().toLowerCase();
+    const parsed = parseInt(total.find('.value').text());
+    // A non-numeric/empty total would otherwise propagate NaN into applyDamage /
+    // applyTempHP and write NaN into the target's HP; fail safe to a 0 no-op.
+    const value = Number.isFinite(parsed) ? parsed : 0;
+    const type = _getApplyDamageType(damageRolls, total);
 
-    const rolls = ChatUtility.getMessageRolls(message);
-    const properties = new Set(rolls.find(r => r instanceof CONFIG.Dice.DamageRoll || r.class === "DamageRoll")?.options?.properties ?? []);
-    return { value: value, type: multiplier < 0 ? 'healing' : type, properties: properties };
+    const properties = new Set(
+        (damageRolls.find(r => r.options?.type === type) ?? damageRolls[0])?.options?.properties ?? []
+    );
+    // A negative multiplier comes from the "apply as healing" button. Temp-HP and
+    // max-HP ("maximum") rolls carry their own application semantics (applyTempHP /
+    // dnd5e's only:"healing" path), so keep their type intact instead of collapsing
+    // it to 'healing' — otherwise the heart button would strip the type those paths
+    // key on (e.g. an Aid max-HP roll would be dealt as damage).
+    const resolvedType = (multiplier < 0 && type !== "temphp" && type !== "maximum") ? 'healing' : type;
+    return { value: value, type: resolvedType, properties: properties };
+}
+
+function _shouldApplyAsTempHP(action, damages) {
+    return action === "rsr-apply-temp" || (damages.length > 0 && damages.every(d => d.type === "temphp"));
+}
+
+function _getApplyDamageOptions(message, damages, multiplier, healingIntent = false) {
+    const options = { multiplier };
+
+    // dnd5e treats "maximum" as max-HP reduction unless the application is explicitly
+    // healing. Route it to max-HP restoration when the source is a healing activity
+    // (e.g. Aid) OR when the user clicked the heart/healing button — the heart is an
+    // explicit "apply as healing" signal, so it must restore max HP, not reduce it.
+    if (damages.some(d => d.type === "maximum") && (healingIntent || _isHealingApplyMessage(message))) {
+        options.only = "healing";
+    }
+
+    return options;
+}
+
+function _isHealingApplyMessage(message) {
+    return message.flags?.[MODULE_SHORT]?.isHealing === true
+        || ChatUtility.getActivityType(message) === "heal"
+        || message.flags?.dnd5e?.roll?.type === ROLL_TYPE.HEALING
+        || message.system?.roll?.type === ROLL_TYPE.HEALING;
+}
+
+function _getApplyDamageType(damageRolls, total) {
+    const iconType = _getDamageTypeFromIcon(total.find('img').attr('src'));
+    if (iconType) return iconType;
+
+    const labelType = _getDamageTypeFromLabel(total.find('.label').text());
+    if (labelType) return labelType;
+
+    // No DOM signal matched a known type. Prefer an authoritative roll type (so
+    // applyDamage still honors resistances/immunities) over a raw label string,
+    // which on a multi-type roll would not match any CONFIG.DND5E damage key. When
+    // exactly one roll type exists this returns it; with several it picks the first,
+    // which the previous explicit single-type tier resolved to identically.
+    return damageRolls.find(r => r.options?.type)?.options?.type
+        ?? total.find('.label').text().trim().toLowerCase();
+}
+
+function _getDamageTypeFromIcon(src = "") {
+    const iconType = src.match(/\/damage\/([^/.]+)\./)?.[1];
+    if (!iconType) return null;
+    if (iconType === "maxhp") return "maximum";
+    if (CONFIG.DND5E.damageTypes?.[iconType] || CONFIG.DND5E.healingTypes?.[iconType]) return iconType;
+    return null;
+}
+
+let _damageLabelToTypeCache = null;
+
+/**
+ * Lazily-built, cached reverse map of normalized damage/healing labels (plus the
+ * type keys and short labels) to their dnd5e type key. Rebuilding the merged map
+ * on every apply click was wasted work, but the cache is rebuilt if the registered
+ * type set changes size (e.g. a module adds damage/healing types after first use)
+ * so it cannot go stale against late registrations.
+ */
+function _getDamageLabelToTypeMap() {
+    const entries = {
+        ...(CONFIG.DND5E.damageTypes ?? {}),
+        ...(CONFIG.DND5E.healingTypes ?? {})
+    };
+    const typeCount = Object.keys(entries).length;
+    if (_damageLabelToTypeCache?.typeCount === typeCount) return _damageLabelToTypeCache.map;
+
+    const map = new Map();
+    for (const [type, config] of Object.entries(entries)) {
+        for (const value of [type, config?.label, config?.labelShort]) {
+            if (value) map.set(String(value).trim().toLowerCase(), type);
+        }
+    }
+    _damageLabelToTypeCache = { typeCount, map };
+    return map;
+}
+
+function _getDamageTypeFromLabel(label = "") {
+    const normalized = label.trim().toLowerCase();
+    if (!normalized) return null;
+    return _getDamageLabelToTypeMap().get(normalized) ?? null;
+}
+
+function _isDamageRoll(roll) {
+    return roll instanceof CONFIG.Dice.DamageRoll
+        || roll.class === "DamageRoll"
+        || roll.constructor?.name === "DamageRoll";
+}
+
+function _getDamageRolls(message) {
+    return ChatUtility.getMessageRolls(message).filter(_isDamageRoll);
 }
 
 async function _processRetroAdvButtonEvent(message, event) {
@@ -1111,7 +1265,7 @@ async function _processRetroCritButtonEvent(message, event) {
         const originalRolls = ChatUtility.getMessageRolls(message);
         let newRolls = Array.from(originalRolls);
 
-        const rolls = originalRolls.filter(r => r instanceof CONFIG.Dice.DamageRoll || r.class === "DamageRoll");
+        const rolls = originalRolls.filter(_isDamageRoll);
         const crits = await ActivityUtility.getDamageFromMessage(message);
 
         // Retain original behavior for MIDI users if required

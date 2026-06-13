@@ -110,6 +110,45 @@ describe("RenderUtility", () => {
             expect.objectContaining({ total: 12 })
         );
     });
+
+    it("suppresses DC outcome metadata when hideFinalResult is set on the roll", async () => {
+        const env = await setupFoundryEnv();
+        const { RenderUtility } = await import("../src/utils/render.js");
+        const { TEMPLATE } = await import("../src/module/templates.js");
+        const { makeRoll } = await import("./helpers/foundry-env.mjs");
+
+        const roll = makeRoll(env.classes.D20Roll, {
+            formula: "1d20+5",
+            total: 18,
+            faces: 20,
+            results: [13]
+        });
+        // _configureRollVisibility is the single owner of the hide rule: whenever
+        // it sets hideFinalResult, it also clears displayChallenge and forceSuccess.
+        // The render layer trusts that contract, so mirror it here.
+        roll.options = {
+            hideFinalResult: true,
+            displayChallenge: false,
+            forceSuccess: false,
+            target: 15,
+            criticalSuccess: 20,
+            criticalFailure: 1
+        };
+
+        await RenderUtility.render(TEMPLATE.MULTIROLL, { roll, key: "skill" });
+
+        expect(foundry.applications.handlebars.renderTemplate).toHaveBeenCalledWith(
+            "modules/rsreforged/templates/rsr-multiroll.html",
+            expect.objectContaining({
+                entries: [
+                    expect.objectContaining({
+                        hideTotal: true,
+                        dcResult: undefined
+                    })
+                ]
+            })
+        );
+    });
 });
 
 describe("LogUtility and DialogUtility", () => {

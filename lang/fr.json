@@ -19,6 +19,10 @@
             "aggregateDamage.hint": "Lors d'un jet rapide, combine tous les champs de dégâts du même type en un seul champ.",
             "enableD20Icons.name": "Afficher les Résultats du D20 pour les Jets Rapides",
             "enableD20Icons.hint": "Lors d'un jet rapide, affiche une icône montrant le résultat naturel du dé à côté du total.",
+            "hideNpcRollMode.name": "Masquer les Résultats des Jets PNJ",
+            "hideNpcRollMode.hint": "Pour les jets rapides effectués par des acteurs qu'un joueur ne possède pas, masque le total modifié et les modificateurs afin que seul le résultat naturel du d20 soit visible. Les totaux de dégâts et de soins restent toujours visibles. Le MJ et les propriétaires de l'acteur voient toujours les résultats complets.",
+            "enableHideFinalResult.name": "Masquer le Résultat des Attaques PNJ (Hérité)",
+            "enableHideFinalResult.hint": "Paramètre hérité conservé pour les anciens mondes. Utilisez Masquer les Résultats des Jets PNJ.",
             "enableDiceReroll.name": "Activer le Relancer de Dés",
             "enableDiceReroll.hint": "Lors d'un jet rapide, permet de cliquer sur un dé spécifique dans l'infobulle du message de chat pour relancer ce dé sur place.",
             "enableOverlayButtons.name": "Activer les Boutons de Superposition",
@@ -56,6 +60,11 @@
                 "0": "Jamais",
                 "1": "Seulement pour les jets d'attaque",
                 "2": "Toujours"
+            },
+            "hideNpcRollMode": {
+                "none": "Désactivé",
+                "attacks": "Attaques PNJ uniquement",
+                "all": "Tous les jets d20 PNJ (sauf dégâts)"
             }
         },
         "sheet": {

@@ -1,4 +1,4 @@
-import { MODULE_NAME, MODULE_SHORT } from "../module/const.js";
+import { MODULE_NAME, MODULE_SHORT, ROLL_TYPE } from "../module/const.js";
 import { CoreUtility } from "./core.js";
 import { LogUtility } from "./log.js";
 
@@ -15,6 +15,7 @@ export const SETTING_NAMES = {
     ALWAYS_ROLL_MULTIROLL: "alwaysRollMulti",
     D20_ICONS_ENABLED: "enableD20Icons",
     HIDE_FINAL_RESULT_ENABLED: "enableHideFinalResult",
+    HIDE_NPC_ROLL_MODE: "hideNpcRollMode",
     MANUAL_DAMAGE_MODE: "manualDamageMode",
     OVERLAY_BUTTONS_ENABLED: "enableOverlayButtons",
     DAMAGE_APPLY_MODE: "damageApplyMode",
@@ -39,6 +40,24 @@ export const DAMAGE_APPLY_MODES = {
     DND5E: "dnd5e",
     RSR: "rsr"
 }
+
+export const HIDE_NPC_ROLL_MODES = {
+    NONE: "none",
+    ATTACKS: "attacks",
+    ALL: "all"
+}
+
+const D20_NPC_ROLL_TYPES = [
+    ROLL_TYPE.ATTACK,
+    ROLL_TYPE.SKILL,
+    ROLL_TYPE.ABILITY_SAVE,
+    ROLL_TYPE.ABILITY_TEST,
+    ROLL_TYPE.DEATH_SAVE,
+    ROLL_TYPE.TOOL,
+    // dnd5e stamps concentration saves as type "save", but include the dedicated
+    // type defensively in case a future system version stamps them directly.
+    ROLL_TYPE.CONCENTRATION
+];
 
 /**
  * Utility class for registry of module settings and retrieval of setting data.
@@ -134,7 +153,6 @@ export class SettingsUtility {
         const chatCardOptions = [
             { name: SETTING_NAMES.AGGREGATE_DAMAGE, default: false },
             { name: SETTING_NAMES.D20_ICONS_ENABLED, default: true },
-            { name: SETTING_NAMES.HIDE_FINAL_RESULT_ENABLED, default: false },
             //{ name: SETTING_NAMES.DICE_REROLL_ENABLED, default: true },
             { name: SETTING_NAMES.OVERLAY_BUTTONS_ENABLED, default: true },
             { name: SETTING_NAMES.ALWAYS_SHOW_BUTTONS, default: true },
@@ -152,6 +170,37 @@ export class SettingsUtility {
                 default: option.default,
                 requiresReload: true
             });
+        });
+
+        game.settings.register(MODULE_NAME, SETTING_NAMES.HIDE_NPC_ROLL_MODE, {
+            name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.HIDE_NPC_ROLL_MODE}.name`),
+            hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.HIDE_NPC_ROLL_MODE}.hint`),
+            scope: "world",
+            config: true,
+            type: String,
+            default: HIDE_NPC_ROLL_MODES.NONE,
+            requiresReload: true,
+            choices: {
+                [HIDE_NPC_ROLL_MODES.NONE]: CoreUtility.localize(`${MODULE_SHORT}.choices.hideNpcRollMode.${HIDE_NPC_ROLL_MODES.NONE}`),
+                [HIDE_NPC_ROLL_MODES.ATTACKS]: CoreUtility.localize(`${MODULE_SHORT}.choices.hideNpcRollMode.${HIDE_NPC_ROLL_MODES.ATTACKS}`),
+                [HIDE_NPC_ROLL_MODES.ALL]: CoreUtility.localize(`${MODULE_SHORT}.choices.hideNpcRollMode.${HIDE_NPC_ROLL_MODES.ALL}`)
+            }
+        });
+
+        game.settings.register(MODULE_NAME, SETTING_NAMES.HIDE_FINAL_RESULT_ENABLED, {
+            // Preserve the old world setting key so existing worlds do not lose stored data.
+            // New behavior is controlled by HIDE_NPC_ROLL_MODE.
+            name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.HIDE_FINAL_RESULT_ENABLED}.name`),
+            hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.HIDE_FINAL_RESULT_ENABLED}.hint`),
+            scope: "world",
+            config: false,
+            type: Boolean,
+            default: false,
+            // Internal migration flag only — never shown in the UI and never affects
+            // rendering directly, so it must not be reload-flagged. Otherwise the
+            // one-shot migration write that clears it would pop Foundry's "reload
+            // required" prompt on the first post-upgrade world load.
+            requiresReload: false
         });
         
         game.settings.register(MODULE_NAME, SETTING_NAMES.APPLY_DAMAGE_TO, {
@@ -199,6 +248,47 @@ export class SettingsUtility {
      */
     static getSettingValue(settingKey) {
         return game.settings.get(MODULE_NAME, settingKey);
+    }
+
+    /**
+     * Whether the configured hide mode applies to the given roll type.
+     * Damage and healing totals are never hidden.
+     * @param {string} rollType
+     * @returns {boolean}
+     */
+    static shouldHideNpcRollTotal(rollType) {
+        let mode = SettingsUtility.getSettingValue(SETTING_NAMES.HIDE_NPC_ROLL_MODE);
+
+        // Migration safety net: the legacy->mode migration is GM-only and runs at
+        // ready, so in a freshly-upgraded world a non-GM client (or any client before
+        // a GM has loaded) can render chat while mode is still the default "none" but
+        // the legacy enableHideFinalResult flag is still set. Honor that flag as
+        // attack-only hiding (its original behavior) until the migration clears it,
+        // so NPC attack totals are not briefly exposed. Read-only — no write here.
+        if (mode === HIDE_NPC_ROLL_MODES.NONE
+            && SettingsUtility.getSettingValue(SETTING_NAMES.HIDE_FINAL_RESULT_ENABLED)) {
+            mode = HIDE_NPC_ROLL_MODES.ATTACKS;
+        }
+
+        if (mode === HIDE_NPC_ROLL_MODES.NONE) return false;
+        if (rollType === ROLL_TYPE.DAMAGE || rollType === ROLL_TYPE.HEALING) return false;
+        if (mode === HIDE_NPC_ROLL_MODES.ATTACKS) return rollType === ROLL_TYPE.ATTACK;
+        return D20_NPC_ROLL_TYPES.includes(rollType);
+    }
+
+    /**
+     * Whether a roll total should be hidden for the viewing user.
+     * GMs and actor owners always see full results. Unresolvable actors fail
+     * closed: if ownership cannot be determined, the total is hidden from
+     * non-GM users rather than leaked.
+     * @param {Actor5e|null|undefined} actor
+     * @param {string} rollType
+     * @returns {boolean}
+     */
+    static shouldHideNpcRollForActor(actor, rollType) {
+        if (!SettingsUtility.shouldHideNpcRollTotal(rollType)) return false;
+        if (game.user.isGM) return false;
+        return !actor?.isOwner;
     }
 
     static get _useRsrDamageApplyButtons() {

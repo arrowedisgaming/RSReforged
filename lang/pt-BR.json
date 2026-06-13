@@ -19,6 +19,10 @@
 			"manualDamageMode.hint": "Ao emitir a mensagem de rolagem rápida, não rolar o dano junto. Em vez disso, mostrar um botão de dano para rolar manualmente se houver dano configurado.",
 			"enableD20Icons.name": "Mostrar Rolagens do D20 em Rolagens Rápidas",
 			"enableD20Icons.hint": "Ao emitir a mensagem de rolagem rápida, mostrar um ícone com o valor da rolagem natural ao lado do resultado total.",
+			"hideNpcRollMode.name": "Ocultar Resultados de Rolagens de PNJ",
+			"hideNpcRollMode.hint": "Para rolagens rápidas feitas por atores que o jogador não possui, oculta o total modificado e os modificadores para que apenas o resultado natural do d20 fique visível. Totais de dano e cura são sempre exibidos. MJs e donos do ator sempre veem os resultados completos.",
+			"enableHideFinalResult.name": "Ocultar Resultado de Ataques de PNJ (Legado)",
+			"enableHideFinalResult.hint": "Configuração legada preservada para mundos antigos. Use Ocultar Resultados de Rolagens de PNJ.",
 			"enableDiceReroll.name": "Habilitar Rerrolagem de Dados",
 			"enableDiceReroll.hint": "Ao gerar uma rolagem rápida, habilitar a possibilidade de clicar em um dado específico nos detalhes da rolagem para rolar novamente aquele dado.",
 			"enableOverlayButtons.name": "Habilitar Botões de Overlay",
@@ -62,6 +66,11 @@
 				"2": "Sempre",
 				"1": "Somente Jogadas de Ataque",
 				"0": "Nunca"
+			},
+			"hideNpcRollMode": {
+				"none": "Desligado",
+				"attacks": "Somente Ataques de PNJ",
+				"all": "Todas as Rolagens d20 de PNJ (Exceto Dano)"
 			}
 		},
 		"sheet": {

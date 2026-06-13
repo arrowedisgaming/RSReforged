@@ -19,8 +19,10 @@
             "aggregateDamage.hint": "When outputting a quick roll, combine all damage fields of the same type into a single field.",
             "enableD20Icons.name": "Show D20 Rolls for Quick Rolls",
             "enableD20Icons.hint": "When outputting a quick roll, display an icon showing the natural die roll next to the total result.",
-            "enableHideFinalResult.name": "Hide Result of NPC Attacks",
-            "enableHideFinalResult.hint": "When outputting a quick roll with an attack made by an actor that a player does not own, hide the final modified result of the roll so that only the result of the d20 is visible.",
+            "hideNpcRollMode.name": "Hide NPC Roll Results",
+            "hideNpcRollMode.hint": "For quick rolls made by actors a player does not own, hide the modified total and modifiers so only the natural d20 result is visible. Damage and healing totals are always shown. GMs and actor owners always see full results.",
+            "enableHideFinalResult.name": "Hide Result of NPC Attacks (Legacy)",
+            "enableHideFinalResult.hint": "Legacy setting preserved for older worlds. Use Hide NPC Roll Results instead.",
             "enableDiceReroll.name": "Enable Dice Rerolling",
             "enableDiceReroll.hint": "When outputting a quick roll, enable the ability to click a specific die in the chat message tooltip to reroll that die in place.",
             "enableOverlayButtons.name": "Enable Overlay Buttons",
@@ -68,6 +70,11 @@
                 "0": "Never",
                 "1": "Attack Rolls Only",
                 "2": "Always"
+            },
+            "hideNpcRollMode": {
+                "none": "Off",
+                "attacks": "NPC Attacks Only",
+                "all": "All NPC d20 Rolls (Except Damage)"
             }
         },
         "sheet": {

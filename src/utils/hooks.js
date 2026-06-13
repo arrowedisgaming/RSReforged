@@ -6,7 +6,7 @@ import { ChatUtility } from "./chat.js";
 import { CoreUtility } from "./core.js";
 import { LogUtility } from "./log.js";
 import { KEYBIND_VERSATILE_TWO_HANDED, ROLL_TYPE, RollUtility } from "./roll.js";
-import { SETTING_NAMES, SettingsUtility } from "./settings.js";
+import { SETTING_NAMES, SettingsUtility, HIDE_NPC_ROLL_MODES } from "./settings.js";
 
 export const HOOKS_CORE = { INIT: "init", READY: "ready" }
 
@@ -40,13 +40,14 @@ export class HooksUtility {
             RerollManager.registerGlobalListener();
         });
 
-        Hooks.on(HOOKS_CORE.READY, () => {
+        Hooks.on(HOOKS_CORE.READY, async () => {
             CONFIG[MODULE_SHORT].combinedDamageTypes = foundry.utils.mergeObject(
                 Object.fromEntries(Object.entries(CONFIG.DND5E.damageTypes).map(([k, v]) => [k, v.label])),
                 Object.fromEntries(Object.entries(CONFIG.DND5E.healingTypes).map(([k, v]) => [k, v.label])),
                 { recursive: false }
             );
             CONFIG.DND5E.aggregateDamageDisplay = SettingsUtility.getSettingValue(SETTING_NAMES.AGGREGATE_DAMAGE) ?? true;
+            await _migrateHideNpcRollSetting().catch(err => LogUtility.logError(`Failed to migrate hide NPC roll setting: ${err}`));
             LogUtility.log(`Loaded ${MODULE_TITLE}`);
         });
     }
@@ -287,4 +288,23 @@ export class HooksUtility {
 
     static registerSheetHooks() {}
     static registerIntegrationHooks() {}
+}
+
+async function _migrateHideNpcRollSetting() {
+    // Both settings are world-scoped and only GMs may write those, so non-GM
+    // clients must not attempt the migration (the set call would throw).
+    if (!game.user.isGM) return;
+
+    const legacyEnabled = SettingsUtility.getSettingValue(SETTING_NAMES.HIDE_FINAL_RESULT_ENABLED);
+    if (!legacyEnabled) return;
+
+    const currentMode = SettingsUtility.getSettingValue(SETTING_NAMES.HIDE_NPC_ROLL_MODE);
+    if (currentMode === HIDE_NPC_ROLL_MODES.NONE) {
+        await game.settings.set(MODULE_NAME, SETTING_NAMES.HIDE_NPC_ROLL_MODE, HIDE_NPC_ROLL_MODES.ATTACKS);
+    }
+
+    // Clear the legacy flag so the migration is one-shot. Without this, a GM who
+    // deliberately sets the new mode back to "none" would have it silently forced
+    // back to "attacks" on every subsequent reload.
+    await game.settings.set(MODULE_NAME, SETTING_NAMES.HIDE_FINAL_RESULT_ENABLED, false);
 }

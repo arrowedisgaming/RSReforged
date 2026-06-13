@@ -28,6 +28,7 @@ export async function setupFoundryEnv(options = {}) {
         alwaysRollMulti: false,
         enableOverlayButtons: false,
         enableHideFinalResult: false,
+        hideNpcRollMode: "none",
         alwaysShowButtons: true,
         enableD20Icons: true,
         applyDamageTo: 0,
@@ -243,12 +244,16 @@ export async function setupFoundryEnv(options = {}) {
 
     function renderRollHtml(roll) {
         const total = roll.total ?? roll._total ?? 0;
+        const damageConfig = CONFIG.DND5E.damageTypes[roll.options?.type] ?? CONFIG.DND5E.healingTypes[roll.options?.type];
+        const damageTotal = damageConfig
+            ? `<div class="total"><img src="${damageConfig.icon}" alt="${damageConfig.label}"><span class="label">${damageConfig.labelShort ?? damageConfig.label}</span><span class="value">${total}</span></div>`
+            : `<div class="total"><span class="label">${roll.options?.type ?? ""}</span><span class="value">${total}</span></div>`;
         const dice = roll.dice?.length
             ? roll.dice.map((die) => {
                 const rolls = die.results.map((result) => `<span class="roll die">${result.result}</span>`).join("");
-                return `<section class="tooltip-part"><div class="dice">${rolls}</div></section>`;
+                return `<section class="tooltip-part"><div class="dice">${rolls}${damageTotal}</div></section>`;
             }).join("")
-            : `<section class="tooltip-part"><div class="dice"><span class="roll die">${total}</span></div></section>`;
+            : `<section class="tooltip-part"><div class="dice"><span class="roll die">${total}</span>${damageTotal}</div></section>`;
 
         return `<div class="dice-roll"><div class="dice-result"><div class="dice-formula">${roll.formula}</div><div class="dice-total">${total}</div><div class="dice-tooltip"><div class="dice-rolls">${dice}</div></div></div></div>`;
     }
@@ -264,8 +269,30 @@ export async function setupFoundryEnv(options = {}) {
             terms: { d: TestDie }
         },
         DND5E: {
-            damageTypes: { slashing: { label: "Slashing" } },
-            healingTypes: { healing: { label: "Healing" } },
+            damageTypes: {
+                slashing: {
+                    label: "Slashing",
+                    labelShort: "Slashing",
+                    icon: "systems/dnd5e/icons/svg/damage/slashing.svg"
+                }
+            },
+            healingTypes: {
+                healing: {
+                    label: "Healing",
+                    labelShort: "Healing",
+                    icon: "systems/dnd5e/icons/svg/damage/healing.svg"
+                },
+                temphp: {
+                    label: "Temporary",
+                    labelShort: "Temporary",
+                    icon: "systems/dnd5e/icons/svg/damage/temphp.svg"
+                },
+                maximum: {
+                    label: "Maximum",
+                    labelShort: "Maximum",
+                    icon: "systems/dnd5e/icons/svg/damage/maxhp.svg"
+                }
+            },
             aggregateDamageDisplay: true
         },
         sounds: { dice: "dice.wav" },
@@ -359,6 +386,9 @@ export async function setupFoundryEnv(options = {}) {
             register: vi.fn((namespace, key, config) => {
                 registeredSettings.set(key, config);
                 if (namespace === "rsreforged") settings[key] ??= config.default;
+            }),
+            set: vi.fn((namespace, key, value) => {
+                if (namespace === "rsreforged") settings[key] = value;
             })
         },
         modules: {
@@ -412,10 +442,12 @@ export async function setupFoundryEnv(options = {}) {
     };
 }
 
-export function makeRoll(RollClass, { formula = "1", total = 1, faces = null, results = [] } = {}) {
+export function makeRoll(RollClass, { formula = "1", total = 1, faces = null, results = [], type = null, properties = [] } = {}) {
     const roll = new RollClass(formula);
     roll.total = total;
     roll._total = total;
+    if (type) roll.options.type = type;
+    if (properties.length) roll.options.properties = properties;
     if (faces) {
         const die = new foundry.dice.terms.Die({
             number: results.length || 1,

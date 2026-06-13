@@ -78,16 +78,19 @@ async function _renderMultiRoll(data = {}) {
         const baseRoll = Roll.fromTerms([baseTerm]);
 
         const total = baseRoll.total + (bonusRoll?.total ?? 0);
+        const hideTotal = roll.options.hideFinalResult;
 
         entries.push({
 			roll: baseRoll,
 			total: total,
 			ignored: tmpResults.some(r => r.discarded) ? true : undefined,
+            // Hidden rolls already have displayChallenge and forceSuccess cleared
+            // by _configureRollVisibility, so no extra suppression is needed here.
             critType: RollUtility.getCritTypeForDie(baseTerm, critOptions),
             d20Result: SettingsUtility.getSettingValue(SETTING_NAMES.D20_ICONS_ENABLED) ? d20Rolls.results[i].result : null,
-            hideAttack: roll.options.hideFinalAttack,
-            dcResult: !critOptions.displayChallenge || isNaN(roll.options.target) 
-                ? undefined 
+            hideTotal,
+            dcResult: !critOptions.displayChallenge || isNaN(roll.options.target)
+                ? undefined
                 : (roll.options.forceSuccess || total >= roll.options.target ? "fas fa-check" : "fas fa-xmark")
 		});
     }

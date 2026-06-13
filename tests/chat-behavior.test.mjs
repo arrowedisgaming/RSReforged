@@ -5,7 +5,9 @@ describe("ChatUtility message lifecycle behavior", () => {
     let env;
     let ChatUtility;
     let ActivityUtility;
+    let RenderUtility;
     let MODULE_SHORT;
+    let TEMPLATE;
 
     beforeEach(async () => {
         vi.resetModules();
@@ -13,6 +15,8 @@ describe("ChatUtility message lifecycle behavior", () => {
         ({ MODULE_SHORT } = await import("../src/module/const.js"));
         ({ ChatUtility } = await import("../src/utils/chat.js"));
         ({ ActivityUtility } = await import("../src/utils/activity.js"));
+        ({ RenderUtility } = await import("../src/utils/render.js"));
+        ({ TEMPLATE } = await import("../src/module/templates.js"));
     });
 
     afterEach(() => {
@@ -167,6 +171,222 @@ describe("ChatUtility message lifecycle behavior", () => {
         expect(env.hookCalls.filter((call) => call.name === `${MODULE_SHORT}.renderRoll`).map((call) => call.args[2])).toEqual(["damage"]);
     });
 
+    it("applies temporary hit point rolls as temporary HP from the RSR x1 button (issue #20)", async () => {
+        const actor = {
+            applyTempHP: vi.fn(async () => undefined),
+            applyDamage: vi.fn(async () => undefined)
+        };
+        canvas.tokens.controlled = [{ actor }];
+
+        const tempHP = makeRoll(env.classes.DamageRoll, { formula: "1d6+2", total: 7, type: "temphp", faces: 6, results: [5] });
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderDamage: true,
+                    rolls: [tempHP]
+                },
+                dnd5e: { activity: { type: "heal" } }
+            }
+        });
+        const html = $(`<article class="chat-message" data-message-id="${message.id}"><div class="message-content"><div class="dnd5e2 chat-card usage-card"><div class="card-buttons"></div></div></div></article>`);
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+        const result = html.find('.rsr-damage-buttons-xl [data-action="rsr-apply-damage"][data-multiplier="1"]').triggerHandler("click");
+        if (result?.then) await result;
+
+        expect(actor.applyTempHP).toHaveBeenCalledWith(7);
+        expect(actor.applyDamage).not.toHaveBeenCalled();
+    });
+
+    it("keeps maximum hit point reduction as maximum damage from the RSR x1 button", async () => {
+        const actor = {
+            applyTempHP: vi.fn(async () => undefined),
+            applyDamage: vi.fn(async () => undefined)
+        };
+        canvas.tokens.controlled = [{ actor }];
+
+        const maxHP = makeRoll(env.classes.DamageRoll, { formula: "1d4", total: 4, type: "maximum", faces: 4, results: [4] });
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderDamage: true,
+                    rolls: [maxHP]
+                },
+                dnd5e: { activity: { type: "damage" } }
+            }
+        });
+        const html = $(`<article class="chat-message" data-message-id="${message.id}"><div class="message-content"><div class="dnd5e2 chat-card usage-card"><div class="card-buttons"></div></div></div></article>`);
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+        const result = html.find('.rsr-damage-buttons-xl [data-action="rsr-apply-damage"][data-multiplier="1"]').triggerHandler("click");
+        if (result?.then) await result;
+
+        expect(actor.applyTempHP).not.toHaveBeenCalled();
+        expect(actor.applyDamage).toHaveBeenCalledTimes(1);
+        expect(actor.applyDamage.mock.calls[0][0]).toEqual([
+            { value: 4, type: "maximum", properties: expect.any(Set) }
+        ]);
+        expect(actor.applyDamage.mock.calls[0][1]).toEqual({ multiplier: 1 });
+    });
+
+    it("restores max HP when the heart button is clicked on a maximum-type damage card", async () => {
+        const actor = {
+            applyTempHP: vi.fn(async () => undefined),
+            applyDamage: vi.fn(async () => undefined)
+        };
+        canvas.tokens.controlled = [{ actor }];
+
+        const maxHP = makeRoll(env.classes.DamageRoll, { formula: "1d4", total: 4, type: "maximum", faces: 4, results: [4] });
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderDamage: true,
+                    rolls: [maxHP]
+                },
+                // A damage activity (not heal): the heart button is the only signal
+                // that the user wants to restore max HP rather than reduce it.
+                dnd5e: { activity: { type: "damage" } }
+            }
+        });
+        const html = $(`<article class="chat-message" data-message-id="${message.id}"><div class="message-content"><div class="dnd5e2 chat-card usage-card"><div class="card-buttons"></div></div></div></article>`);
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+        const result = html.find('.rsr-damage-buttons-xl [data-action="rsr-apply-damage"][data-multiplier="-1"]').triggerHandler("click");
+        if (result?.then) await result;
+
+        expect(actor.applyTempHP).not.toHaveBeenCalled();
+        expect(actor.applyDamage).toHaveBeenCalledTimes(1);
+        expect(actor.applyDamage.mock.calls[0][0]).toEqual([
+            { value: 4, type: "maximum", properties: expect.any(Set) }
+        ]);
+        // Heart button = apply as healing → only:"healing" routes maximum to max-HP restore.
+        expect(actor.applyDamage.mock.calls[0][1]).toEqual({ multiplier: 1, only: "healing" });
+    });
+
+    it("treats Aid-style maximum hit point healing as healing from the RSR x1 button", async () => {
+        const actor = {
+            applyTempHP: vi.fn(async () => undefined),
+            applyDamage: vi.fn(async () => undefined)
+        };
+        canvas.tokens.controlled = [{ actor }];
+
+        const maxHP = makeRoll(env.classes.DamageRoll, { formula: "1d4", total: 4, type: "maximum", faces: 4, results: [4] });
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderDamage: true,
+                    rolls: [maxHP]
+                },
+                dnd5e: { activity: { type: "heal" } }
+            }
+        });
+        const html = $(`<article class="chat-message" data-message-id="${message.id}"><div class="message-content"><div class="dnd5e2 chat-card usage-card"><div class="card-buttons"></div></div></div></article>`);
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+        const result = html.find('.rsr-damage-buttons-xl [data-action="rsr-apply-damage"][data-multiplier="1"]').triggerHandler("click");
+        if (result?.then) await result;
+
+        expect(actor.applyTempHP).not.toHaveBeenCalled();
+        expect(actor.applyDamage).toHaveBeenCalledTimes(1);
+        expect(actor.applyDamage.mock.calls[0][0]).toEqual([
+            { value: 4, type: "maximum", properties: expect.any(Set) }
+        ]);
+        expect(actor.applyDamage.mock.calls[0][1]).toEqual({ multiplier: 1, only: "healing" });
+    });
+
+    it("keeps Aid-style maximum healing as max-HP healing from the heart (negative-multiplier) button, not damage", async () => {
+        const actor = {
+            applyTempHP: vi.fn(async () => undefined),
+            applyDamage: vi.fn(async () => undefined)
+        };
+        canvas.tokens.controlled = [{ actor }];
+
+        const maxHP = makeRoll(env.classes.DamageRoll, { formula: "1d4", total: 4, type: "maximum", faces: 4, results: [4] });
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderDamage: true,
+                    rolls: [maxHP]
+                },
+                dnd5e: { activity: { type: "heal" } }
+            }
+        });
+        const html = $(`<article class="chat-message" data-message-id="${message.id}"><div class="message-content"><div class="dnd5e2 chat-card usage-card"><div class="card-buttons"></div></div></div></article>`);
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+        // The heart button carries data-multiplier="-1". A "maximum" roll must keep
+        // its type (not collapse to "healing") so dnd5e's only:"healing" path raises
+        // max HP — clicking the intuitive heart button must not deal damage.
+        const result = html.find('.rsr-damage-buttons-xl [data-action="rsr-apply-damage"][data-multiplier="-1"]').triggerHandler("click");
+        if (result?.then) await result;
+
+        expect(actor.applyTempHP).not.toHaveBeenCalled();
+        expect(actor.applyDamage).toHaveBeenCalledTimes(1);
+        expect(actor.applyDamage.mock.calls[0][0]).toEqual([
+            { value: 4, type: "maximum", properties: expect.any(Set) }
+        ]);
+        expect(actor.applyDamage.mock.calls[0][1]).toEqual({ multiplier: 1, only: "healing" });
+    });
+
+    it("applies temporary hit point rolls as temp HP even from the healing (negative-multiplier) button", async () => {
+        const actor = {
+            applyTempHP: vi.fn(async () => undefined),
+            applyDamage: vi.fn(async () => undefined)
+        };
+        canvas.tokens.controlled = [{ actor }];
+
+        const tempHP = makeRoll(env.classes.DamageRoll, { formula: "1d6+2", total: 7, type: "temphp", faces: 6, results: [5] });
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderDamage: true,
+                    rolls: [tempHP]
+                },
+                dnd5e: { activity: { type: "heal" } }
+            }
+        });
+        const html = $(`<article class="chat-message" data-message-id="${message.id}"><div class="message-content"><div class="dnd5e2 chat-card usage-card"><div class="card-buttons"></div></div></div></article>`);
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+        // The healing button carries data-multiplier="-1"; a temp-HP roll must still
+        // route to applyTempHP rather than being collapsed into ordinary healing.
+        const result = html.find('.rsr-damage-buttons-xl [data-action="rsr-apply-damage"][data-multiplier="-1"]').triggerHandler("click");
+        if (result?.then) await result;
+
+        expect(actor.applyTempHP).toHaveBeenCalledWith(7);
+        expect(actor.applyDamage).not.toHaveBeenCalled();
+    });
+
     it("hides dnd5e roll metadata during usage-card enrichment, then restores it for RSR (#18)", () => {
         const message = new env.classes.TestChatMessage({
             type: "usage",
@@ -319,5 +539,214 @@ describe("ChatUtility message lifecycle behavior", () => {
 
         expect(parent.flags[MODULE_SHORT].rolls.map((roll) => roll.class)).toEqual(["D20Roll"]);
         expect(parent.flags[MODULE_SHORT].rolls[0].total).toBe(14);
+    });
+
+    it("hides NPC skill roll totals when hideNpcRollMode is all", async () => {
+        env.settings.hideNpcRollMode = "all";
+
+        const skillRoll = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 18, faces: 20, results: [13] });
+        const renderSpy = vi.spyOn(RenderUtility, "render").mockImplementation(async (template, data) => {
+            if (template === TEMPLATE.MULTIROLL) {
+                return `<span class="rsr-multiroll" data-key="${data.key}"></span>`;
+            }
+            return "";
+        });
+
+        const message = new env.classes.TestChatMessage({
+            type: "roll",
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    displayChallenge: true
+                },
+                dnd5e: { roll: { type: "skill", target: 15, forceSuccess: true } }
+            },
+            rolls: [skillRoll],
+            getAssociatedActor: () => ({ isOwner: false })
+        });
+        const html = $(`
+            <article><div class="message-content">
+                <div class="dice-roll">
+                    <div class="dice-total">18</div>
+                    <div class="dice-tooltip">
+                        <div class="dice-formula">1d20 + 5</div>
+                        <div class="tooltip-part constant">+5</div>
+                    </div>
+                </div>
+            </div></article>
+        `);
+
+        await ChatUtility.processChatMessage(message, html);
+
+        const multiRollCall = renderSpy.mock.calls.find(([template]) => template === TEMPLATE.MULTIROLL);
+        expect(multiRollCall?.[1]?.roll?.options?.hideFinalResult).toBe(true);
+        // Hiding must suppress every outcome signal, not just the total: the DC
+        // pass/fail icon (displayChallenge) and forced-success crit styling would
+        // both reveal the result of a masked roll.
+        expect(multiRollCall?.[1]?.roll?.options?.displayChallenge).toBe(false);
+        expect(multiRollCall?.[1]?.roll?.options?.forceSuccess).toBe(false);
+        expect(html.find(".tooltip-part.constant")).toHaveLength(0);
+        expect(html.find(".dice-formula").text()).not.toBe("1d20 + 5");
+    });
+
+    it("strips bonus dice (Bless/Guidance) from a hidden NPC d20 tooltip, keeping only the natural d20", async () => {
+        env.settings.hideNpcRollMode = "all";
+
+        const skillRoll = makeRoll(env.classes.D20Roll, { formula: "1d20+5+1d4", total: 21, faces: 20, results: [13] });
+        const renderSpy = vi.spyOn(RenderUtility, "render").mockImplementation(async (template, data) => {
+            if (template === TEMPLATE.MULTIROLL) {
+                return `<span class="rsr-multiroll" data-key="${data.key}"></span>`;
+            }
+            return "";
+        });
+
+        const message = new env.classes.TestChatMessage({
+            type: "roll",
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: { quickRoll: true, processed: true, displayChallenge: true },
+                dnd5e: { roll: { type: "skill", target: 15 } }
+            },
+            rolls: [skillRoll],
+            getAssociatedActor: () => ({ isOwner: false })
+        });
+        // A Blessed NPC save: a d20 part, a Bless 1d4 bonus-die part, and a flat +5.
+        const html = $(`
+            <article><div class="message-content">
+                <div class="dice-roll">
+                    <div class="dice-total">21</div>
+                    <div class="dice-tooltip">
+                        <div class="dice-formula">1d20 + 5 + 1d4</div>
+                        <section class="tooltip-part"><div class="dice"><ol class="dice-rolls"><li class="roll die d20">13</li></ol></div></section>
+                        <section class="tooltip-part"><div class="dice"><ol class="dice-rolls"><li class="roll die d4">3</li></ol></div></section>
+                        <div class="tooltip-part constant">+5</div>
+                    </div>
+                </div>
+            </div></article>
+        `);
+
+        await ChatUtility.processChatMessage(message, html);
+
+        // Only the natural d20 part survives; the Bless die and the flat modifier are gone.
+        expect(html.find(".tooltip-part").length).toBe(1);
+        expect(html.find(".tooltip-part .roll.d20").length).toBe(1);
+        expect(html.find(".tooltip-part .roll.d4").length).toBe(0);
+        expect(html.find(".tooltip-part.constant").length).toBe(0);
+        expect(html.find(".dice-formula").text()).not.toContain("1d4");
+    });
+
+    it("shows full NPC skill totals to actor owners even when hideNpcRollMode is all", async () => {
+        env.settings.hideNpcRollMode = "all";
+
+        const skillRoll = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 18, faces: 20, results: [13] });
+        const renderSpy = vi.spyOn(RenderUtility, "render").mockImplementation(async (template, data) => {
+            if (template === TEMPLATE.MULTIROLL) {
+                return `<span class="rsr-multiroll" data-key="${data.key}"></span>`;
+            }
+            return "";
+        });
+
+        const message = new env.classes.TestChatMessage({
+            type: "roll",
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    displayChallenge: true
+                },
+                dnd5e: { roll: { type: "skill" } }
+            },
+            rolls: [skillRoll],
+            getAssociatedActor: () => ({ isOwner: true })
+        });
+        const html = $(`
+            <article><div class="message-content">
+                <div class="dice-roll">
+                    <div class="dice-total">18</div>
+                    <div class="dice-tooltip">
+                        <div class="dice-formula">1d20 + 5</div>
+                        <div class="tooltip-part constant">+5</div>
+                    </div>
+                </div>
+            </div></article>
+        `);
+
+        await ChatUtility.processChatMessage(message, html);
+
+        const multiRollCall = renderSpy.mock.calls.find(([template]) => template === TEMPLATE.MULTIROLL);
+        expect(multiRollCall?.[1]?.roll?.options?.hideFinalResult).toBe(false);
+        expect(html.find(".tooltip-part.constant")).toHaveLength(1);
+    });
+
+    it("does not hide NPC skill rolls when hideNpcRollMode is attacks only", async () => {
+        env.settings.hideNpcRollMode = "attacks";
+
+        const skillRoll = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 18, faces: 20, results: [13] });
+        const renderSpy = vi.spyOn(RenderUtility, "render").mockImplementation(async (template, data) => {
+            if (template === TEMPLATE.MULTIROLL) {
+                return `<span class="rsr-multiroll" data-key="${data.key}"></span>`;
+            }
+            return "";
+        });
+
+        const message = new env.classes.TestChatMessage({
+            type: "roll",
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true
+                },
+                dnd5e: { roll: { type: "skill" } }
+            },
+            rolls: [skillRoll],
+            getAssociatedActor: () => ({ isOwner: false })
+        });
+        const html = $(`<article><div class="message-content"><div class="dice-roll"><div class="dice-total">18</div><div class="dice-tooltip"><div class="dice-formula">1d20 + 5</div></div></div></div></article>`);
+
+        await ChatUtility.processChatMessage(message, html);
+
+        const multiRollCall = renderSpy.mock.calls.find(([template]) => template === TEMPLATE.MULTIROLL);
+        expect(multiRollCall?.[1]?.roll?.options?.hideFinalResult).toBe(false);
+    });
+
+    it("keeps NPC damage totals visible when hideNpcRollMode is all", async () => {
+        env.settings.hideNpcRollMode = "all";
+
+        const attack = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 23, faces: 20, results: [18] });
+        const damage = makeRoll(env.classes.DamageRoll, { formula: "1d8+3", total: 9, faces: 8, results: [6] });
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderAttack: true,
+                    renderDamage: true,
+                    rolls: [attack, damage]
+                },
+                dnd5e: { activity: { type: "attack" } }
+            },
+            getAssociatedActor: () => ({ isOwner: false, items: { get: vi.fn() } })
+        });
+        const html = $(`
+            <article class="chat-message">
+                <div class="message-content">
+                    <div class="dnd5e2 chat-card usage-card">
+                        <div class="card-buttons"><button data-action="rollAttack"></button></div>
+                    </div>
+                </div>
+            </article>
+        `);
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+
+        expect(html.find(".rsr-section-damage")).toHaveLength(1);
+        expect(html.find(".rsr-damage")).toHaveLength(1);
     });
 });

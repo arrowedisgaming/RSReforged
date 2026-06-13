@@ -1,29 +1,12 @@
-import { MODULE_NAME, MODULE_SHORT } from "../module/const.js";
+import { MODULE_NAME, MODULE_SHORT, ROLL_TYPE } from "../module/const.js";
 import { CoreUtility } from "./core.js";
 import { SETTING_NAMES, SettingsUtility } from "./settings.js";
 
 export const KEYBIND_VERSATILE_TWO_HANDED = "versatileTwoHanded";
 
-/**
- * Enumerable of identifiers for different roll types that can be made.
- * @enum {String}
- */
-export const ROLL_TYPE = {
-    SKILL: "skill",
-    ABILITY_TEST: "ability",
-    ABILITY_SAVE: "save",
-    DEATH_SAVE: "death",
-    TOOL: "tool",
-    ACTIVITY: "activity",
-    CHECK: "check",
-    ATTACK: "attack",
-    DAMAGE: "damage",
-    VERSATILE: "versatile",
-    OTHER: "formula",
-    CONCENTRATION: "concentration",
-    HEALING: "healing",
-    FORMULA: "roll"
-}
+// ROLL_TYPE is defined in const.js (so settings.js can use it without an import
+// cycle) but re-exported here to preserve the established import path.
+export { ROLL_TYPE };
 
 /**
  * Enumerable of identifiers for roll states (advantage or disadvantage).
