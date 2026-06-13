@@ -293,6 +293,7 @@ describe("ActivityUtility roll action flow", () => {
         vi.spyOn(ActivityUtility, "_getActorFromMessage").mockReturnValue(actor);
 
         const message = {
+            id: "usage-damage",
             system: { scaling: 2 },
             flags: {
                 [MODULE_SHORT]: {
@@ -321,7 +322,12 @@ describe("ActivityUtility roll action flow", () => {
             { configure: false },
             expect.objectContaining({
                 create: false,
-                flags: { [MODULE_SHORT]: { quickRoll: true } }
+                // Damage roll is anchored to its card so condition modules (AC5e) can
+                // resolve the originating attack via the dnd5e MessageRegistry.
+                flags: {
+                    [MODULE_SHORT]: { quickRoll: true },
+                    dnd5e: { originatingMessage: "usage-damage" }
+                }
             })
         );
         expect(activity.item.flags.dnd5e.scaling).toBe(2);

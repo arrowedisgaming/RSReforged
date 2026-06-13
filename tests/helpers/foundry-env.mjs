@@ -212,6 +212,27 @@ export async function setupFoundryEnv(options = {}) {
             return this;
         }
 
+        // Foundry applies an in-memory source update with flattened (dot-notation) keys
+        // and no DB write / re-render. Mirror that here so code paths that call
+        // updateSource (e.g. _registerCardAsAttack) mutate the live document without
+        // touching `updatedWith` (which tracks persisted update() calls).
+        updateSource(changes = {}) {
+            for (const [key, value] of Object.entries(changes)) {
+                if (key.includes(".")) {
+                    const path = key.split(".");
+                    let target = this;
+                    for (let i = 0; i < path.length - 1; i++) {
+                        target[path[i]] ??= {};
+                        target = target[path[i]];
+                    }
+                    target[path[path.length - 1]] = value;
+                } else {
+                    this[key] = value;
+                }
+            }
+            return changes;
+        }
+
         delete() {
             this.deleted = true;
         }
