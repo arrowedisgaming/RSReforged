@@ -118,10 +118,42 @@ export class BonusManager {
                     consumeTarget = split.length > 1 ? split[1].trim() : "origin";
                 }
 
+                // Damage-type keywords (meaningful on damage rolls only):
+                //   <damageType>             -> a bare dnd5e damage type key (e.g. "fire") fixes
+                //                               the bonus to that type, with no dialog or rolling
+                //   random: <type,type,...>  -> pick one of the listed types at random on apply
+                //   choice: <type,type,...>  -> player picks one of the listed types in the dialog
+                // The listed values are dnd5e damage type keys (fire, cold, acid, ...). With no
+                // explicit formula the bonus contributes 0 of the resolved type (a pure tag).
+                const damageTypeKeys = new Set(Object.keys(CONFIG.DND5E?.damageTypes ?? {}));
+                const randomPart = parts.find(p => p.toLowerCase().startsWith("random:"));
+                const choicePart = parts.find(p => p.toLowerCase().startsWith("choice:"));
+                // A standalone part that is exactly a known damage type key (e.g. "fire").
+                const fixedTypePart = parts.find(p => damageTypeKeys.has(p.toLowerCase()));
+
+                let damageMode = null;
+                let damageTypeOptions = [];
+                if (randomPart) {
+                    damageMode = "random";
+                    damageTypeOptions = randomPart.slice(randomPart.indexOf(":") + 1)
+                        .split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
+                } else if (choicePart) {
+                    damageMode = "choice";
+                    damageTypeOptions = choicePart.slice(choicePart.indexOf(":") + 1)
+                        .split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
+                } else if (fixedTypePart) {
+                    // Bare damage type: a single fixed type, resolved with no dialog.
+                    damageMode = "fixed";
+                    damageTypeOptions = [fixedTypePart.toLowerCase()];
+                }
+
                 const formulaParts = parts.filter(p => 
                     !p.toLowerCase().startsWith("type:") && 
                     !p.toLowerCase().startsWith("consume") && 
-                    p.toLowerCase() !== "once"
+                    p.toLowerCase() !== "once" &&
+                    !p.toLowerCase().startsWith("random:") &&
+                    !p.toLowerCase().startsWith("choice:") &&
+                    !damageTypeKeys.has(p.toLowerCase())
                 );
                 
                 let rawFormula = formulaParts.length > 0 ? formulaParts[0] : "0";
@@ -152,7 +184,9 @@ export class BonusManager {
                         rawFormula: rawFormula,
                         resolvedFormula: resolvedFormula,
                         isOnce: isOnce,
-                        consumeTarget: consumeTarget
+                        consumeTarget: consumeTarget,
+                        damageMode: damageMode,
+                        damageTypeOptions: damageTypeOptions
                     });
                 }
             }
@@ -163,7 +197,11 @@ export class BonusManager {
             type: type,
             onSubmit: async (result) => {
                 let bonusDef = result.isCustom ? { name: "Custom Bonus", rawFormula: result.formula, isOnce: false } : bonuses[result.index];
-                if (bonusDef) await this.applyBonus(message, type, bonusDef, actor);
+                if (bonusDef) {
+                    // Carry the resolved damage type (from a random/choice bonus) into apply.
+                    if (result.damageType) bonusDef = { ...bonusDef, damageType: result.damageType };
+                    await this.applyBonus(message, type, bonusDef, actor);
+                }
             }
         }).render(true);
     }
@@ -211,7 +249,20 @@ export class BonusManager {
             
             if (!cleanFormula || cleanFormula.trim() === "") return ui.notifications.warn("Invalid bonus formula.");
 
-            const bonusRoll = new TargetRollClass(cleanFormula, rollData, originalRoll.options);
+            // Tag the bonus with its damage type (from a random/choice keyword) so it is
+            // appended as a typed segment, e.g. 2d6[fire]. Only meaningful when adding to a
+            // damage roll; a damage type on a d20 bonus has no meaning and is ignored.
+            let effectiveFormula = cleanFormula;
+            const damageType = bonusDef.damageType;
+            if (damageType && originalRoll instanceof CONFIG.Dice.DamageRoll) {
+                // Wrap multi-term formulas so the flavor applies to the whole bonus
+                // ("(1d6 + 2)[fire]"); a single term takes the flavor directly ("2d6[fire]").
+                // A leading +/- sign is ignored when testing for operators.
+                const needsParens = /[+\-*/]/.test(cleanFormula.trim().replace(/^[+-]/, ""));
+                effectiveFormula = needsParens ? `(${cleanFormula})[${damageType}]` : `${cleanFormula}[${damageType}]`;
+            }
+
+            const bonusRoll = new TargetRollClass(effectiveFormula, rollData, originalRoll.options);
             await bonusRoll.evaluate();
 
             const newTerms = [
@@ -246,7 +297,8 @@ export class BonusManager {
                 const effect = actor.effects.get(bonusDef.effectId);
                 if (effect) await effect.delete();
             }
-            ui.notifications.info(`Applied ${bonusDef.name} (+${bonusRoll.total}).`);
+            const typeLabel = bonusDef.damageType ? ` ${bonusDef.damageType}` : "";
+            ui.notifications.info(`Applied ${bonusDef.name} (+${bonusRoll.total}${typeLabel}).`);
 
         } catch (err) {
             LogUtility.logError(`Error applying bonus: ${err.message}`, { ui: true });
@@ -303,13 +355,43 @@ class BonusSelector extends ApplicationV2 {
                 </div>`;
 
         this.bonuses.forEach((b, i) => {
+            const checked = (i === 0 && !customChecked) ? "checked" : "";
+
+            // Optional damage-type UI for random/choice bonuses.
+            let typeUI = "";
+            const opts = b.damageTypeOptions ?? [];
+            if (b.damageMode === "choice" && opts.length) {
+                const optionHtml = opts.map(t =>
+                    `<option value="${t}">${t.charAt(0).toUpperCase() + t.slice(1)}</option>`
+                ).join("");
+                typeUI = `
+                    <div class="rsr-bonus-damage-type" style="margin-top: 8px; margin-left: 44px;">
+                        <label style="font-size: 0.85em; opacity: 0.85;">Damage type:
+                            <select name="damageType-${i}" style="margin-left: 6px;">${optionHtml}</select>
+                        </label>
+                    </div>`;
+            } else if (b.damageMode === "random" && opts.length) {
+                typeUI = `
+                    <div style="margin-top: 6px; margin-left: 44px; font-size: 0.8em; opacity: 0.7;">
+                        <i class="fas fa-dice"></i> Random type: ${opts.join(", ")}
+                    </div>`;
+            } else if (b.damageMode === "fixed" && opts.length) {
+                typeUI = `
+                    <div style="margin-top: 6px; margin-left: 44px; font-size: 0.8em; opacity: 0.7;">
+                        <i class="fas fa-tag"></i> ${opts[0].charAt(0).toUpperCase() + opts[0].slice(1)} damage
+                    </div>`;
+            }
+
             html += `
-                <div class="form-group" style="display:flex; align-items:center; padding: 8px; border: 1px solid var(--color-border-light-2); border-radius: 4px; background: var(--color-bg-light);">
-                    <input type="radio" name="bonusIndex" value="${i}" id="bonus-${i}" ${i === 0 && !customChecked ? "checked" : ""}>
-                    <label for="bonus-${i}" style="display:flex; align-items:center; cursor:pointer; flex:1; margin-left:12px;">
-                        <img src="${b.icon}" width="32" height="32" style="border:none; margin-right:12px;">
-                        <div><strong>${b.name}</strong><br><small>${b.rawFormula}</small></div>
-                    </label>
+                <div class="form-group" style="padding: 8px; border: 1px solid var(--color-border-light-2); border-radius: 4px; background: var(--color-bg-light);">
+                    <div style="display:flex; align-items:center;">
+                        <input type="radio" name="bonusIndex" value="${i}" id="bonus-${i}" ${checked}>
+                        <label for="bonus-${i}" style="display:flex; align-items:center; cursor:pointer; flex:1; margin-left:12px;">
+                            <img src="${b.icon}" width="32" height="32" style="border:none; margin-right:12px;">
+                            <div><strong>${b.name}</strong><br><small>${b.rawFormula}</small></div>
+                        </label>
+                    </div>
+                    ${typeUI}
                 </div>`;
         });
 
@@ -331,13 +413,30 @@ class BonusSelector extends ApplicationV2 {
     _replaceHTML(result, content) { content.replaceChildren(result); }
 
     async _handleSubmit(event, form, formData) {
-        if (this.onSubmitCallback) {
-            if (formData.object.bonusIndex === "custom") {
-                if (!formData.object.customFormula) return ui.notifications.warn("Enter formula.");
-                await this.onSubmitCallback({ isCustom: true, formula: formData.object.customFormula });
-            } else {
-                await this.onSubmitCallback({ isCustom: false, index: parseInt(formData.object.bonusIndex) });
-            }
+        if (!this.onSubmitCallback) return;
+
+        if (formData.object.bonusIndex === "custom") {
+            if (!formData.object.customFormula) return ui.notifications.warn("Enter formula.");
+            await this.onSubmitCallback({ isCustom: true, formula: formData.object.customFormula });
+            return;
         }
+
+        const index = parseInt(formData.object.bonusIndex);
+        const bonus = this.bonuses[index];
+
+        // Resolve the damage type for random/choice bonuses:
+        //   choice -> the type the player picked in the dialog (fallback: first listed)
+        //   random -> a type picked at random from the list, chosen at apply time
+        let damageType = null;
+        const opts = bonus?.damageTypeOptions ?? [];
+        if (bonus?.damageMode === "choice") {
+            damageType = formData.object[`damageType-${index}`] || opts[0] || null;
+        } else if (bonus?.damageMode === "random" && opts.length) {
+            damageType = opts[Math.floor(Math.random() * opts.length)];
+        } else if (bonus?.damageMode === "fixed" && opts.length) {
+            damageType = opts[0];
+        }
+
+        await this.onSubmitCallback({ isCustom: false, index, damageType });
     }
 }

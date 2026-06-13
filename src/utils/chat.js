@@ -496,7 +496,14 @@ async function _injectContent(message, type, html) {
         if (origin && origin !== message) parent = origin;
     }
     if (!parent && typeof message.getAssociatedMessage === "function") parent = message.getAssociatedMessage();
-    if (!parent && message.flags?.dnd5e?.originatingMessage) parent = game.messages.get(message.flags.dnd5e.originatingMessage);
+    // Ignore a self-referential originatingMessage: RSR stamps the card's own id as
+    // its originatingMessage so dnd5e's MessageRegistry tracks it under the "attack"
+    // hook (letting condition modules resolve the attack roll for damage). Such a card
+    // is the root, not a child — resolving it here would make it its own merge parent.
+    if (!parent && message.flags?.dnd5e?.originatingMessage
+        && message.flags.dnd5e.originatingMessage !== message.id) {
+        parent = game.messages.get(message.flags.dnd5e.originatingMessage);
+    }
     if (!parent && message.system?.message) parent = game.messages.get(message.system.message);
     
     message.flags[MODULE_SHORT].displayChallenge = parent?.shouldDisplayChallenge ?? message.shouldDisplayChallenge;

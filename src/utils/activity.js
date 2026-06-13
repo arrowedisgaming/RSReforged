@@ -184,6 +184,15 @@ export class ActivityUtility {
             } else {
                 message.flags[MODULE_SHORT].isCritical = false;
             }
+
+            // Register this card as its own "attack" roll message so condition
+            // modules (AC5e) and dnd5e's native attack->damage association can find
+            // the attack roll via dnd5e.registry.messages.get(<cardId>, "attack").
+            // RSR rolls with create:false and emits no discrete attack message, so
+            // the registry would otherwise have no attack entry for this card. Must
+            // run BEFORE the damage roll below so the lookup resolves during the
+            // damage roll's hooks on the quick-roll (attack+damage) path.
+            ActivityUtility._registerCardAsAttack(message, currentRolls);
         }
 
         if (message.flags[MODULE_SHORT].renderDamage) {
@@ -220,6 +229,11 @@ export class ActivityUtility {
                 type: ROLL_TYPE.ATTACK,
                 ...(attackRoll.options?.mastery ? { mastery: attackRoll.options.mastery } : {})
             };
+            // Persist the self-link so dnd5e's ChatMessage5e#prepareData ->
+            // MessageRegistry.track re-registers this card under the "attack" hook on
+            // every load. Pairs with the chat.js _injectContent guard that stops a
+            // self-referencing card from being treated as its own merge parent.
+            message.flags.dnd5e.originatingMessage = message.id;
         }
 
         await ChatUtility.updateChatMessage(message, {
@@ -258,6 +272,52 @@ export class ActivityUtility {
             flags: message.flags,
             rolls: serializedRolls
         });
+    }
+
+    /**
+     * Register the activation card as its own "attack" roll message in dnd5e's
+     * MessageRegistry, so dnd5e.registry.messages.get(<cardId>, "attack") resolves to
+     * this card and its stored attack D20Roll. RSR rolls with create:false and emits no
+     * discrete attack message, so without this the registry has no attack entry and
+     * condition modules (AC5e) / dnd5e's native attack->damage association cannot
+     * recover the attack roll's advantage state.
+     *
+     * Uses in-memory updateSource (no DB write, no re-render — the same pattern RSR
+     * already uses in preCreateChatMessage) so the live document immediately exposes
+     * the attack roll and the self-link, then tracks it explicitly. The self-link is
+     * also persisted by runActivityActions' final update, so prepareData re-registers
+     * the card on reload.
+     *
+     * Safe despite the self-referential originatingMessage: chat.js _injectContent
+     * guards against treating a self-referencing card as its own merge parent.
+     * @param {ChatMessage} message The activation card.
+     * @param {Array<Roll|object>} currentRolls Rolls gathered so far (must include the attack).
+     */
+    static _registerCardAsAttack(message, currentRolls) {
+        const attackRoll = (currentRolls ?? []).find(r => RollUtility.isRollOfType(r, CONFIG.Dice.D20Roll));
+        if (!attackRoll || !message?.id) return;
+
+        const rollFlag = {
+            ...(message.flags?.dnd5e?.roll ?? {}),
+            type: ROLL_TYPE.ATTACK,
+            ...(attackRoll.options?.mastery ? { mastery: attackRoll.options.mastery } : {})
+        };
+
+        // In-memory only: expose the attack roll + self-link on the live document so
+        // both the registry lookup and AC5e's rolls[0] read resolve during the
+        // immediately following damage roll. runActivityActions persists the final
+        // state afterwards.
+        message.updateSource({
+            rolls: CoreUtility.serializeRolls(currentRolls),
+            "flags.dnd5e.roll": rollFlag,
+            "flags.dnd5e.originatingMessage": message.id
+        });
+
+        try {
+            dnd5e.registry?.messages?.track?.(message);
+        } catch (err) {
+            console.warn("RSReforged | failed to register card as attack roll message:", err);
+        }
     }
 
     /**
@@ -370,6 +430,13 @@ export class ActivityUtility {
         const messageConfig = { create: false, data: { flags: {} }, flags: {} };
         messageConfig.data.flags[MODULE_SHORT] = { quickRoll: true };
         messageConfig.flags[MODULE_SHORT]      = { quickRoll: true };
+        // Anchor this damage roll to its card so condition modules (AC5e) resolve the
+        // originating attack via dnd5e.registry.messages.get(<cardId>, "attack"). AC5e
+        // reads flags.dnd5e.originatingMessage off the message config's `data` (the
+        // dot-notation key first, then the nested object), so set both shapes.
+        messageConfig.data["flags.dnd5e.originatingMessage"] = message.id;
+        messageConfig.data.flags.dnd5e = { originatingMessage: message.id };
+        messageConfig.flags.dnd5e      = { originatingMessage: message.id };
 
         return activity.rollDamage(config, dialogConfig, messageConfig);
     }
@@ -426,4 +493,4 @@ async function _animateNewRolls(newRolls, message) {
     if (!CoreUtility.dice3dAnimatesRollUpdates()) {
         await CoreUtility.tryRollDice3D(newRolls, message.id);
     }
-}
+} 
