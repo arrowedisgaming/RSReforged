@@ -107,88 +107,16 @@ export class BonusManager {
         for (const effect of candidateEffects) {
             const changes = effect.changes.filter(c => c.key.trim() === AE_BONUS_FLAG);
             for (const change of changes) {
-                const parts = change.value.split(";").map(s => s.trim());
-                const typePart = parts.find(p => p.toLowerCase().startsWith("type:"));
-                const consumePart = parts.find(p => p.toLowerCase().startsWith("consume"));
-                const isOnce = parts.some(p => p.toLowerCase() === "once");
+                const parsed = BonusManager.parseBonusChange(change.value, type, rollData);
+                if (!parsed) continue;
 
-                let consumeTarget = null;
-                if (consumePart) {
-                    const split = consumePart.split(":");
-                    consumeTarget = split.length > 1 ? split[1].trim() : "origin";
-                }
-
-                // Damage-type keywords (meaningful on damage rolls only):
-                //   <damageType>             -> a bare dnd5e damage type key (e.g. "fire") fixes
-                //                               the bonus to that type, with no dialog or rolling
-                //   random: <type,type,...>  -> pick one of the listed types at random on apply
-                //   choice: <type,type,...>  -> player picks one of the listed types in the dialog
-                // The listed values are dnd5e damage type keys (fire, cold, acid, ...). With no
-                // explicit formula the bonus contributes 0 of the resolved type (a pure tag).
-                const damageTypeKeys = new Set(Object.keys(CONFIG.DND5E?.damageTypes ?? {}));
-                const randomPart = parts.find(p => p.toLowerCase().startsWith("random:"));
-                const choicePart = parts.find(p => p.toLowerCase().startsWith("choice:"));
-                // A standalone part that is exactly a known damage type key (e.g. "fire").
-                const fixedTypePart = parts.find(p => damageTypeKeys.has(p.toLowerCase()));
-
-                let damageMode = null;
-                let damageTypeOptions = [];
-                if (randomPart) {
-                    damageMode = "random";
-                    damageTypeOptions = randomPart.slice(randomPart.indexOf(":") + 1)
-                        .split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
-                } else if (choicePart) {
-                    damageMode = "choice";
-                    damageTypeOptions = choicePart.slice(choicePart.indexOf(":") + 1)
-                        .split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
-                } else if (fixedTypePart) {
-                    // Bare damage type: a single fixed type, resolved with no dialog.
-                    damageMode = "fixed";
-                    damageTypeOptions = [fixedTypePart.toLowerCase()];
-                }
-
-                const formulaParts = parts.filter(p => 
-                    !p.toLowerCase().startsWith("type:") && 
-                    !p.toLowerCase().startsWith("consume") && 
-                    p.toLowerCase() !== "once" &&
-                    !p.toLowerCase().startsWith("random:") &&
-                    !p.toLowerCase().startsWith("choice:") &&
-                    !damageTypeKeys.has(p.toLowerCase())
-                );
-                
-                let rawFormula = formulaParts.length > 0 ? formulaParts[0] : "0";
-                const resolvedFormula = this._resolveFormula(rawFormula, rollData);
-
-                let allowedTypes = ["any"];
-                if (typePart) {
-                    const typeString = typePart.split(":")[1];
-                    allowedTypes = typeString.split(",").map(t => t.trim().toLowerCase());
-                }
-
-                let isMatch = false;
-                for (const allowedType of allowedTypes) {
-                    if (allowedType === "all" || allowedType === "any") isMatch = true;
-                    else if (allowedType === type) isMatch = true;
-                    else if (allowedType === "check" && ["skill", "tool", "ability", "check", "initiative"].includes(type)) isMatch = true;
-                    else if (allowedType === "save" && ["save", "death", "concentration"].includes(type)) isMatch = true;
-                    else if (type === "check" && ["skill", "tool", "initiative"].includes(allowedType)) isMatch = true;
-                    if (isMatch) break;
-                }
-                
-                if (isMatch) {
-                    bonuses.push({
-                        effectId: effect.id,
-                        origin: effect.origin,
-                        name: effect.name,
-                        icon: effect.img || effect.icon || "icons/svg/aura.svg",
-                        rawFormula: rawFormula,
-                        resolvedFormula: resolvedFormula,
-                        isOnce: isOnce,
-                        consumeTarget: consumeTarget,
-                        damageMode: damageMode,
-                        damageTypeOptions: damageTypeOptions
-                    });
-                }
+                bonuses.push({
+                    effectId: effect.id,
+                    origin: effect.origin,
+                    name: effect.name,
+                    icon: effect.img || effect.icon || "icons/svg/aura.svg",
+                    ...parsed
+                });
             }
         }
 
@@ -204,6 +132,107 @@ export class BonusManager {
                 }
             }
         }).render(true);
+    }
+
+    /**
+     * Parse one bonus Active Effect value (the `flags.rsreforged.bonus` change value) for
+     * a given roll type. Returns the parsed bonus definition, or null when the bonus does
+     * not apply to `type`. Pure (no document/UI access) so it can be unit-tested directly.
+     *
+     * Value grammar (semicolon-delimited): `<formula>; type:<...>; <damage-keywords>; consume:<...>; once`
+     * Damage keywords (precedence random: > choice: > bare type), all validated against
+     * CONFIG.DND5E.damageTypes — unknown types in random:/choice: lists are dropped with a
+     * warning, and an empty list degrades to an untyped bonus.
+     * @param {string} value Raw effect value, e.g. "1d6; type:damage; random:fire,cold".
+     * @param {string} type  The roll type being rolled (e.g. "damage", "skill", "attack").
+     * @param {object} [rollData] Actor roll data for formula resolution.
+     * @returns {{rawFormula:string, resolvedFormula:string, isOnce:boolean, consumeTarget:?string, damageMode:?string, damageTypeOptions:string[]}|null}
+     */
+    static parseBonusChange(value, type, rollData = {}) {
+        const parts = String(value ?? "").split(";").map(s => s.trim());
+        const typePart = parts.find(p => p.toLowerCase().startsWith("type:"));
+        const consumePart = parts.find(p => p.toLowerCase().startsWith("consume"));
+        const isOnce = parts.some(p => p.toLowerCase() === "once");
+
+        let consumeTarget = null;
+        if (consumePart) {
+            const split = consumePart.split(":");
+            consumeTarget = split.length > 1 ? split[1].trim() : "origin";
+        }
+
+        // Damage-type keywords (meaningful on damage rolls only):
+        //   <damageType>             -> a bare dnd5e damage type key (e.g. "fire") fixes
+        //                               the bonus to that type, with no dialog or rolling
+        //   random: <type,type,...>  -> pick one of the listed types at random on apply
+        //   choice: <type,type,...>  -> player picks one of the listed types in the dialog
+        // The listed values are dnd5e damage type keys (fire, cold, acid, ...). With no
+        // explicit formula the bonus contributes 0 of the resolved type (a pure tag).
+        const damageTypeKeys = new Set(Object.keys(CONFIG.DND5E?.damageTypes ?? {}));
+        const randomPart = parts.find(p => p.toLowerCase().startsWith("random:"));
+        const choicePart = parts.find(p => p.toLowerCase().startsWith("choice:"));
+        // A standalone part that is exactly a known damage type key (e.g. "fire").
+        const fixedTypePart = parts.find(p => damageTypeKeys.has(p.toLowerCase()));
+
+        let damageMode = null;
+        let damageTypeOptions = [];
+        if (randomPart) {
+            damageMode = "random";
+            damageTypeOptions = randomPart.slice(randomPart.indexOf(":") + 1)
+                .split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
+        } else if (choicePart) {
+            damageMode = "choice";
+            damageTypeOptions = choicePart.slice(choicePart.indexOf(":") + 1)
+                .split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
+        } else if (fixedTypePart) {
+            // Bare damage type: a single fixed type, resolved with no dialog.
+            damageMode = "fixed";
+            damageTypeOptions = [fixedTypePart.toLowerCase()];
+        }
+
+        // Validate random:/choice: lists against known dnd5e damage types. An unknown key
+        // (e.g. "frost") would otherwise reach the roll as a free-text flavor and produce
+        // silently miscategorized/untyped damage. Drop unknowns with a warning; if none
+        // remain, fall back to an untyped bonus.
+        if (damageMode === "random" || damageMode === "choice") {
+            const invalid = damageTypeOptions.filter(t => !damageTypeKeys.has(t));
+            if (invalid.length) {
+                console.warn(`RSReforged | ignoring unknown damage type(s) in "${damageMode}:" bonus: ${invalid.join(", ")}`);
+            }
+            damageTypeOptions = damageTypeOptions.filter(t => damageTypeKeys.has(t));
+            if (damageTypeOptions.length === 0) damageMode = null;
+        }
+
+        const formulaParts = parts.filter(p =>
+            !p.toLowerCase().startsWith("type:") &&
+            !p.toLowerCase().startsWith("consume") &&
+            p.toLowerCase() !== "once" &&
+            !p.toLowerCase().startsWith("random:") &&
+            !p.toLowerCase().startsWith("choice:") &&
+            !damageTypeKeys.has(p.toLowerCase())
+        );
+
+        const rawFormula = formulaParts.length > 0 ? formulaParts[0] : "0";
+        const resolvedFormula = BonusManager._resolveFormula(rawFormula, rollData);
+
+        let allowedTypes = ["any"];
+        if (typePart) {
+            const typeString = typePart.split(":")[1];
+            allowedTypes = typeString.split(",").map(t => t.trim().toLowerCase());
+        }
+
+        let isMatch = false;
+        for (const allowedType of allowedTypes) {
+            if (allowedType === "all" || allowedType === "any") isMatch = true;
+            else if (allowedType === type) isMatch = true;
+            else if (allowedType === "check" && ["skill", "tool", "ability", "check", "initiative"].includes(type)) isMatch = true;
+            else if (allowedType === "save" && ["save", "death", "concentration"].includes(type)) isMatch = true;
+            else if (type === "check" && ["skill", "tool", "initiative"].includes(allowedType)) isMatch = true;
+            if (isMatch) break;
+        }
+
+        if (!isMatch) return null;
+
+        return { rawFormula, resolvedFormula, isOnce, consumeTarget, damageMode, damageTypeOptions };
     }
 
     static async applyBonus(message, type, bonusDef, actor) {
@@ -283,6 +312,13 @@ export class BonusManager {
             if (message.flags?.[MODULE_SHORT]) {
                 message.flags[MODULE_SHORT].rolls = serialised;
                 await ChatUtility.updateChatMessage(message, { flags: message.flags });
+
+                // If the bonus modified the attack roll, re-register it in dnd5e's
+                // MessageRegistry so AC5e resolves the boosted attack on a later damage
+                // roll. No-ops for non-attack cards / damage bonuses.
+                if (originalRoll instanceof CONFIG.Dice.D20Roll) {
+                    ChatUtility.resyncAttackRegistry(message);
+                }
             } else {
                 await message.update({ rolls: serialised });
             }
@@ -357,28 +393,30 @@ class BonusSelector extends ApplicationV2 {
         this.bonuses.forEach((b, i) => {
             const checked = (i === 0 && !customChecked) ? "checked" : "";
 
-            // Optional damage-type UI for random/choice bonuses.
+            // Optional damage-type UI for random/choice bonuses. Type names use dnd5e's
+            // own localized damage-type labels so they follow the active language.
             let typeUI = "";
             const opts = b.damageTypeOptions ?? [];
+            const damageLabel = (t) => CONFIG.DND5E?.damageTypes?.[t]?.label ?? (t.charAt(0).toUpperCase() + t.slice(1));
             if (b.damageMode === "choice" && opts.length) {
                 const optionHtml = opts.map(t =>
-                    `<option value="${t}">${t.charAt(0).toUpperCase() + t.slice(1)}</option>`
+                    `<option value="${t}">${damageLabel(t)}</option>`
                 ).join("");
                 typeUI = `
                     <div class="rsr-bonus-damage-type" style="margin-top: 8px; margin-left: 44px;">
-                        <label style="font-size: 0.85em; opacity: 0.85;">Damage type:
+                        <label style="font-size: 0.85em; opacity: 0.85;">${CoreUtility.localize(`${MODULE_SHORT}.bonus.damageType`)}
                             <select name="damageType-${i}" style="margin-left: 6px;">${optionHtml}</select>
                         </label>
                     </div>`;
             } else if (b.damageMode === "random" && opts.length) {
                 typeUI = `
                     <div style="margin-top: 6px; margin-left: 44px; font-size: 0.8em; opacity: 0.7;">
-                        <i class="fas fa-dice"></i> Random type: ${opts.join(", ")}
+                        <i class="fas fa-dice"></i> ${CoreUtility.localize(`${MODULE_SHORT}.bonus.randomType`, { types: opts.map(damageLabel).join(", ") })}
                     </div>`;
             } else if (b.damageMode === "fixed" && opts.length) {
                 typeUI = `
                     <div style="margin-top: 6px; margin-left: 44px; font-size: 0.8em; opacity: 0.7;">
-                        <i class="fas fa-tag"></i> ${opts[0].charAt(0).toUpperCase() + opts[0].slice(1)} damage
+                        <i class="fas fa-tag"></i> ${CoreUtility.localize(`${MODULE_SHORT}.bonus.fixedType`, { type: damageLabel(opts[0]) })}
                     </div>`;
             }
 

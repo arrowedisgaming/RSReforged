@@ -157,13 +157,17 @@ Effect Value format:
 | `consume:<id-or-name>` | Consume one charge of a different item |
 | `once` | Delete the effect after a single use |
 
-Damage-type tokens accept dnd5e damage type keys (`acid`, `cold`, `fire`, `force`, `lightning`, `necrotic`, `poison`, `psychic`, `radiant`, `thunder`, `bludgeoning`, `piercing`, `slashing`). They apply only to damage rolls; on any other roll type the bonus is added untyped. (for example `2d6; type: check, damage;  lightning` would add 2d6 to either a skill check or 2d6 lightning damage to a damage roll)
+Damage-type tokens accept dnd5e damage type keys (`acid`, `cold`, `fire`, `force`, `lightning`, `necrotic`, `poison`, `psychic`, `radiant`, `thunder`, `bludgeoning`, `piercing`, `slashing`). They apply only to damage rolls; on any other roll type the bonus is added untyped. (For example, `2d6; type:check, damage; lightning` adds 2d6 to a skill check, or 2d6 lightning damage to a damage roll.)
 
 Examples:
 
 - **Bless:** `1d4; type:check, save, attack` (no consumption, since Bless is a duration spell)
 - **Bardic Inspiration (d8):** `1d8; type:check, save, attack; consume:origin; once`
 - **Guidance:** `1d4; type:check; consume:origin; once`
+- **Fixed type — extra necrotic:** `1d6; type:damage; necrotic` (always adds 1d6 necrotic to damage rolls)
+- **Player choice — elemental weapon:** `1d8; type:damage; choice:acid, cold, fire, lightning, thunder` (dropdown in the bonus dialog; the player picks the type)
+- **Random type — wild surge:** `1d6; type:damage; random:fire, cold, lightning` (a different one of the three each time it's applied)
+- **Type-only tag (no dice):** `type:damage; fire` (adds `0` fire — tags the roll as fire damage without changing the total)
 
 ## Known issues
 

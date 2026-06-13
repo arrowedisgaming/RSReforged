@@ -130,7 +130,7 @@
 </tr>
 </tbody></table>
 <p>Effect Value format:</p>
-<pre><code>&lt;formula&gt;; type:&lt;roll-type[,roll-type...]&gt;; consume:&lt;origin|item-id|item-name&gt;; once
+<pre><code>&lt;formula&gt;; type:&lt;roll-type[,roll-type...]&gt;; random:&lt;type,type,...&gt;; consume:&lt;origin|item-id|item-name&gt;; once
 </code></pre>
 <table>
 <thead>
@@ -141,7 +141,7 @@
 </thead>
 <tbody><tr>
 <td><code>&lt;formula&gt;</code></td>
-<td>A Roll formula. May reference <code>@actor.system.*</code> etc.</td>
+<td>A Roll formula. May reference <code>@actor.system.*</code> etc. Omit it alongside a damage-type token to add <code>0</code> of that type — a pure type tag.</td>
 </tr>
 <tr>
 <td><code>type:check</code></td>
@@ -160,6 +160,18 @@
 <td>Any roll type</td>
 </tr>
 <tr>
+<td><code>&lt;damageType&gt;</code></td>
+<td>A bare dnd5e damage type (e.g. <code>fire</code>). Fixes the bonus to that type on damage rolls — no dialog, no randomness.</td>
+</tr>
+<tr>
+<td><code>random:&lt;type,type,...&gt;</code></td>
+<td>On a damage roll, pick one of the listed types at random each time the bonus is applied.</td>
+</tr>
+<tr>
+<td><code>choice:&lt;type,type,...&gt;</code></td>
+<td>On a damage roll, show a dropdown of the listed types in the bonus dialog so the player picks.</td>
+</tr>
+<tr>
 <td><code>consume:origin</code></td>
 <td>Consume one charge of the originating item when applied</td>
 </tr>
@@ -172,11 +184,16 @@
 <td>Delete the effect after a single use</td>
 </tr>
 </tbody></table>
+<p>Damage-type tokens accept dnd5e damage type keys (<code>acid</code>, <code>cold</code>, <code>fire</code>, <code>force</code>, <code>lightning</code>, <code>necrotic</code>, <code>poison</code>, <code>psychic</code>, <code>radiant</code>, <code>thunder</code>, <code>bludgeoning</code>, <code>piercing</code>, <code>slashing</code>). They apply only to damage rolls; on any other roll type the bonus is added untyped. (For example, <code>2d6; type:check, damage; lightning</code> adds 2d6 to a skill check, or 2d6 lightning damage to a damage roll.)</p>
 <p>Examples:</p>
 <ul>
 <li><strong>Bless:</strong> <code>1d4; type:check, save, attack</code> (no consumption, since Bless is a duration spell)</li>
-<li><strong>Bardic Inspiration (d8):</strong> <code>1d8; type:any; consume:origin; once</code></li>
+<li><strong>Bardic Inspiration (d8):</strong> <code>1d8; type:check, save, attack; consume:origin; once</code></li>
 <li><strong>Guidance:</strong> <code>1d4; type:check; consume:origin; once</code></li>
+<li><strong>Fixed type — extra necrotic:</strong> <code>1d6; type:damage; necrotic</code> (always adds 1d6 necrotic to damage rolls)</li>
+<li><strong>Player choice — elemental weapon:</strong> <code>1d8; type:damage; choice:acid, cold, fire, lightning, thunder</code> (dropdown in the bonus dialog; the player picks the type)</li>
+<li><strong>Random type — wild surge:</strong> <code>1d6; type:damage; random:fire, cold, lightning</code> (a different one of the three each time it&#39;s applied)</li>
+<li><strong>Type-only tag (no dice):</strong> <code>type:damage; fire</code> (adds <code>0</code> fire — tags the roll as fire damage without changing the total)</li>
 </ul>
 <h2>Known issues</h2>
 <ul>

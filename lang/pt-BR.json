@@ -119,6 +119,11 @@
 			"warning": {
 				"emptyDamageField": "Um ou mais campos de dano neste item estão vazios! Para rolar dano, certifique-se de que todos os campos de dano estejam preenchidos."
 			}
+		},
+		"bonus": {
+			"damageType": "Tipo de dano:",
+			"randomType": "Tipo aleatório: {types}",
+			"fixedType": "Dano de {type}"
 		}
 	}
 }

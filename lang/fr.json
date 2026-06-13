@@ -113,6 +113,11 @@
             "warning": {
                 "emptyDamageField": "Un ou plusieurs champs de dégâts pour cet objet sont vides ! Pour lancer les dégâts, assurez-vous que tous les champs de dégâts sont remplis."
             }
+        },
+        "bonus": {
+            "damageType": "Type de dégâts :",
+            "randomType": "Type aléatoire : {types}",
+            "fixedType": "Dégâts de {type}"
         }
     }
 }

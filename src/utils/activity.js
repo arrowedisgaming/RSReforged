@@ -493,4 +493,4 @@ async function _animateNewRolls(newRolls, message) {
     if (!CoreUtility.dice3dAnimatesRollUpdates()) {
         await CoreUtility.tryRollDice3D(newRolls, message.id);
     }
-} 
+}

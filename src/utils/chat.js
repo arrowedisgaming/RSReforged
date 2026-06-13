@@ -199,6 +199,38 @@ export class ChatUtility {
         }
     }
 
+    /**
+     * Re-register a self-anchored attack card in dnd5e's MessageRegistry after its
+     * attack roll was mutated post-creation (retroactive advantage/disadvantage, or a
+     * bonus applied to the attack roll).
+     *
+     * RSR keeps authoritative rolls in flags.rsreforged.rolls and renders from them, but
+     * condition modules (AC5e) and dnd5e's native attack->damage association read the
+     * native message.rolls through the registry. Without this re-sync they would resolve
+     * the *pre-mutation* attack roll (e.g. the flat d20 from before retro advantage),
+     * silently mis-evaluating advantage-conditioned effects on a later damage roll.
+     *
+     * No-ops unless the card self-registered under the "attack" hook
+     * (flags.dnd5e.originatingMessage === its own id), so it is safe to call after any
+     * roll mutation. Mirrors ActivityUtility._registerCardAsAttack: refresh the live
+     * document's rolls in-memory via updateSource (no DB write, no native re-render of
+     * RSR's custom card), then re-track. The in-memory roll sync is intentionally not
+     * persisted — the registry is rebuilt from flags on reload via prepareData -> track,
+     * and the fix only needs to hold for the live session (mutate -> damage) workflow.
+     * @param {ChatMessage} message The activation card whose attack roll changed.
+     */
+    static resyncAttackRegistry(message) {
+        if (!message?.id || message.flags?.dnd5e?.originatingMessage !== message.id) return;
+
+        try {
+            const rolls = ChatUtility.getMessageRolls(message);
+            message.updateSource({ rolls: CoreUtility.serializeRolls(rolls) });
+            dnd5e.registry?.messages?.track?.(message);
+        } catch (err) {
+            console.warn("RSReforged | failed to re-sync attack roll registry:", err);
+        }
+    }
+
     static getMessageType(message) {
         const t = message.type;
 
@@ -1236,10 +1268,16 @@ async function _processRetroAdvButtonEvent(message, event) {
 
         message.flags[MODULE_SHORT].rolls = CoreUtility.serializeRolls(originalRolls);
 
-        ChatUtility.updateChatMessage(message, { 
+        await ChatUtility.updateChatMessage(message, {
             flags: message.flags,
             flavor: message.flavor
         });
+
+        // The attack D20 roll just changed; re-register it in dnd5e's MessageRegistry so
+        // AC5e resolves the upgraded roll on a subsequent damage roll. Runs after the
+        // persist so it wins over dnd5e's prepareData -> track (which would re-read the
+        // stale native rolls). No-ops for non-attack cards.
+        ChatUtility.resyncAttackRegistry(message);
 
         if (!game.dice3d || !game.dice3d.isEnabled()) {
             CoreUtility.playRollSound();

@@ -135,6 +135,11 @@
             "warning": {
                 "emptyDamageField": "One or more damage fields on this item are empty! To roll damage, ensure all damage fields are filled."
             }
+        },
+        "bonus": {
+            "damageType": "Damage type:",
+            "randomType": "Random type: {types}",
+            "fixedType": "{type} damage"
         }
     }
 }

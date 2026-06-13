@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Retroactive bonus damage types.** Bonus Active Effects (`flags.rsreforged.bonus`) now accept damage-type keywords that take effect on damage rolls: a bare dnd5e type (e.g. `fire`) fixes the bonus to that type with no prompt, `random:<type,…>` picks one of the listed types at random each time the bonus is applied, and `choice:<type,…>` adds a dropdown to the bonus dialog for the player to choose. With no formula a damage-type token contributes `0` of that type (a pure tag); on any non-damage roll the bonus is added untyped. Via [#22](https://github.com/arrowedisgaming/RSReforged/pull/22).
+- **Automated Conditions 5e (AC5e) compatibility on merged quick-roll cards.** RSR rolls with `create: false` and emits no discrete attack message, so dnd5e's `MessageRegistry` held no attack entry for a quick-roll card and condition modules could not recover the attack's advantage state for the following damage roll. RSR now self-registers the activation card under the registry's `attack` hook — persisted via `flags.dnd5e.originatingMessage` so it re-registers on reload — and anchors damage rolls back to the card, while guarding the chat-card merge logic against treating a self-referencing card as its own parent. Via [#22](https://github.com/arrowedisgaming/RSReforged/pull/22). Tested on Foundry VTT v14.363, dnd5e 5.3.3, AC5e v14.533.4.1.
+
+### Fixed
+- **Retroactive advantage and attack-targeted bonuses now re-register the upgraded attack roll with dnd5e's `MessageRegistry`.** RSR stores authoritative rolls in flags and renders from them, but AC5e reads the native `message.rolls` through the registry; without a re-sync, declaring advantage (or applying a bonus to the attack) *after* the initial roll left AC5e resolving the pre-upgrade roll on a subsequent damage roll. The card now refreshes its registry entry in-memory after any attack-roll mutation, so advantage-conditioned effects evaluate against the current roll.
+- **Invalid damage types in `random:`/`choice:` bonus lists are dropped with a console warning** instead of passing through to the roll as free-text flavor and producing silently miscategorized damage that skips target resistances; a list left with no valid types degrades to an untyped bonus.
+
+### Changed
+- **Bonus-dialog damage-type labels are localized** (en / fr / pt-BR) and render dnd5e's own damage-type names, so the random/choice/fixed type chrome follows the active language.
+
 ## [4.9.0] — 2026-06-13
 
 ### Added
