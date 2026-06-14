@@ -319,6 +319,14 @@ describe("Integration API: rsreforged.* hook emissions in chat.js", () => {
         expect(body).toMatch(/attackRoll\.options\?\.mastery\s*\?\s*\{\s*mastery:\s*attackRoll\.options\.mastery\s*\}/);
     });
 
+    it("stamps flags.dnd5e.targets during child attack merge and quick-roll attack execution for wm5e", () => {
+        const mergeBody = extractFunctionBody(CHAT_JS, "async function _injectContent(message, type, html)");
+        expect(mergeBody).toMatch(/ActivityUtility\._syncAttackTargets\(parent,\s*message\)/);
+
+        const activityBody = extractFunctionBody(ACTIVITY_JS, "static async runActivityActions(message)");
+        expect(activityBody).toMatch(/ActivityUtility\._syncAttackTargets\(message\)/);
+    });
+
     it("does NOT removeClass('supplement') anywhere in chat.js — downstream modules and dnd5e enrichers must continue to find .supplement after the rebuild", () => {
         // Regression for #13. The pre-fix rescue at chat.js:504 renamed
         // .supplement -> .rsr-supplement, breaking any module querying for the
@@ -334,6 +342,7 @@ describe("Integration API: rsreforged.* hook emissions in chat.js", () => {
         const fragmentBody = extractFunctionBody(CHAT_JS, "async function _renderDnd5eDiceFragment(chatData)");
         expect(fragmentBody).toMatch(/foundry\.utils\.deepClone\(chatData\)/);
         expect(fragmentBody).toMatch(/delete prepared\.flags\.dnd5e\.item/);
+        expect(fragmentBody).toMatch(/delete prepared\.flags\.dnd5e\.roll/);
 
         for (const signature of [
             "async function _injectAttackRoll(message, html, { contentHtml = html } = {})",

@@ -405,7 +405,9 @@ function _safeInsert(sectionHTML, targetHTML) {
  * Render dnd5e dice markup from roll.toMessage() data without triggering the full
  * enriched-roll-flavor path. dnd5e's _enrichChatCard removes .message-header
  * .flavor-text when the synthetic message resolves an item + roll; toMessage()
- * payloads often omit that node, causing the same null.remove() failure.
+ * payloads often omit that node, causing the same null.remove() failure. Strip
+ * both flags because dnd5e 5.3 can still resolve the item through the originating
+ * message even after flags.dnd5e.item is removed from the synthetic fragment.
  *
  * @param {object} chatData  Data returned by Roll#toMessage / DamageRoll.toMessage.
  * @returns {Promise<JQuery>} Rendered message root (caller typically .find('.dice-roll')).
@@ -416,6 +418,7 @@ async function _renderDnd5eDiceFragment(chatData) {
     prepared.flags ??= {};
     if (prepared.flags.dnd5e) {
         delete prepared.flags.dnd5e.item;
+        delete prepared.flags.dnd5e.roll;
     }
     return $(await new ChatMessage5e(prepared).renderHTML());
 }
@@ -582,6 +585,10 @@ async function _injectContent(message, type, html) {
                     // dnd5e 5.3.0: roll data lives in flags.dnd5e.roll; system.roll is
                     // undefined since there is no data model for "roll" typed messages.
                     parent.flags.dnd5e.roll = message.flags?.dnd5e?.roll ?? message.system?.roll;
+                    // wm5e and other mastery modules read flags.dnd5e.targets off the
+                    // card to resolve the attacked actor; copy from the child roll message
+                    // dnd5e enriched before RSR deleted it.
+                    ActivityUtility._syncAttackTargets(parent, message);
                     // dnd5e 5.3.0: do NOT set parent.flags.dnd5e.originatingMessage to
                     // parent.id — that would make getOriginatingMessage() return the usage
                     // card itself for all future lookups, breaking the registry. The

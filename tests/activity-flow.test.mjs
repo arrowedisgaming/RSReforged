@@ -332,4 +332,108 @@ describe("ActivityUtility roll action flow", () => {
         );
         expect(activity.item.flags.dnd5e.scaling).toBe(2);
     });
+
+    it("stamps flags.dnd5e.targets from a child attack message for wm5e mastery actions", () => {
+        const parent = { flags: { dnd5e: {} } };
+        const child = {
+            flags: {
+                dnd5e: {
+                    targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 13 }]
+                }
+            }
+        };
+
+        ActivityUtility._syncAttackTargets(parent, child);
+
+        expect(parent.flags.dnd5e.targets).toEqual([
+            { name: "Goblin", uuid: "Actor.goblin", ac: 13 }
+        ]);
+    });
+
+    it("stamps flags.dnd5e.targets from the user's targeted tokens when no child message exists", () => {
+        const targetActor = {
+            uuid: "Actor.target",
+            system: { attributes: { ac: { value: 15 } } }
+        };
+        const targetToken = { name: "Bandit", actor: targetActor };
+        game.user.targets = new Set([targetToken]);
+
+        const message = { flags: { dnd5e: {} } };
+        ActivityUtility._syncAttackTargets(message);
+
+        expect(message.flags.dnd5e.targets).toEqual([
+            { name: "Bandit", uuid: "Actor.target", ac: 15 }
+        ]);
+    });
+
+    it("mirrors dnd5e's target-descriptor shape for fully-covered and AC-less tokens in the fallback path", () => {
+        const coveredActor = {
+            uuid: "Actor.covered",
+            img: "covered.webp",
+            system: { attributes: { ac: { value: 18 } } },
+            statuses: new Set(["coverTotal"])
+        };
+        const acLessActor = {
+            uuid: "Actor.acless",
+            img: "acless.webp",
+            system: { attributes: {} },
+            statuses: new Set()
+        };
+        game.user.targets = new Set([
+            { name: "Sheltered", actor: coveredActor },
+            { name: "Statless", actor: acLessActor }
+        ]);
+
+        const message = { flags: { dnd5e: {} } };
+        ActivityUtility._syncAttackTargets(message);
+
+        // Full cover and a missing AC both resolve to ac:null (never a real AC or
+        // undefined), and the avatar img is carried — matching dnd5e.utils.getTargetDescriptors.
+        expect(message.flags.dnd5e.targets).toEqual([
+            { name: "Sheltered", img: "covered.webp", uuid: "Actor.covered", ac: null },
+            { name: "Statless", img: "acless.webp", uuid: "Actor.acless", ac: null }
+        ]);
+    });
+
+    it("dedupes multiple tokens of the same actor by uuid in the fallback path", () => {
+        const actor = {
+            uuid: "Actor.twin",
+            img: "twin.webp",
+            system: { attributes: { ac: { value: 12 } } },
+            statuses: new Set()
+        };
+        game.user.targets = new Set([
+            { name: "Twin A", actor },
+            { name: "Twin B", actor }
+        ]);
+
+        const message = { flags: { dnd5e: {} } };
+        ActivityUtility._syncAttackTargets(message);
+
+        expect(message.flags.dnd5e.targets).toHaveLength(1);
+        expect(message.flags.dnd5e.targets[0].uuid).toBe("Actor.twin");
+    });
+
+    it("does not overwrite existing flags.dnd5e.targets on the card", () => {
+        const message = {
+            flags: {
+                dnd5e: {
+                    targets: [{ name: "Existing", uuid: "Actor.existing", ac: 10 }]
+                }
+            }
+        };
+        const child = {
+            flags: {
+                dnd5e: {
+                    targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 13 }]
+                }
+            }
+        };
+
+        ActivityUtility._syncAttackTargets(message, child);
+
+        expect(message.flags.dnd5e.targets).toEqual([
+            { name: "Existing", uuid: "Actor.existing", ac: 10 }
+        ]);
+    });
 });

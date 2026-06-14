@@ -19,3 +19,8 @@ docs/errors/
 # comments). Kept in the repo for convenient editing but never tracked, since
 # the actual posted comments and their substitutions are not artifacts.
 docs/outreach-drafts.md
+
+# Local-only PR review / test-plan working notes. Generated during remediation
+# of a PR (e.g. #22); kept for convenient editing but never shipped as docs.
+docs/pr-*-review.md
+docs/pr-*-test-plan.md

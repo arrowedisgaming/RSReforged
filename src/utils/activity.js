@@ -67,6 +67,49 @@ export class ActivityUtility {
     }
 
     /**
+     * Ensure `flags.dnd5e.targets` is present on a merged quick-roll card so modules
+     * such as wm5e can resolve the attacked actor from the chat message (e.g. Sap reads
+     * `targets[0].uuid` via `fromUuidSync`). RSR rolls with `create: false`, so dnd5e's
+     * attack-target enrichment on a discrete roll message never reaches the parent card
+     * unless we copy it during child-merge or stamp it from the user's targeted tokens
+     * at attack-roll time.
+     *
+     * Does not overwrite targets already stamped on the card.
+     * @param {ChatMessage} message The activation card to stamp.
+     * @param {ChatMessage} [sourceMessage] Optional child attack-roll message to copy from.
+     */
+    static _syncAttackTargets(message, sourceMessage = null) {
+        if (!message) return;
+
+        message.flags.dnd5e ??= {};
+        if (message.flags.dnd5e.targets?.length) return;
+
+        const fromSource = sourceMessage?.flags?.dnd5e?.targets;
+        if (fromSource?.length) {
+            message.flags.dnd5e.targets = foundry.utils.deepClone(fromSource);
+            return;
+        }
+
+        const tokens = Array.from(game.user?.targets ?? []);
+        if (!tokens.length) return;
+
+        // Mirror dnd5e's getTargetDescriptors() shape exactly: a fully-covered
+        // target reports ac:null (so the tray shows no hit/miss), a missing AC
+        // coerces to null rather than undefined, the avatar img is carried, and
+        // targets dedupe by uuid (two tokens of one actor collapse to one entry).
+        const targets = new Map();
+        for (const token of tokens) {
+            const { name } = token;
+            const { img, system, uuid, statuses } = token.actor ?? {};
+            if (!uuid) continue;
+            const ac = statuses?.has("coverTotal") ? null : system?.attributes?.ac?.value;
+            targets.set(uuid, { name, img, uuid, ac: ac ?? null });
+        }
+
+        if (targets.size) message.flags.dnd5e.targets = Array.from(targets.values());
+    }
+
+    /**
      * Extract Roll instances from the raw return value of rollAttack / rollDamage /
      * rollFormula. In dnd5e 5.3.0 all three methods return Roll[] directly when
      * messageConfig.create is false, so the array branch is hit in the normal case.
@@ -184,6 +227,8 @@ export class ActivityUtility {
             } else {
                 message.flags[MODULE_SHORT].isCritical = false;
             }
+
+            ActivityUtility._syncAttackTargets(message);
 
             // Register this card as its own "attack" roll message so condition
             // modules (AC5e) and dnd5e's native attack->damage association can find
