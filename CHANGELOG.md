@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.10.1] — 2026-06-15
+
+### Fixed
+- **The attack d20 now animates under Dice So Nice on quick rolls.** To let condition/mastery modules (AC5e, WM5E) read the attack during the immediately following damage roll, RSR exposes the attack roll on the card in-memory before rolling damage — but that put the roll into the document source, so modern DSN's update watcher (which only animates rolls *appended* by the update) treated the attack d20 as pre-existing and animated only the damage; an attack-only quick roll animated nothing at all. RSR now rolls the preloaded attack die itself while DSN continues to animate the appended damage, so each die animates exactly once with no double roll. The attack roll stays on the live card, so AC5e advantage recovery and WM5E auto-masteries (which resolve the card through dnd5e's `MessageRegistry`, i.e. the live document) keep working.
+
 ## [4.10.0] — 2026-06-14
 
 ### Added

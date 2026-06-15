@@ -211,6 +211,10 @@ export class ActivityUtility {
 
         let currentRolls = Array.from(flags.rolls || []);
         const newRolls = [];
+        // Rolls preloaded onto the live document before the final DSN-watched update.
+        // Modern DSN skips these (it only animates rolls appended by the update), so
+        // _animateNewRolls rolls them itself — see _registerCardAsAttack.
+        let preloadedRolls = [];
 
         if (message.flags[MODULE_SHORT].renderAttack) {
             const rawAttack = await ActivityUtility.getAttackFromMessage(message);
@@ -237,7 +241,11 @@ export class ActivityUtility {
             // the registry would otherwise have no attack entry for this card. Must
             // run BEFORE the damage roll below so the lookup resolves during the
             // damage roll's hooks on the quick-roll (attack+damage) path.
-            ActivityUtility._registerCardAsAttack(message, currentRolls);
+            if (ActivityUtility._registerCardAsAttack(message, currentRolls)) {
+                // The attack rolls are now in the live document's source, so modern DSN
+                // will skip them on the final update — animate them ourselves below.
+                preloadedRolls = attackRolls;
+            }
         }
 
         if (message.flags[MODULE_SHORT].renderDamage) {
@@ -260,7 +268,7 @@ export class ActivityUtility {
             }
         }
 
-        await _animateNewRolls(newRolls, message);
+        await _animateNewRolls(newRolls, message, preloadedRolls);
 
         message.flags[MODULE_SHORT].processed = true;
         const serializedRolls = CoreUtility.serializeRolls(currentRolls);
@@ -327,20 +335,30 @@ export class ActivityUtility {
      * condition modules (AC5e) / dnd5e's native attack->damage association cannot
      * recover the attack roll's advantage state.
      *
-     * Uses in-memory updateSource (no DB write, no re-render — the same pattern RSR
-     * already uses in preCreateChatMessage) so the live document immediately exposes
-     * the attack roll and the self-link, then tracks it explicitly. The self-link is
-     * also persisted by runActivityActions' final update, so prepareData re-registers
-     * the card on reload.
+     * Exposes the attack roll + self-link on the live document in-memory (updateSource:
+     * no DB write, no re-render) so the registry lookup resolves to a card whose
+     * `.rolls[0]` is the attack D20 and whose `flags.dnd5e.roll.mastery` is set during
+     * the immediately following damage roll. This MUST be the live document, not a
+     * detached copy: dnd5e's MessageRegistry.get() resolves stored ids back through
+     * game.messages.get() (registry.mjs), so condition/mastery modules that read
+     * `attackMessage.rolls[0]` (AC5e advantage recovery) or `roll.mastery` (WM5E auto
+     * masteries) only ever see this live card. runActivityActions persists the final
+     * state afterwards.
+     *
+     * Dice So Nice consequence: preloading the attack here makes DSN treat it as
+     * pre-existing and animate only the later-appended damage. _animateNewRolls
+     * compensates by rolling the preloaded dice itself for modern DSN — see the note
+     * there. The caller learns what was preloaded from this method's return value.
      *
      * Safe despite the self-referential originatingMessage: chat.js _injectContent
      * guards against treating a self-referencing card as its own merge parent.
      * @param {ChatMessage} message The activation card.
      * @param {Array<Roll|object>} currentRolls Rolls gathered so far (must include the attack).
+     * @returns {Boolean} Whether the card was registered (and its rolls preloaded).
      */
     static _registerCardAsAttack(message, currentRolls) {
         const attackRoll = (currentRolls ?? []).find(r => RollUtility.isRollOfType(r, CONFIG.Dice.D20Roll));
-        if (!attackRoll || !message?.id) return;
+        if (!attackRoll || !message?.id) return false;
 
         const rollFlag = {
             ...(message.flags?.dnd5e?.roll ?? {}),
@@ -349,9 +367,9 @@ export class ActivityUtility {
         };
 
         // In-memory only: expose the attack roll + self-link on the live document so
-        // both the registry lookup and AC5e's rolls[0] read resolve during the
-        // immediately following damage roll. runActivityActions persists the final
-        // state afterwards.
+        // both the registry lookup and AC5e's rolls[0] / WM5E's roll.mastery reads
+        // resolve during the immediately following damage roll. runActivityActions
+        // persists the final state afterwards.
         message.updateSource({
             rolls: CoreUtility.serializeRolls(currentRolls),
             "flags.dnd5e.roll": rollFlag,
@@ -363,6 +381,8 @@ export class ActivityUtility {
         } catch (err) {
             console.warn("RSReforged | failed to register card as attack roll message:", err);
         }
+
+        return true;
     }
 
     /**
@@ -524,10 +544,19 @@ export class ActivityUtility {
  * creation, so trigger the 3D roll manually for them; with no enabled DSN at all, fall
  * back to playing the dice sound.
  *
+ * Modern DSN only animates `message.rolls.slice(message.toObject().rolls.length)` on an
+ * update — i.e. the rolls the update *appended*, skipping any already present in the
+ * document source. _registerCardAsAttack preloads the attack roll in-memory (so AC5e and
+ * WM5E can read it during the damage roll), which makes DSN treat the attack d20 as
+ * pre-existing and animate only the damage. We therefore roll the preloaded dice
+ * ourselves; DSN still animates everything else from the update, so there is no overlap.
+ *
  * @param {Roll[]} newRolls The rolls added in this action.
  * @param {ChatMessage} message The message the rolls are persisted to.
+ * @param {Roll[]} [preloadedRolls] Rolls already written to the document source before
+ *   the final update (DSN skips these, so we animate them manually).
  */
-async function _animateNewRolls(newRolls, message) {
+async function _animateNewRolls(newRolls, message, preloadedRolls = []) {
     if (newRolls.length === 0) return;
 
     if (!game.dice3d || !game.dice3d.isEnabled()) {
@@ -536,6 +565,14 @@ async function _animateNewRolls(newRolls, message) {
     }
 
     if (!CoreUtility.dice3dAnimatesRollUpdates()) {
+        // Legacy DSN ignores update-appended rolls entirely: animate every new roll.
         await CoreUtility.tryRollDice3D(newRolls, message.id);
+        return;
+    }
+
+    // Modern DSN animates the update-appended rolls itself; only the preloaded rolls
+    // (which it skips) need a manual nudge.
+    if (preloadedRolls.length > 0) {
+        await CoreUtility.tryRollDice3D(preloadedRolls, message.id);
     }
 }

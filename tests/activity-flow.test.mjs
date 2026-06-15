@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeRoll, setupFoundryEnv } from "./helpers/foundry-env.mjs";
 
 describe("ActivityUtility roll action flow", () => {
@@ -13,6 +13,10 @@ describe("ActivityUtility roll action flow", () => {
         ({ MODULE_SHORT } = await import("../src/module/const.js"));
         ({ ActivityUtility } = await import("../src/utils/activity.js"));
         ({ CoreUtility } = await import("../src/utils/core.js"));
+    });
+
+    afterEach(() => {
+        delete globalThis.dnd5e;
     });
 
     it("resolves activities from native message methods before manual fallbacks", () => {
@@ -125,7 +129,7 @@ describe("ActivityUtility roll action flow", () => {
         expect(foundry.audio.AudioHelper.play).toHaveBeenCalledWith({ src: "dice.wav" }, true);
     });
 
-    it("does not manually animate quick activity rolls when Dice So Nice will see the ChatMessage rolls update", async () => {
+    it("manually animates only the preloaded attack under modern Dice So Nice (DSN appends nothing new to animate)", async () => {
         game.dice3d = {
             isEnabled: vi.fn(() => true),
             showForRoll: vi.fn()
@@ -140,16 +144,75 @@ describe("ActivityUtility roll action flow", () => {
                 }
             }
         });
-        const tryRollDice3D = vi.spyOn(CoreUtility, "tryRollDice3D");
+        const tryRollDice3D = vi.spyOn(CoreUtility, "tryRollDice3D").mockResolvedValue(true);
 
         vi.spyOn(ActivityUtility, "getAttackFromMessage").mockResolvedValue([attack]);
 
         await ActivityUtility.runActivityActions(message);
 
-        expect(tryRollDice3D).not.toHaveBeenCalled();
-        expect(game.dice3d.showForRoll).not.toHaveBeenCalled();
+        // _registerCardAsAttack preloaded the attack into the document source, so the
+        // final update appends no *new* roll for DSN to animate — RSR must roll the
+        // attack d20 itself or it would never animate on an attack-only quick roll.
+        expect(tryRollDice3D).toHaveBeenCalledTimes(1);
+        expect(tryRollDice3D).toHaveBeenCalledWith([attack], "usage-dsn");
         expect(foundry.audio.AudioHelper.play).not.toHaveBeenCalled();
         expect(message.updatedWith.rolls).toHaveLength(1);
+    });
+
+    it("preloads the attack on the live card for AC5e/WM5E and manually animates it under modern Dice So Nice", async () => {
+        game.dice3d = {
+            isEnabled: vi.fn(() => true),
+            showForRoll: vi.fn()
+        };
+        game.modules.get.mockImplementation((name) => name === "dice-so-nice"
+            ? { active: true, version: "6.2.8" }
+            : { active: false, version: "test" });
+
+        const track = vi.fn();
+        globalThis.dnd5e = { registry: { messages: { track } } };
+        const tryRollDice3D = vi.spyOn(CoreUtility, "tryRollDice3D").mockResolvedValue(true);
+
+        const attack = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 22, faces: 20, results: [17] });
+        const damage = makeRoll(env.classes.DamageRoll, { formula: "1d8+3", total: 8, faces: 8, results: [5] });
+        const message = new env.classes.TestChatMessage({
+            id: "usage-dsn-weapon",
+            flags: {
+                [MODULE_SHORT]: {
+                    renderAttack: true,
+                    renderDamage: true,
+                    rolls: []
+                }
+            }
+        });
+
+        vi.spyOn(ActivityUtility, "getAttackFromMessage").mockResolvedValue([attack]);
+        vi.spyOn(ActivityUtility, "getDamageFromMessage").mockImplementation(async () => {
+            // dnd5e's MessageRegistry.get() resolves to this live document, so the attack
+            // roll + roll flag must be on it (not a detached copy) during the damage roll
+            // — that is what AC5e (rolls[0]) and WM5E (roll.mastery) read.
+            expect(track).toHaveBeenCalledTimes(1);
+            expect(track.mock.calls[0][0]).toBe(message);
+            expect(message.rolls).toHaveLength(1);
+            expect(message.flags.dnd5e).toMatchObject({
+                originatingMessage: "usage-dsn-weapon",
+                roll: { type: "attack" }
+            });
+
+            return [damage];
+        });
+
+        await ActivityUtility.runActivityActions(message);
+
+        // Modern DSN animates the update-appended damage itself; RSR animates only the
+        // preloaded attack d20 (which DSN skips) — exactly once, no double animation.
+        expect(tryRollDice3D).toHaveBeenCalledTimes(1);
+        expect(tryRollDice3D).toHaveBeenCalledWith([attack], "usage-dsn-weapon");
+        expect(foundry.audio.AudioHelper.play).not.toHaveBeenCalled();
+        expect(message.updatedWith.rolls.map((roll) => roll.class)).toEqual([
+            "D20Roll",
+            "DamageRoll"
+        ]);
+        expect(message.rolls).toHaveLength(2);
     });
 
     it("manually animates quick activity rolls for legacy Dice So Nice versions that do not watch roll updates", async () => {
