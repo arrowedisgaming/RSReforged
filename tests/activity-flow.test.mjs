@@ -94,8 +94,7 @@ describe("ActivityUtility roll action flow", () => {
     });
 
     it("runs attack, damage, and formula actions, then persists serialized rolls to the message", async () => {
-        const attack = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 22, faces: 20, results: [17] });
-        attack.isCritical = true;
+        const attack = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 25, faces: 20, results: [20] });
         const damage = makeRoll(env.classes.DamageRoll, { formula: "1d8+3", total: 8, faces: 8, results: [5] });
         const formula = makeRoll(env.classes.BasicRoll, { formula: "1d6", total: 4, faces: 6, results: [4] });
         const message = new env.classes.TestChatMessage({
@@ -127,6 +126,158 @@ describe("ActivityUtility roll action flow", () => {
         ]);
         expect(message.updatedWith.flags).toBe(message.flags);
         expect(foundry.audio.AudioHelper.play).toHaveBeenCalledWith({ src: "dice.wav" }, true);
+    });
+
+    it("passes a real d20 critical state from quick attack into quick damage rolls (#25, #28)", async () => {
+        const attack = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 25, faces: 20, results: [20] });
+        const damage = makeRoll(env.classes.DamageRoll, { formula: "1d8+3", total: 9, faces: 8, results: [6] });
+        const rollDamage = vi.fn(() => [damage]);
+        const getDamageConfig = vi.fn(() => ({ rolls: [{ parts: ["1d8"] }] }));
+        const activity = {
+            rollDamage,
+            getDamageConfig,
+            item: { flags: { dnd5e: {} } }
+        };
+        const actor = { items: { get: vi.fn() } };
+        const message = new env.classes.TestChatMessage({
+            id: "usage-critical-damage",
+            flags: {
+                [MODULE_SHORT]: {
+                    renderAttack: true,
+                    renderDamage: true,
+                    rolls: []
+                }
+            }
+        });
+
+        vi.spyOn(ActivityUtility, "getAttackFromMessage").mockResolvedValue([attack]);
+        vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue(activity);
+        vi.spyOn(ActivityUtility, "_getActorFromMessage").mockReturnValue(actor);
+
+        await ActivityUtility.runActivityActions(message);
+
+        expect(message.flags[MODULE_SHORT].isCritical).toBe(true);
+        expect(getDamageConfig).toHaveBeenCalledWith(expect.objectContaining({ isCritical: true }));
+        const damageConfig = rollDamage.mock.calls[0][0];
+        expect(damageConfig.isCritical).toBe(true);
+        expect(damageConfig).not.toHaveProperty("critical");
+    });
+
+    it("derives quick attack critical state from serialized d20 roll data (#25, #28)", async () => {
+        const attack = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 25, faces: 20, results: [20] });
+        const damage = makeRoll(env.classes.DamageRoll, { formula: "1d8+3", total: 9, faces: 8, results: [6] });
+        const rollDamage = vi.fn(() => [damage]);
+        const activity = {
+            rollDamage,
+            getDamageConfig: vi.fn(() => ({ rolls: [{ parts: ["1d8"] }] })),
+            item: { flags: { dnd5e: {} } }
+        };
+        const message = new env.classes.TestChatMessage({
+            id: "usage-serialized-critical",
+            flags: {
+                [MODULE_SHORT]: {
+                    renderAttack: true,
+                    renderDamage: true,
+                    rolls: []
+                }
+            }
+        });
+
+        vi.spyOn(ActivityUtility, "getAttackFromMessage").mockResolvedValue([structuredClone(attack.toJSON())]);
+        vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue(activity);
+        vi.spyOn(ActivityUtility, "_getActorFromMessage").mockReturnValue({ items: { get: vi.fn() } });
+
+        await ActivityUtility.runActivityActions(message);
+
+        expect(message.flags[MODULE_SHORT].isCritical).toBe(true);
+        expect(rollDamage.mock.calls[0][0].isCritical).toBe(true);
+    });
+
+    it("preserves in-memory RSR flags (isCritical) across the attack-registration updateSource (#25, #28)", () => {
+        // Root cause of #25/#28: _registerCardAsAttack calls message.updateSource() to
+        // anchor the card for AC5e/WM5E. Foundry's updateSource re-initialises the
+        // document and rebuilds flags from the persisted source, dropping in-memory-only
+        // RSR writes. isCritical is set in memory during the attack roll and read later by
+        // the damage roll, so if it does not survive this step a confirmed crit rolls
+        // un-doubled damage. (Relies on the faithful TestChatMessage.updateSource, which
+        // mirrors that rebuild — see tests/helpers/foundry-env.mjs.)
+        const attack = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 25, faces: 20, results: [20] });
+        const message = new env.classes.TestChatMessage({
+            id: "usage-register-preserve",
+            flags: {
+                [MODULE_SHORT]: { renderAttack: true, renderDamage: true, rolls: [] }
+            }
+        });
+        // In-memory-only write (never persisted to _source), exactly as runActivityActions
+        // does before rolling damage.
+        message.flags[MODULE_SHORT].isCritical = true;
+
+        const registered = ActivityUtility._registerCardAsAttack(message, [attack]);
+
+        expect(registered).toBe(true);
+        // The dnd5e self-link was written through updateSource — proves the re-initialising
+        // source update actually ran...
+        expect(message.flags.dnd5e.originatingMessage).toBe("usage-register-preserve");
+        // ...yet the in-memory RSR crit flag (and render flags) survived it.
+        expect(message.flags[MODULE_SHORT].isCritical).toBe(true);
+        expect(message.flags[MODULE_SHORT].renderDamage).toBe(true);
+    });
+
+    it.each([
+        { name: "does not mark an ordinary d20 as critical", total: 18, results: [13], expected: false },
+        { name: "respects die-level custom critical success thresholds", total: 24, results: [19], dieOptions: { criticalSuccess: 19 }, expected: true },
+        { name: "respects roll-level Improved Critical thresholds (#25, #28)", total: 19, results: [19], rollOptions: { criticalSuccess: 19 }, expected: true },
+        { name: "ignores discarded critical d20 results", total: 17, results: [{ result: 20, discarded: true, active: false }, { result: 12 }], expected: false },
+        { name: "ignores rerolled critical d20 results (e.g. Halfling Luck)", total: 14, results: [{ result: 20, rerolled: true }, { result: 7 }], expected: false },
+        { name: "treats a forced-success d20 as critical even below the threshold", total: 12, results: [7], rollOptions: { forceSuccess: true }, expected: true }
+    ])("$name", async ({ name, total, results, dieOptions = {}, rollOptions = {}, expected }) => {
+        const attack = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total, faces: 20, results, dieOptions, rollOptions });
+        const message = new env.classes.TestChatMessage({
+            id: `usage-critical-${name}`,
+            flags: {
+                [MODULE_SHORT]: {
+                    renderAttack: true,
+                    rolls: []
+                }
+            }
+        });
+
+        vi.spyOn(ActivityUtility, "getAttackFromMessage").mockResolvedValue([attack]);
+
+        await ActivityUtility.runActivityActions(message);
+
+        expect(message.flags[MODULE_SHORT].isCritical).toBe(expected);
+    });
+
+    it("derives roll-level Improved Critical state from serialized d20 roll data (#25, #28)", async () => {
+        const attack = makeRoll(env.classes.D20Roll, {
+            formula: "1d20+5", total: 24, faces: 20, results: [19], rollOptions: { criticalSuccess: 19 }
+        });
+        const message = new env.classes.TestChatMessage({
+            id: "usage-serialized-improved-critical",
+            flags: { [MODULE_SHORT]: { renderAttack: true, rolls: [] } }
+        });
+
+        // A natural 19 is only a crit because the roll-level criticalSuccess threshold
+        // survives serialization — proving isCriticalRoll reads it off the rebuilt data
+        // rather than falling back to a hard-coded 20.
+        vi.spyOn(ActivityUtility, "getAttackFromMessage").mockResolvedValue([structuredClone(attack.toJSON())]);
+
+        await ActivityUtility.runActivityActions(message);
+
+        expect(message.flags[MODULE_SHORT].isCritical).toBe(true);
+    });
+
+    it("does not treat a damage roll that contains a d20 term as a critical hit", async () => {
+        // A non-critical DamageRoll whose formula includes a d20 die that rolled 20.
+        // isCriticalRoll must read the damage roll's own (false) crit flag, not mistake
+        // the d20 damage die for an attack crit.
+        const damage = makeRoll(env.classes.DamageRoll, { formula: "1d20", total: 20, faces: 20, results: [20] });
+
+        expect(ActivityUtility.isCriticalRoll(damage)).toBe(false);
+
+        damage.options.isCritical = true;
+        expect(ActivityUtility.isCriticalRoll(damage)).toBe(true);
     });
 
     it("manually animates only the preloaded attack under modern Dice So Nice (DSN appends nothing new to animate)", async () => {
@@ -253,7 +404,6 @@ describe("ActivityUtility roll action flow", () => {
         // must re-resolve against the now-persisted document and fire the rolls
         // instead of marking the message processed with nothing on it.
         const attack = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 18, faces: 20, results: [13] });
-        attack.isCritical = false;
         const damage = makeRoll(env.classes.DamageRoll, { formula: "1d8+3", total: 7, faces: 8, results: [4] });
         const message = new env.classes.TestChatMessage({
             id: "usage-retry",

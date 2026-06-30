@@ -552,7 +552,7 @@ async function _injectContent(message, type, html) {
                 message.flags[MODULE_SHORT].renderDamage = true;
 
                 const mRolls = ChatUtility.getMessageRolls(message);
-                message.flags[MODULE_SHORT].isCritical = mRolls[0]?.isCritical;
+                message.flags[MODULE_SHORT].isCritical = ActivityUtility.isCriticalRoll(mRolls[0]);
 
                 if (useRsrDamageButtons) {
                     const enricher = html.find('.dice-roll');
@@ -600,7 +600,7 @@ async function _injectContent(message, type, html) {
                     parent.flags[MODULE_SHORT].renderDamage = true;
                     
                     const mRolls = ChatUtility.getMessageRolls(message);
-                    parent.flags[MODULE_SHORT].isCritical = mRolls[0]?.isCritical;
+                    parent.flags[MODULE_SHORT].isCritical = ActivityUtility.isCriticalRoll(mRolls[0]);
                     
                     const actType = message.flags?.dnd5e?.activity?.type ?? message.system?.activity?.type;
                     parent.flags[MODULE_SHORT].isHealing = actType === "heal";

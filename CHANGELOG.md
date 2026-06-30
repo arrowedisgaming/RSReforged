@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.10.2] — 2026-06-29
+
+### Fixed
+- **Quick-roll critical hits now pass the real dnd5e critical state into damage rolls again.** Serialized attack rolls can lose the live `D20Roll.isCritical` getter after being rebuilt from stored roll data, so RSR now derives critical state from the underlying d20 term before rolling damage. Critical detection runs through the same crit logic that drives the rendered "Critical Hit!" styling (`RollUtility.getCritTypeForDie`), so the doubled damage dice and the card styling can no longer disagree: forced criticals, improved-critical thresholds (crit on 19/18), and rerolled or discarded dice (e.g. Halfling Luck, advantage/disadvantage) are all handled consistently. Damage detection is gated on the d20 roll class, so a damage formula that happens to contain a d20 die is no longer mistaken for a critical attack. Additionally, the freshly-detected critical state previously survived to the damage roll only by accident: anchoring the card as its own attack-roll message (for AC5e/WM5E) calls `message.updateSource()`, which re-initialises the document and rebuilds its flags from the persisted source — silently dropping the in-memory `isCritical` (and, on the preCreate-retry path, the render flags), so a confirmed critical still rolled un-doubled damage. RSR now preserves its module flags across that re-initialisation. This restores dnd5e's own critical dice doubling and max-critical-dice handling without changing damage formulas in RSR. Fixes [#25](https://github.com/arrowedisgaming/RSReforged/issues/25) and [#28](https://github.com/arrowedisgaming/RSReforged/issues/28).
+
 ## [4.10.1] — 2026-06-15
 
 ### Fixed

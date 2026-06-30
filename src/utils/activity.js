@@ -2,7 +2,7 @@ import { MODULE_SHORT } from "../module/const.js";
 import { MODULE_MIDI } from "../module/integration.js";
 import { ChatUtility } from "./chat.js";
 import { CoreUtility } from "./core.js";
-import { ROLL_TYPE, RollUtility } from "./roll.js";
+import { CRIT_TYPE, ROLL_TYPE, RollUtility } from "./roll.js";
 import { SETTING_NAMES, SettingsUtility } from "./settings.js";
 
 export class ActivityUtility {
@@ -135,6 +135,45 @@ export class ActivityUtility {
     }
 
     /**
+     * Read dnd5e critical state from either a live roll or serialized roll data.
+     * Foundry's live `isCritical` getter can disappear after round-tripping through
+     * Roll.fromData, so this derives the answer from the underlying roll data instead.
+     *
+     * Attack (d20) rolls defer to RollUtility.getCritTypeForDie — the SAME crit logic
+     * that drives the rendered crit styling (see render.js) — so the doubled damage
+     * dice and the "Critical Hit!" card can never disagree. That path honours
+     * forceSuccess, the roll-level criticalSuccess threshold, and rerolled/discarded
+     * exclusion, none of which a raw `result >= 20` scan handles.
+     *
+     * Detection is by roll CLASS (not "has a 20-faced die") so a damage formula that
+     * happens to contain a d20 term is not mistaken for an attack roll; such damage
+     * rolls fall through to their own stored critical flag below.
+     */
+    static isCriticalRoll(roll) {
+        if (!roll) return false;
+
+        if (RollUtility.isRollOfType(roll, CONFIG.Dice.D20Roll)) {
+            const d20 = roll.d20
+                ?? roll.terms?.find?.(term => term?.faces === 20)
+                ?? roll.dice?.find?.(term => term?.faces === 20);
+            if (d20) {
+                const critType = RollUtility.getCritTypeForDie(d20, {
+                    critThreshold: roll.options?.criticalSuccess,
+                    forceSuccess: roll.options?.forceSuccess,
+                    ignoreDiscarded: true
+                });
+                return critType === CRIT_TYPE.SUCCESS || critType === CRIT_TYPE.MIXED;
+            }
+        }
+
+        // Damage / non-d20 rolls: read the roll's own critical flag. dnd5e stores damage
+        // crit under options.critical; RSR and midi-qol pass options.isCritical.
+        return roll.isCritical === true
+            || roll.options?.isCritical === true
+            || roll.options?.critical === true;
+    }
+
+    /**
      * Derive RSR render flags (renderAttack / renderDamage / renderFormula / isHealing /
      * formulaName) from an activity's capabilities and write them onto the given RSR
      * flags object. Mutates `flags` in place; a no-op unless `flags.quickRoll` is set.
@@ -227,7 +266,7 @@ export class ActivityUtility {
                 // in that case isCritical is determined later during rendering.
                 message.flags[MODULE_SHORT].isCritical = message.flags[MODULE_SHORT].dual
                     ? false
-                    : attackRolls[0].isCritical;
+                    : ActivityUtility.isCriticalRoll(attackRolls[0]);
             } else {
                 message.flags[MODULE_SHORT].isCritical = false;
             }
@@ -370,11 +409,23 @@ export class ActivityUtility {
         // both the registry lookup and AC5e's rolls[0] / WM5E's roll.mastery reads
         // resolve during the immediately following damage roll. runActivityActions
         // persists the final state afterwards.
+        //
+        // updateSource() re-initialises the document and rebuilds message.flags from
+        // _source, which DROPS any in-memory-only RSR flag writes (e.g. isCritical, and
+        // render flags set at render time on the preCreate-retry path) — they were never
+        // persisted to source. Capture the live RSR flags first and restore them after,
+        // so the crit state and render flags survive into the damage roll below. Without
+        // this, a crit's damage dice were never doubled (#25, #28).
+        const moduleFlags = message.flags?.[MODULE_SHORT];
         message.updateSource({
             rolls: CoreUtility.serializeRolls(currentRolls),
             "flags.dnd5e.roll": rollFlag,
             "flags.dnd5e.originatingMessage": message.id
         });
+        if (moduleFlags) {
+            message.flags ??= {};
+            message.flags[MODULE_SHORT] = moduleFlags;
+        }
 
         try {
             dnd5e.registry?.messages?.track?.(message);

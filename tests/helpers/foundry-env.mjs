@@ -141,6 +141,18 @@ export async function setupFoundryEnv(options = {}) {
 
     class D20Roll extends TestRoll {
         static ADV_MODE = { NORMAL: 0, ADVANTAGE: 1, DISADVANTAGE: 2 };
+
+        get d20() {
+            return this.terms.find((term) => term.faces === 20);
+        }
+
+        get isCritical() {
+            return this.d20?.isCriticalSuccess;
+        }
+
+        get isFumble() {
+            return this.d20?.isCriticalFailure;
+        }
     }
 
     class DamageRoll extends TestRoll {
@@ -164,6 +176,22 @@ export async function setupFoundryEnv(options = {}) {
         // (reroll/fudge) is reflected in the die total, matching real Foundry.
         get total() {
             return sumResults(this.results);
+        }
+
+        get activeResults() {
+            return this.results.filter((result) => result.active !== false && result.discarded !== true);
+        }
+
+        get isCriticalSuccess() {
+            if (this.faces !== 20) return false;
+            const threshold = this.options.criticalSuccess ?? 20;
+            return this.activeResults.some((result) => Number(result.result) >= threshold);
+        }
+
+        get isCriticalFailure() {
+            if (this.faces !== 20) return false;
+            const threshold = this.options.criticalFailure ?? 1;
+            return this.activeResults.some((result) => Number(result.result) <= threshold);
         }
 
         keep(modifier) {
@@ -198,6 +226,10 @@ export async function setupFoundryEnv(options = {}) {
             this.rolls ??= data.rolls ?? [];
             this.type ??= data.type ?? "roll";
             this.id ??= data.id ?? `message-${messages.size + 1}`;
+            // Persisted document source. A real ChatMessage rebuilds its live `flags`
+            // from `_source` whenever updateSource() runs, so in-memory-only flag writes
+            // that were never persisted to source are discarded at that point.
+            this._source = { flags: foundry.utils.deepClone(this.flags) };
             messages.set(this.id, this);
         }
 
@@ -213,22 +245,36 @@ export async function setupFoundryEnv(options = {}) {
         }
 
         // Foundry applies an in-memory source update with flattened (dot-notation) keys
-        // and no DB write / re-render. Mirror that here so code paths that call
-        // updateSource (e.g. _registerCardAsAttack) mutate the live document without
-        // touching `updatedWith` (which tracks persisted update() calls).
+        // and no DB write / re-render, then re-initialises the live document from that
+        // source. Mirror both halves: write changes into `_source`, then rebuild the live
+        // `flags` from `_source` so in-memory-only flag writes (never persisted) are
+        // dropped — exactly as a real ChatMessage behaves. Non-flag keys (e.g. rolls) are
+        // applied to the live document in place so live Roll instances survive intact.
+        // Does not touch `updatedWith` (which tracks persisted update() calls).
         updateSource(changes = {}) {
             for (const [key, value] of Object.entries(changes)) {
-                if (key.includes(".")) {
-                    const path = key.split(".");
-                    let target = this;
-                    for (let i = 0; i < path.length - 1; i++) {
-                        target[path[i]] ??= {};
-                        target = target[path[i]];
-                    }
-                    target[path[path.length - 1]] = value;
-                } else {
-                    this[key] = value;
+                const path = key.includes(".") ? key.split(".") : [key];
+                let src = this._source;
+                for (let i = 0; i < path.length - 1; i++) {
+                    src[path[i]] ??= {};
+                    src = src[path[i]];
                 }
+                src[path[path.length - 1]] = value;
+            }
+
+            // Re-initialise live flags from the persisted source (drops unpersisted writes).
+            this.flags = foundry.utils.deepClone(this._source.flags);
+
+            // Apply non-flag changes to the live document directly.
+            for (const [key, value] of Object.entries(changes)) {
+                if (key === "flags" || key.startsWith("flags.")) continue;
+                const path = key.includes(".") ? key.split(".") : [key];
+                let target = this;
+                for (let i = 0; i < path.length - 1; i++) {
+                    target[path[i]] ??= {};
+                    target = target[path[i]];
+                }
+                target[path[path.length - 1]] = value;
             }
             return changes;
         }
@@ -463,22 +509,22 @@ export async function setupFoundryEnv(options = {}) {
     };
 }
 
-export function makeRoll(RollClass, { formula = "1", total = 1, faces = null, results = [], type = null, properties = [] } = {}) {
+export function makeRoll(RollClass, { formula = "1", total = 1, faces = null, results = [], type = null, properties = [], dieOptions = {}, rollOptions = {} } = {}) {
     const roll = new RollClass(formula);
     roll.total = total;
     roll._total = total;
     if (type) roll.options.type = type;
     if (properties.length) roll.options.properties = properties;
+    Object.assign(roll.options, rollOptions);
     if (faces) {
         const die = new foundry.dice.terms.Die({
             number: results.length || 1,
             faces,
-            results: results.map((result) => ({
-                result,
-                active: true,
-                discarded: false
-            })),
-            modifiers: []
+            results: results.map((result) => typeof result === "number"
+                ? { result, active: true, discarded: false }
+                : { active: true, discarded: false, ...result }),
+            modifiers: [],
+            options: dieOptions
         });
         roll.dice = [die];
         roll.terms = [die];
