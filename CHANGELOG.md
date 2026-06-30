@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Hidden Roll Style** setting for hidden NPC rolls (issue #23). Choose **Hide Total** (mask the modified total, show the natural d20 — original behavior) or **Hide Breakdown** (show the final total while masking the natural d20 value and all modifiers). Defaults to Hide Total, so existing worlds are unchanged.
+
 ## [4.10.2] — 2026-06-29
 
 ### Fixed

@@ -120,6 +120,7 @@ All settings live under *Configure Settings → Module Settings → RSReforged*.
 - **Quick Roll for {Skills, Abilities, Tools, Activities}** — toggle each category independently
 - **Always Roll Multiple Dice** — show two d20s on every roll, not just advantage or disadvantage
 - **Hide NPC Roll Results** — for actors players don't own, hide modified totals on d20 rolls so only the natural die shows; choose Off, NPC attacks only, or all NPC d20 rolls (damage always visible)
+- **Hidden Roll Style** — when a roll is hidden (see above), choose whether to mask the total and show the natural d20 (**Hide Total**, default) or show the final total while masking the die value and modifiers (**Hide Breakdown**)
 - **Manual Damage Mode** — require an explicit click to roll damage, instead of auto-rolling on hit
 - **Damage Apply UI** — choose dnd5e's per-target tray or RSReforged's quick apply buttons
 - **RSReforged Apply Button Targets** — selected vs. targeted tokens, with priority modes for the RSReforged quick-button UI
