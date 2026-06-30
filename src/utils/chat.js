@@ -820,6 +820,8 @@ function _configureRollVisibility(roll, rollType, actor) {
         // the DC pass/fail icon and forced-success crit styling.
         roll.options.displayChallenge = false;
         roll.options.forceSuccess = false;
+        // Record which presentation style the renderer + DOM pass should use.
+        roll.options.hideRollStyle = SettingsUtility.getHideNpcRollStyle();
     }
 }
 

@@ -8,6 +8,7 @@ describe("ChatUtility message lifecycle behavior", () => {
     let RenderUtility;
     let MODULE_SHORT;
     let TEMPLATE;
+    let HIDE_NPC_ROLL_STYLES;
 
     beforeEach(async () => {
         vi.resetModules();
@@ -17,6 +18,7 @@ describe("ChatUtility message lifecycle behavior", () => {
         ({ ActivityUtility } = await import("../src/utils/activity.js"));
         ({ RenderUtility } = await import("../src/utils/render.js"));
         ({ TEMPLATE } = await import("../src/module/templates.js"));
+        ({ HIDE_NPC_ROLL_STYLES } = await import("../src/utils/settings.js"));
     });
 
     afterEach(() => {
@@ -589,6 +591,47 @@ describe("ChatUtility message lifecycle behavior", () => {
         expect(multiRollCall?.[1]?.roll?.options?.forceSuccess).toBe(false);
         expect(html.find(".tooltip-part.constant")).toHaveLength(0);
         expect(html.find(".dice-formula").text()).not.toBe("1d20 + 5");
+    });
+
+    it("stamps hideRollStyle onto a hidden roll from the hideNpcRollStyle setting", async () => {
+        env.settings.hideNpcRollMode = "all";
+        env.settings.hideNpcRollStyle = HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+
+        const skillRoll = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 18, faces: 20, results: [13] });
+        const renderSpy = vi.spyOn(RenderUtility, "render").mockImplementation(async (template, data) => {
+            if (template === TEMPLATE.MULTIROLL) {
+                return `<span class="rsr-multiroll" data-key="${data.key}"></span>`;
+            }
+            return "";
+        });
+
+        const message = new env.classes.TestChatMessage({
+            type: "roll",
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: { quickRoll: true, processed: true, displayChallenge: true },
+                dnd5e: { roll: { type: "skill", target: 15 } }
+            },
+            rolls: [skillRoll],
+            getAssociatedActor: () => ({ isOwner: false })
+        });
+        const html = $(`
+            <article><div class="message-content">
+                <div class="dice-roll">
+                    <div class="dice-total">18</div>
+                    <div class="dice-tooltip">
+                        <div class="dice-formula">1d20 + 5</div>
+                        <div class="tooltip-part constant">+5</div>
+                    </div>
+                </div>
+            </div></article>
+        `);
+
+        await ChatUtility.processChatMessage(message, html);
+
+        const multiRollCall = renderSpy.mock.calls.find(([template]) => template === TEMPLATE.MULTIROLL);
+        expect(multiRollCall?.[1]?.roll?.options?.hideFinalResult).toBe(true);
+        expect(multiRollCall?.[1]?.roll?.options?.hideRollStyle).toBe(HIDE_NPC_ROLL_STYLES.BREAKDOWN);
     });
 
     it("strips bonus dice (Bless/Guidance) from a hidden NPC d20 tooltip, keeping only the natural d20", async () => {
