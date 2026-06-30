@@ -886,4 +886,57 @@ describe("ChatUtility message lifecycle behavior", () => {
 
         tmplSpy.mockRestore();
     });
+
+    it("breakdown style renders only the kept total for an advantage hidden roll", async () => {
+        const tmplSpy = vi
+            .spyOn(foundry.applications.handlebars, "renderTemplate")
+            .mockImplementation(async (_path, data) => data);
+
+        // Advantage: discarded 4 (active:false) + kept 17 (active:true).
+        const roll = makeRoll(env.classes.D20Roll, {
+            formula: "2d20kh1", total: 17, faces: 20,
+            results: [
+                { result: 4, active: false, discarded: true },
+                { result: 17, active: true, discarded: false }
+            ]
+        });
+        roll.options.hideFinalResult = true;
+        roll.options.hideRollStyle = HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+
+        await RenderUtility.render(TEMPLATE.MULTIROLL, { roll, key: "skill" });
+
+        const call = tmplSpy.mock.calls.find(([p]) => String(p).includes("rsr-multiroll"));
+        const data = call[1];
+        expect(data.entries).toHaveLength(1);
+        expect(data.entries[0].ignored).toBeUndefined();
+        expect(data.entries[0].hideTotal).toBe(false);
+        expect(data.entries[0].total).toBe(17);
+
+        tmplSpy.mockRestore();
+    });
+
+    it("total style still renders both entries for an advantage hidden roll", async () => {
+        const tmplSpy = vi
+            .spyOn(foundry.applications.handlebars, "renderTemplate")
+            .mockImplementation(async (_path, data) => data);
+
+        const roll = makeRoll(env.classes.D20Roll, {
+            formula: "2d20kh1", total: 17, faces: 20,
+            results: [
+                { result: 4, active: false, discarded: true },
+                { result: 17, active: true, discarded: false }
+            ]
+        });
+        roll.options.hideFinalResult = true;
+        roll.options.hideRollStyle = HIDE_NPC_ROLL_STYLES.TOTAL;
+
+        await RenderUtility.render(TEMPLATE.MULTIROLL, { roll, key: "skill" });
+
+        const call = tmplSpy.mock.calls.find(([p]) => String(p).includes("rsr-multiroll"));
+        const data = call[1];
+        expect(data.entries).toHaveLength(2);
+        expect(data.entries.some(e => e.ignored === true)).toBe(true);
+
+        tmplSpy.mockRestore();
+    });
 });

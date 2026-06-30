@@ -86,11 +86,18 @@ async function _renderMultiRoll(data = {}) {
         const isBreakdown = isHidden && roll.options.hideRollStyle === HIDE_NPC_ROLL_STYLES.BREAKDOWN;
         const hideTotal = isHidden && !isBreakdown;
         const showD20Icon = SettingsUtility.getSettingValue(SETTING_NAMES.D20_ICONS_ENABLED) && !isBreakdown;
+        const isIgnored = tmpResults.some(r => r.discarded);
+
+        // In breakdown style only the final used total is shown. Rendering the
+        // discarded advantage/disadvantage die's total too would leak that
+        // adv/disadv was in play and the gap between the two natural d20s, so
+        // skip discarded entries entirely in this style.
+        if (isBreakdown && isIgnored) continue;
 
         entries.push({
 			roll: baseRoll,
 			total: total,
-			ignored: tmpResults.some(r => r.discarded) ? true : undefined,
+			ignored: isIgnored ? true : undefined,
             // Hidden rolls already have displayChallenge and forceSuccess cleared
             // by _configureRollVisibility, so no extra suppression is needed here.
             critType: RollUtility.getCritTypeForDie(baseTerm, critOptions),
