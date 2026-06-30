@@ -597,6 +597,153 @@ git commit -m "docs: document Hidden Roll Style setting and regenerate Foundry l
 
 ---
 
+## Task 6: Collapse breakdown hidden rolls to the single kept total (adv/disadv leak fix)
+
+**Files:**
+- Modify: `src/utils/render.js` (`_renderMultiRoll`, the per-entry block added in Task 3)
+- Test: `tests/chat-behavior.test.mjs`
+
+**Context:** The final whole-branch review found that in `breakdown` style an advantage/disadvantage (or "Always Roll Multiple Dice") hidden roll emits one entry per d20 result, so the discarded die's total renders alongside the kept one. To a non-owner that leaks (a) that adv/disadv was in play and (b) the numeric gap between the two natural d20s (the modifier is constant, so `T_kept − T_ignored = d_kept − d_ignored`). Absolute die values and modifiers stay masked, but for a privacy feature this relative leak should be closed. Fix: in `breakdown` style, skip discarded entries so only the final used total is shown. This must NOT change `total` style (adv/disadv still shows both, one greyed) or any non-hidden roll.
+
+**Interfaces:**
+- Consumes: `roll.options.hideFinalResult`, `roll.options.hideRollStyle`, `HIDE_NPC_ROLL_STYLES.BREAKDOWN` (already imported in render.js from Tasks 1-3).
+- Produces: in `_renderMultiRoll`, when `hideFinalResult` is true AND style is `breakdown`, entries whose dice are discarded are not pushed — so a multi-d20 breakdown roll yields exactly one entry (the kept result). `total` style and non-hidden rolls are unchanged (still one entry per d20 result).
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `tests/chat-behavior.test.mjs`, next to the Task 3 renderer tests (which spy on `foundry.applications.handlebars.renderTemplate` and read the data object from `call[1]`). Use the established advantage fixture shape (`results: [{ result, active, discarded }]`):
+
+```javascript
+    it("breakdown style renders only the kept total for an advantage hidden roll", async () => {
+        const tmplSpy = vi
+            .spyOn(foundry.applications.handlebars, "renderTemplate")
+            .mockImplementation(async (_path, data) => data);
+
+        // Advantage: discarded 4 (active:false) + kept 17 (active:true).
+        const roll = makeRoll(env.classes.D20Roll, {
+            formula: "2d20kh1", total: 17, faces: 20,
+            results: [
+                { result: 4, active: false, discarded: true },
+                { result: 17, active: true, discarded: false }
+            ]
+        });
+        roll.options.hideFinalResult = true;
+        roll.options.hideRollStyle = HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+
+        await RenderUtility.render(TEMPLATE.MULTIROLL, { roll, key: "skill" });
+
+        const call = tmplSpy.mock.calls.find(([p]) => String(p).includes("rsr-multiroll"));
+        const data = call[1];
+        expect(data.entries).toHaveLength(1);
+        expect(data.entries[0].ignored).toBeUndefined();
+        expect(data.entries[0].hideTotal).toBe(false);
+        expect(data.entries[0].total).toBe(17);
+
+        tmplSpy.mockRestore();
+    });
+
+    it("total style still renders both entries for an advantage hidden roll", async () => {
+        const tmplSpy = vi
+            .spyOn(foundry.applications.handlebars, "renderTemplate")
+            .mockImplementation(async (_path, data) => data);
+
+        const roll = makeRoll(env.classes.D20Roll, {
+            formula: "2d20kh1", total: 17, faces: 20,
+            results: [
+                { result: 4, active: false, discarded: true },
+                { result: 17, active: true, discarded: false }
+            ]
+        });
+        roll.options.hideFinalResult = true;
+        roll.options.hideRollStyle = HIDE_NPC_ROLL_STYLES.TOTAL;
+
+        await RenderUtility.render(TEMPLATE.MULTIROLL, { roll, key: "skill" });
+
+        const call = tmplSpy.mock.calls.find(([p]) => String(p).includes("rsr-multiroll"));
+        const data = call[1];
+        expect(data.entries).toHaveLength(2);
+        expect(data.entries.some(e => e.ignored === true)).toBe(true);
+
+        tmplSpy.mockRestore();
+    });
+```
+
+Note: confirm the spy target / data-capture mechanism matches the Task 3 renderer tests already in this file; reuse whatever convention they settled on. The assertions above (entry counts, `ignored`, `hideTotal`, `total`) must stay as written.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `npx vitest run tests/chat-behavior.test.mjs -t "advantage hidden roll"`
+Expected: the breakdown test FAILS — `data.entries` has length 2 (current code pushes the discarded entry too). The total-style test should already pass (it asserts current behavior).
+
+- [ ] **Step 3: Implement the skip**
+
+In `src/utils/render.js` `_renderMultiRoll`, the Task 3 block currently reads:
+```javascript
+        const total = baseRoll.total + (bonusRoll?.total ?? 0);
+
+        // Two hidden-roll presentations (issue #23):
+        //  - "total" (default): mask the modified total, reveal the natural d20.
+        //  - "breakdown": reveal the modified total, mask the natural d20 value.
+        const isHidden = roll.options.hideFinalResult;
+        const isBreakdown = isHidden && roll.options.hideRollStyle === HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+        const hideTotal = isHidden && !isBreakdown;
+        const showD20Icon = SettingsUtility.getSettingValue(SETTING_NAMES.D20_ICONS_ENABLED) && !isBreakdown;
+
+        entries.push({
+			roll: baseRoll,
+			total: total,
+			ignored: tmpResults.some(r => r.discarded) ? true : undefined,
+```
+Change it to compute `isIgnored` once, add the skip guard, and reuse `isIgnored` in the push:
+```javascript
+        const total = baseRoll.total + (bonusRoll?.total ?? 0);
+
+        // Two hidden-roll presentations (issue #23):
+        //  - "total" (default): mask the modified total, reveal the natural d20.
+        //  - "breakdown": reveal the modified total, mask the natural d20 value.
+        const isHidden = roll.options.hideFinalResult;
+        const isBreakdown = isHidden && roll.options.hideRollStyle === HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+        const hideTotal = isHidden && !isBreakdown;
+        const showD20Icon = SettingsUtility.getSettingValue(SETTING_NAMES.D20_ICONS_ENABLED) && !isBreakdown;
+        const isIgnored = tmpResults.some(r => r.discarded);
+
+        // In breakdown style only the final used total is shown. Rendering the
+        // discarded advantage/disadvantage die's total too would leak that
+        // adv/disadv was in play and the gap between the two natural d20s, so
+        // skip discarded entries entirely in this style.
+        if (isBreakdown && isIgnored) continue;
+
+        entries.push({
+			roll: baseRoll,
+			total: total,
+			ignored: isIgnored ? true : undefined,
+```
+Leave the remaining fields (`critType`, `d20Result`, `hideTotal`, `dcResult`) exactly as they are.
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `npx vitest run tests/chat-behavior.test.mjs -t "advantage hidden roll"`
+Expected: both PASS.
+
+- [ ] **Step 5: Run the full suite**
+
+Run: `npx vitest run`
+Expected: PASS (all prior tests still green — `total` style and non-hidden rolls unaffected).
+
+- [ ] **Step 6: Update CHANGELOG and commit**
+
+Add a one-line note under the existing `## [Unreleased]` → `### Added` (or a `### Fixed` subsection) in `CHANGELOG.md`, e.g.:
+```markdown
+- Hide Breakdown style now collapses advantage/disadvantage rolls to the single final total, so the discarded die no longer reveals that advantage was in play.
+```
+This is a CHANGELOG-only doc touch (no README wording change), so the Foundry listing does not need regenerating. Then commit:
+```bash
+git add src/utils/render.js tests/chat-behavior.test.mjs CHANGELOG.md
+git commit -m "fix(render): collapse breakdown adv/disadv hidden rolls to single total"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage (issue #23 + comments):**
