@@ -21,6 +21,8 @@
             "enableD20Icons.hint": "When outputting a quick roll, display an icon showing the natural die roll next to the total result.",
             "hideNpcRollMode.name": "Hide NPC Roll Results",
             "hideNpcRollMode.hint": "For quick rolls made by actors a player does not own, hide the modified total and modifiers so only the natural d20 result is visible. Damage and healing totals are always shown. GMs and actor owners always see full results.",
+            "hideNpcRollStyle.name": "Hidden Roll Style",
+            "hideNpcRollStyle.hint": "Controls what is masked when an NPC roll is hidden (see Hide NPC Roll Results). 'Hide Total' masks the modified total and shows the natural d20. 'Hide Breakdown' reveals the final total but masks the natural d20 value and all modifiers.",
             "enableHideFinalResult.name": "Hide Result of NPC Attacks (Legacy)",
             "enableHideFinalResult.hint": "Legacy setting preserved for older worlds. Use Hide NPC Roll Results instead.",
             "enableDiceReroll.name": "Enable Dice Rerolling",
@@ -75,6 +77,10 @@
                 "none": "Off",
                 "attacks": "NPC Attacks Only",
                 "all": "All NPC d20 Rolls (Except Damage)"
+            },
+            "hideNpcRollStyle": {
+                "total": "Hide Total (show natural d20)",
+                "breakdown": "Hide Breakdown (show final total)"
             }
         },
         "sheet": {
