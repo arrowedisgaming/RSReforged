@@ -8,13 +8,14 @@ describe("SettingsUtility and CoreUtility configuration behavior", () => {
     let SettingsUtility;
     let SETTING_NAMES;
     let HIDE_NPC_ROLL_MODES;
+    let HIDE_NPC_ROLL_STYLES;
     let ROLL_TYPE;
 
     beforeEach(async () => {
         vi.resetModules();
         env = await setupFoundryEnv();
         ({ CoreUtility } = await import("../src/utils/core.js"));
-        ({ SettingsUtility, SETTING_NAMES, HIDE_NPC_ROLL_MODES } = await import("../src/utils/settings.js"));
+        ({ SettingsUtility, SETTING_NAMES, HIDE_NPC_ROLL_MODES, HIDE_NPC_ROLL_STYLES } = await import("../src/utils/settings.js"));
         ({ ROLL_TYPE } = await import("../src/utils/roll.js"));
         ({ HooksUtility } = await import("../src/utils/hooks.js"));
     });
@@ -63,6 +64,24 @@ describe("SettingsUtility and CoreUtility configuration behavior", () => {
             dnd5e: expect.any(String),
             rsr: expect.any(String)
         });
+    });
+
+    it("registers hideNpcRollStyle as a world choice setting defaulting to total", () => {
+        SettingsUtility.registerSettings();
+        expect(env.registeredSettings.get(SETTING_NAMES.HIDE_NPC_ROLL_STYLE)).toMatchObject({
+            scope: "world",
+            config: true,
+            type: String,
+            default: HIDE_NPC_ROLL_STYLES.TOTAL
+        });
+    });
+
+    it("getHideNpcRollStyle returns the configured style and defaults to total", () => {
+        env.settings.hideNpcRollStyle = HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+        expect(SettingsUtility.getHideNpcRollStyle()).toBe(HIDE_NPC_ROLL_STYLES.BREAKDOWN);
+
+        env.settings.hideNpcRollStyle = HIDE_NPC_ROLL_STYLES.TOTAL;
+        expect(SettingsUtility.getHideNpcRollStyle()).toBe(HIDE_NPC_ROLL_STYLES.TOTAL);
     });
 
     it("registers the versatile two-handed keybinding under the module namespace", () => {

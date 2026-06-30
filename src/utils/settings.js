@@ -16,6 +16,7 @@ export const SETTING_NAMES = {
     D20_ICONS_ENABLED: "enableD20Icons",
     HIDE_FINAL_RESULT_ENABLED: "enableHideFinalResult",
     HIDE_NPC_ROLL_MODE: "hideNpcRollMode",
+    HIDE_NPC_ROLL_STYLE: "hideNpcRollStyle",
     MANUAL_DAMAGE_MODE: "manualDamageMode",
     OVERLAY_BUTTONS_ENABLED: "enableOverlayButtons",
     DAMAGE_APPLY_MODE: "damageApplyMode",
@@ -45,6 +46,13 @@ export const HIDE_NPC_ROLL_MODES = {
     NONE: "none",
     ATTACKS: "attacks",
     ALL: "all"
+}
+
+export const HIDE_NPC_ROLL_STYLES = {
+    // Mask the modified total (show "???") while revealing the natural d20. Original behavior.
+    TOTAL: "total",
+    // Reveal the modified total while masking the natural d20 value and all modifiers (issue #23).
+    BREAKDOWN: "breakdown"
 }
 
 const D20_NPC_ROLL_TYPES = [
@@ -187,6 +195,20 @@ export class SettingsUtility {
             }
         });
 
+        game.settings.register(MODULE_NAME, SETTING_NAMES.HIDE_NPC_ROLL_STYLE, {
+            name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.HIDE_NPC_ROLL_STYLE}.name`),
+            hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.HIDE_NPC_ROLL_STYLE}.hint`),
+            scope: "world",
+            config: true,
+            type: String,
+            default: HIDE_NPC_ROLL_STYLES.TOTAL,
+            requiresReload: true,
+            choices: {
+                [HIDE_NPC_ROLL_STYLES.TOTAL]: CoreUtility.localize(`${MODULE_SHORT}.choices.hideNpcRollStyle.${HIDE_NPC_ROLL_STYLES.TOTAL}`),
+                [HIDE_NPC_ROLL_STYLES.BREAKDOWN]: CoreUtility.localize(`${MODULE_SHORT}.choices.hideNpcRollStyle.${HIDE_NPC_ROLL_STYLES.BREAKDOWN}`)
+            }
+        });
+
         game.settings.register(MODULE_NAME, SETTING_NAMES.HIDE_FINAL_RESULT_ENABLED, {
             // Preserve the old world setting key so existing worlds do not lose stored data.
             // New behavior is controlled by HIDE_NPC_ROLL_MODE.
@@ -289,6 +311,16 @@ export class SettingsUtility {
         if (!SettingsUtility.shouldHideNpcRollTotal(rollType)) return false;
         if (game.user.isGM) return false;
         return !actor?.isOwner;
+    }
+
+    /**
+     * The configured presentation style for hidden NPC rolls.
+     * "total" masks the modified total and shows the natural d20 (original behavior).
+     * "breakdown" reveals the modified total and masks the d20 value + modifiers (issue #23).
+     * @returns {string} One of HIDE_NPC_ROLL_STYLES.
+     */
+    static getHideNpcRollStyle() {
+        return SettingsUtility.getSettingValue(SETTING_NAMES.HIDE_NPC_ROLL_STYLE);
     }
 
     static get _useRsrDamageApplyButtons() {

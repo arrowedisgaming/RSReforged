@@ -1,7 +1,7 @@
 import { MODULE_NAME } from "../module/const.js";
 import { TEMPLATE } from "../module/templates.js";
 import { RollUtility } from "./roll.js";
-import { SETTING_NAMES, SettingsUtility } from "./settings.js";
+import { SETTING_NAMES, SettingsUtility, HIDE_NPC_ROLL_STYLES } from "./settings.js";
 
 /**
  * Utility class to handle all rendering from provided fields into HTML data.
@@ -78,16 +78,30 @@ async function _renderMultiRoll(data = {}) {
         const baseRoll = Roll.fromTerms([baseTerm]);
 
         const total = baseRoll.total + (bonusRoll?.total ?? 0);
-        const hideTotal = roll.options.hideFinalResult;
+
+        // Two hidden-roll presentations (issue #23):
+        //  - "total" (default): mask the modified total, reveal the natural d20.
+        //  - "breakdown": reveal the modified total, mask the natural d20 value.
+        const isHidden = roll.options.hideFinalResult;
+        const isBreakdown = isHidden && roll.options.hideRollStyle === HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+        const hideTotal = isHidden && !isBreakdown;
+        const showD20Icon = SettingsUtility.getSettingValue(SETTING_NAMES.D20_ICONS_ENABLED) && !isBreakdown;
+        const isIgnored = tmpResults.some(r => r.discarded);
+
+        // In breakdown style only the final used total is shown. Rendering the
+        // discarded advantage/disadvantage die's total too would leak that
+        // adv/disadv was in play and the gap between the two natural d20s, so
+        // skip discarded entries entirely in this style.
+        if (isBreakdown && isIgnored) continue;
 
         entries.push({
 			roll: baseRoll,
 			total: total,
-			ignored: tmpResults.some(r => r.discarded) ? true : undefined,
+			ignored: isIgnored ? true : undefined,
             // Hidden rolls already have displayChallenge and forceSuccess cleared
             // by _configureRollVisibility, so no extra suppression is needed here.
             critType: RollUtility.getCritTypeForDie(baseTerm, critOptions),
-            d20Result: SettingsUtility.getSettingValue(SETTING_NAMES.D20_ICONS_ENABLED) ? d20Rolls.results[i].result : null,
+            d20Result: showD20Icon ? d20Rolls.results[i].result : null,
             hideTotal,
             dcResult: !critOptions.displayChallenge || isNaN(roll.options.target)
                 ? undefined
