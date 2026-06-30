@@ -792,4 +792,55 @@ describe("ChatUtility message lifecycle behavior", () => {
         expect(html.find(".rsr-section-damage")).toHaveLength(1);
         expect(html.find(".rsr-damage")).toHaveLength(1);
     });
+
+    it("breakdown style reveals total and drops the d20 icon in multiroll entries", async () => {
+        // Harness adaptation: foundry.applications.handlebars.renderTemplate is already
+        // a vi.fn() — spy on it directly and capture the raw data argument (no JSON.parse).
+        // Also: makeRoll sets roll.terms = [die] only, giving _renderMultiRoll a base total
+        // of 13 (d20 result). To reach the asserted total of 18 (13 + 5), we append a
+        // pre-evaluated bonus term so bonusRoll.total = 5 and the loop computes 13 + 5 = 18.
+        const tmplSpy = vi
+            .spyOn(foundry.applications.handlebars, "renderTemplate")
+            .mockImplementation(async (_path, data) => JSON.stringify(data));
+
+        env.settings.enableD20Icons = true; // would normally produce a d20Result
+
+        const roll = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 18, faces: 20, results: [13] });
+        // Append a pre-evaluated +5 bonus term so _renderMultiRoll totals 13 + 5 = 18.
+        roll.terms = [roll.dice[0], { total: 5, _evaluated: true, results: [] }];
+        roll.options.hideFinalResult = true;
+        roll.options.hideRollStyle = HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+
+        await RenderUtility.render(TEMPLATE.MULTIROLL, { roll, key: "skill" });
+
+        const call = tmplSpy.mock.calls.find(([p]) => String(p).includes("rsr-multiroll"));
+        const data = call[1]; // direct access — no JSON.parse needed, call[1] is the raw data object
+        expect(data.entries[0].hideTotal).toBe(false);
+        expect(data.entries[0].d20Result).toBeNull();
+        expect(data.entries[0].total).toBe(18);
+
+        tmplSpy.mockRestore();
+    });
+
+    it("total style (default) keeps the total masked and shows the d20 icon", async () => {
+        const tmplSpy = vi
+            .spyOn(foundry.applications.handlebars, "renderTemplate")
+            .mockImplementation(async (_path, data) => JSON.stringify(data));
+
+        env.settings.enableD20Icons = true;
+
+        const roll = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 18, faces: 20, results: [13] });
+        roll.terms = [roll.dice[0], { total: 5, _evaluated: true, results: [] }];
+        roll.options.hideFinalResult = true;
+        roll.options.hideRollStyle = HIDE_NPC_ROLL_STYLES.TOTAL;
+
+        await RenderUtility.render(TEMPLATE.MULTIROLL, { roll, key: "skill" });
+
+        const call = tmplSpy.mock.calls.find(([p]) => String(p).includes("rsr-multiroll"));
+        const data = call[1];
+        expect(data.entries[0].hideTotal).toBe(true);
+        expect(data.entries[0].d20Result).toBe(13);
+
+        tmplSpy.mockRestore();
+    });
 });
