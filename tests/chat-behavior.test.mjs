@@ -680,6 +680,49 @@ describe("ChatUtility message lifecycle behavior", () => {
         expect(html.find(".dice-formula").text()).not.toContain("1d4");
     });
 
+    it("breakdown style strips ALL tooltip parts including the natural d20", async () => {
+        env.settings.hideNpcRollMode = "all";
+        env.settings.hideNpcRollStyle = HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+
+        const skillRoll = makeRoll(env.classes.D20Roll, { formula: "1d20+5+1d4", total: 21, faces: 20, results: [13] });
+        const renderSpy = vi.spyOn(RenderUtility, "render").mockImplementation(async (template, data) => {
+            if (template === TEMPLATE.MULTIROLL) {
+                return `<span class="rsr-multiroll" data-key="${data.key}"></span>`;
+            }
+            return "";
+        });
+
+        const message = new env.classes.TestChatMessage({
+            type: "roll",
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: { quickRoll: true, processed: true, displayChallenge: true },
+                dnd5e: { roll: { type: "skill", target: 15 } }
+            },
+            rolls: [skillRoll],
+            getAssociatedActor: () => ({ isOwner: false })
+        });
+        const html = $(`
+            <article><div class="message-content">
+                <div class="dice-roll">
+                    <div class="dice-total">21</div>
+                    <div class="dice-tooltip">
+                        <div class="dice-formula">1d20 + 5 + 1d4</div>
+                        <section class="tooltip-part"><div class="dice"><ol class="dice-rolls"><li class="roll die d20">13</li></ol></div></section>
+                        <section class="tooltip-part"><div class="dice"><ol class="dice-rolls"><li class="roll die d4">3</li></ol></div></section>
+                        <div class="tooltip-part constant">+5</div>
+                    </div>
+                </div>
+            </div></article>
+        `);
+
+        await ChatUtility.processChatMessage(message, html);
+
+        // Breakdown style: NOTHING in the tooltip survives — no d20, no bonus die, no flat mod.
+        expect(html.find(".tooltip-part").length).toBe(0);
+        expect(html.find(".dice-formula").text()).not.toBe("1d20 + 5 + 1d4");
+    });
+
     it("shows full NPC skill totals to actor owners even when hideNpcRollMode is all", async () => {
         env.settings.hideNpcRollMode = "all";
 

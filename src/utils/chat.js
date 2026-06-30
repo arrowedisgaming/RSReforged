@@ -7,7 +7,7 @@ import { DialogUtility } from "./dialog.js";
 import { LogUtility } from "./log.js";
 import { RenderUtility } from "./render.js";
 import { ROLL_STATE, ROLL_TYPE, RollUtility } from "./roll.js";
-import { SETTING_NAMES, SettingsUtility } from "./settings.js";
+import { HIDE_NPC_ROLL_STYLES, SETTING_NAMES, SettingsUtility } from "./settings.js";
 
 export const MESSAGE_TYPE = {
     ROLL: "roll",
@@ -828,14 +828,24 @@ function _configureRollVisibility(roll, rollType, actor) {
 function _applyHiddenRollPresentation(rollHTML, roll) {
     if (!roll?.options?.hideFinalResult) return;
 
-    // Reveal only the natural d20. Removing flat modifiers (.tooltip-part.constant)
-    // is not enough: bonus dice such as Bless or Guidance render as their own
-    // non-constant tooltip part (li.roll.die.dN) and would otherwise leak both the
-    // buff and the rolled value. Drop every tooltip part that is not a d20 die.
-    rollHTML.find('.dice-tooltip .tooltip-part').each((_i, el) => {
-        const part = $(el);
-        if (part.find('.roll.d20').length === 0) part.remove();
-    });
+    const isBreakdown = roll.options.hideRollStyle === HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+
+    if (isBreakdown) {
+        // Breakdown style (issue #23): the total is shown, so the entire dice
+        // breakdown must be masked — natural d20 included. Drop every tooltip part.
+        rollHTML.find('.dice-tooltip .tooltip-part').remove();
+    } else {
+        // Total style: reveal only the natural d20. Removing flat modifiers
+        // (.tooltip-part.constant) is not enough: bonus dice such as Bless or
+        // Guidance render as their own non-constant tooltip part (li.roll.die.dN)
+        // and would otherwise leak both the buff and the rolled value. Drop every
+        // tooltip part that is not a d20 die.
+        rollHTML.find('.dice-tooltip .tooltip-part').each((_i, el) => {
+            const part = $(el);
+            if (part.find('.roll.d20').length === 0) part.remove();
+        });
+    }
+
     rollHTML.find('.dice-formula').text("1d20 + " + CoreUtility.localize(`${MODULE_SHORT}.chat.hide`));
 }
 
