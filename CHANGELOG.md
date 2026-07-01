@@ -11,9 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Hidden Roll Style** setting for hidden NPC rolls (issue #23). Choose **Hide Total** (mask the modified total, show the natural d20 — original behavior) or **Hide Breakdown** (show the final total while masking the natural d20 value and all modifiers). Defaults to Hide Total, so existing worlds are unchanged.
 
+- French (`fr`) and Brazilian Portuguese (`pt-BR`) translations for the Hidden Roll Style setting and its choices.
+
 ### Fixed
 
 - Hide Breakdown style now collapses advantage/disadvantage rolls to the single final total, so the discarded die no longer reveals that advantage was in play.
+- Hide Breakdown style no longer tags the revealed total with a success/failure crit class, closing a residual leak of a natural 20/1 to players inspecting the chat card.
 
 ## [4.10.2] — 2026-06-29
 

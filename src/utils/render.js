@@ -99,8 +99,11 @@ async function _renderMultiRoll(data = {}) {
 			total: total,
 			ignored: isIgnored ? true : undefined,
             // Hidden rolls already have displayChallenge and forceSuccess cleared
-            // by _configureRollVisibility, so no extra suppression is needed here.
-            critType: RollUtility.getCritTypeForDie(baseTerm, critOptions),
+            // by _configureRollVisibility. In breakdown style the total is visible,
+            // so critType must be dropped too: a natural 20/1 would otherwise tag the
+            // total with a success/failure class and leak the masked die (present in
+            // the DOM even though RSR's crit CSS only colors the now-absent d20 icon).
+            critType: isBreakdown ? undefined : RollUtility.getCritTypeForDie(baseTerm, critOptions),
             d20Result: showD20Icon ? d20Rolls.results[i].result : null,
             hideTotal,
             dcResult: !critOptions.displayChallenge || isNaN(roll.options.target)
