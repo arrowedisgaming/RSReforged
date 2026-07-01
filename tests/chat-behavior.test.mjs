@@ -887,6 +887,44 @@ describe("ChatUtility message lifecycle behavior", () => {
         tmplSpy.mockRestore();
     });
 
+    it("breakdown style suppresses critType so the masked total carries no crit/fumble class", async () => {
+        const tmplSpy = vi
+            .spyOn(foundry.applications.handlebars, "renderTemplate")
+            .mockImplementation(async (_path, data) => data);
+
+        // A natural 20 would normally mark the entry critType "success"; in breakdown
+        // that class lands on the visible total and leaks the masked die even unstyled.
+        const roll = makeRoll(env.classes.D20Roll, { formula: "1d20", total: 20, faces: 20, results: [20] });
+        roll.options.hideFinalResult = true;
+        roll.options.hideRollStyle = HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+
+        await RenderUtility.render(TEMPLATE.MULTIROLL, { roll, key: "skill" });
+
+        const call = tmplSpy.mock.calls.find(([p]) => String(p).includes("rsr-multiroll"));
+        const data = call[1];
+        expect(data.entries[0].critType).toBeUndefined();
+
+        tmplSpy.mockRestore();
+    });
+
+    it("total style keeps critType so a natural 20 still marks success", async () => {
+        const tmplSpy = vi
+            .spyOn(foundry.applications.handlebars, "renderTemplate")
+            .mockImplementation(async (_path, data) => data);
+
+        const roll = makeRoll(env.classes.D20Roll, { formula: "1d20", total: 20, faces: 20, results: [20] });
+        roll.options.hideFinalResult = true;
+        roll.options.hideRollStyle = HIDE_NPC_ROLL_STYLES.TOTAL;
+
+        await RenderUtility.render(TEMPLATE.MULTIROLL, { roll, key: "skill" });
+
+        const call = tmplSpy.mock.calls.find(([p]) => String(p).includes("rsr-multiroll"));
+        const data = call[1];
+        expect(data.entries[0].critType).toBe("success");
+
+        tmplSpy.mockRestore();
+    });
+
     it("breakdown style renders only the kept total for an advantage hidden roll", async () => {
         const tmplSpy = vi
             .spyOn(foundry.applications.handlebars, "renderTemplate")
