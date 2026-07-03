@@ -244,6 +244,42 @@ describe("RollUtility.processActivity", () => {
         expect(inputs.messageConfig.data.flags[MODULE_SHORT].quickRoll).toBe(true);
     });
 
+    it("preserves the dialog for features with consumption scaling allowed (Lay on Hands)", () => {
+        const inputs = activityInputs({
+            activity: {
+                item: { type: "feat", system: {} },
+                consumption: {
+                    targets: [{ type: "itemUses", value: "1" }],
+                    scaling: { allowed: true }
+                }
+            },
+            scaling: 0
+        });
+
+        RollUtility.processActivity(inputs.activity, inputs.usageConfig, inputs.dialogConfig, inputs.messageConfig);
+
+        expect(inputs.dialogConfig.configure).toBe(true);
+        expect(inputs.messageConfig.data.flags[MODULE_SHORT].quickRoll).toBe(true);
+    });
+
+    it("does not preserve the dialog for features with consumption scaling disallowed", () => {
+        const inputs = activityInputs({
+            activity: {
+                item: { type: "feat", system: {} },
+                consumption: {
+                    targets: [{ type: "itemUses", value: "1" }],
+                    scaling: { allowed: false }
+                }
+            },
+            scaling: 0
+        });
+
+        RollUtility.processActivity(inputs.activity, inputs.usageConfig, inputs.dialogConfig, inputs.messageConfig);
+
+        expect(inputs.dialogConfig.configure).toBe(false);
+        expect(inputs.messageConfig.data.flags[MODULE_SHORT].quickRoll).toBe(true);
+    });
+
     it("stamps one-handed attackMode on quick versatile weapon rolls when the versatile key is not held", () => {
         const inputs = activityInputs({
             activity: {

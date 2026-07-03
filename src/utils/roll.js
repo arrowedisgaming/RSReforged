@@ -78,6 +78,13 @@ export class RollUtility {
         // Spell-type activities (cantrips, leveled spells) use a different consumption
         // path and are handled by isLeveledSpell above.
         const consumesSpellSlot = !!activity?.consumption?.targets?.some?.(t => t?.type === "spellSlots");
+        // Lay on Hands-style features: consumption.scaling.allowed is the flag dnd5e's
+        // own canScale/canConfigureScaling getters read (dnd5e.mjs) when an item's
+        // consumption is configured with "Allow Scaling" — it means the player must
+        // choose how much of a resource to spend. usageConfig.scaling can't be used
+        // here for the same reason noted above (dnd5e seeds it to 0 for every
+        // scalable activity, including ones where scaling isn't actually allowed).
+        const hasConsumptionScaling = !!activity?.consumption?.scaling?.allowed;
         // Nonzero scaling means an upcast delta has already been seeded (e.g.
         // drag-to-slot, macro). Preserve the dialog so the player can confirm or
         // adjust. scaling = 0 is dnd5e's noisy default for any scalable activity
@@ -87,6 +94,7 @@ export class RollUtility {
         dialogConfig.configure = isLeveledSpell
             || isOrderActivity
             || consumesSpellSlot
+            || hasConsumptionScaling
             || hasUpcastScaling
             || !fastForward;
 
