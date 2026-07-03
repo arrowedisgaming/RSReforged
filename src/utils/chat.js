@@ -125,8 +125,8 @@ export class ChatUtility {
         if (message.flags[MODULE_SHORT].processed) {
             await $(html).removeClass("rsr-hide");
         }
-        
-        ui.chat.scrollBottom();
+
+        _scrollChatToBottom();
     }
 
     /**
@@ -186,7 +186,7 @@ export class ChatUtility {
         }
 
         await $html.removeClass("rsr-hide");
-        ui.chat.scrollBottom();
+        _scrollChatToBottom();
     }
 
     static async updateChatMessage(message, update = {}, context = {}) {
@@ -290,6 +290,17 @@ export class ChatUtility {
     static isMessageCritical(message) {
         return message.flags[MODULE_SHORT].isCritical ?? false;
     }
+}
+
+/**
+ * Keep the chat log pinned to the bottom after RSR unhides / rewrites a card,
+ * but only when the user is already there. Mirrors core ChatLog behavior
+ * (V13+ shows a "jump to bottom" pill instead of force-scrolling users who
+ * have scrolled up). Unconditional scrolling yanked every client to the
+ * newest roll on each render/update (issue #31).
+ */
+function _scrollChatToBottom() {
+    if (ui.chat?.isAtBottom ?? true) ui.chat.scrollBottom();
 }
 
 function _onOverlayHover(message, html) {

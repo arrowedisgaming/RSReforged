@@ -977,4 +977,91 @@ describe("ChatUtility message lifecycle behavior", () => {
 
         tmplSpy.mockRestore();
     });
+
+    it("does not force-scroll chat when the user has scrolled up (issue #31)", async () => {
+        ui.chat.isAtBottom = false;
+
+        const skillRoll = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 18, faces: 20, results: [13] });
+        const message = new env.classes.TestChatMessage({
+            type: "roll",
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: { quickRoll: true, processed: true, displayChallenge: true },
+                dnd5e: { roll: { type: "skill", target: 15 } }
+            },
+            rolls: [skillRoll],
+            getAssociatedActor: () => ({ isOwner: false })
+        });
+        const html = $(`
+            <article><div class="message-content">
+                <div class="dice-roll">
+                    <div class="dice-total">18</div>
+                    <div class="dice-tooltip">
+                        <div class="dice-formula">1d20 + 5</div>
+                        <div class="tooltip-part constant">+5</div>
+                    </div>
+                </div>
+            </div></article>
+        `);
+
+        await ChatUtility.processChatMessage(message, html);
+
+        expect(ui.chat.scrollBottom).not.toHaveBeenCalled();
+    });
+
+    it("still scrolls chat when the user is already at the bottom", async () => {
+        ui.chat.isAtBottom = true;
+
+        const skillRoll = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 18, faces: 20, results: [13] });
+        const message = new env.classes.TestChatMessage({
+            type: "roll",
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: { quickRoll: true, processed: true, displayChallenge: true },
+                dnd5e: { roll: { type: "skill", target: 15 } }
+            },
+            rolls: [skillRoll],
+            getAssociatedActor: () => ({ isOwner: false })
+        });
+        const html = $(`
+            <article><div class="message-content">
+                <div class="dice-roll">
+                    <div class="dice-total">18</div>
+                    <div class="dice-tooltip">
+                        <div class="dice-formula">1d20 + 5</div>
+                        <div class="tooltip-part constant">+5</div>
+                    </div>
+                </div>
+            </div></article>
+        `);
+
+        await ChatUtility.processChatMessage(message, html);
+
+        expect(ui.chat.scrollBottom).toHaveBeenCalled();
+    });
+
+    it("does not force-scroll chat for usage cards when the user has scrolled up (issue #31)", async () => {
+        ui.chat.isAtBottom = false;
+
+        const damage = makeRoll(env.classes.DamageRoll, { formula: "1d10+3", total: 11, faces: 10, results: [8] });
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderDamage: true,
+                    rolls: [damage]
+                },
+                dnd5e: { activity: { type: "damage" } }
+            }
+        });
+        const html = $(`<article><div class="message-content"><div class="card-buttons"><button data-action="rollDamage"></button></div></div></article>`);
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+
+        expect(ui.chat.scrollBottom).not.toHaveBeenCalled();
+    });
 });

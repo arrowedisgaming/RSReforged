@@ -487,7 +487,7 @@ export async function setupFoundryEnv(options = {}) {
     };
 
     globalThis.ui = {
-        chat: { scrollBottom: vi.fn() },
+        chat: { scrollBottom: vi.fn(), isAtBottom: true },
         notifications: {
             info: vi.fn(),
             warn: vi.fn(),
