@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.11.2] — 2026-07-03
+
 ### Fixed
 
 - The activity usage dialog now shows for features whose consumption allows scaling (e.g. **Lay on Hands**), so players can choose how much of a resource to spend instead of the full amount being consumed silently on a quick roll. Fixes [#30](https://github.com/arrowedisgaming/RSReforged/issues/30).
