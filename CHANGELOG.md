@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.11.1] — 2026-07-03
+
 ### Fixed
 
 - Chat no longer force-scrolls every player to the newest roll on each quick-roll render or update. RSReforged now only re-pins the chat log when the user is already at the bottom (matching Foundry core behavior), so scrolling back through history is no longer interrupted. Fixes [#31](https://github.com/arrowedisgaming/RSReforged/issues/31).
