@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Merged quick-roll cards now honor dnd5e's **Collapse Chat Card Trays** preference and preserve manual state for the Target and native Apply trays, instead of forcing both trays closed after RSReforged rebuilds the card. Fixes [#33](https://github.com/arrowedisgaming/RSReforged/issues/33).
+
 ## [4.11.2] — 2026-07-03
 
 ### Fixed

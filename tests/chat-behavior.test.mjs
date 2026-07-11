@@ -144,6 +144,62 @@ describe("ChatUtility message lifecycle behavior", () => {
         ]);
     });
 
+    it("reapplies dnd5e tray state after rebuilding a merged usage card (issue #33)", async () => {
+        env.settings.damageApplyMode = "dnd5e";
+
+        const attack = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 18, faces: 20, results: [13] });
+        const damage = makeRoll(env.classes.DamageRoll, { formula: "1d8+3", total: 8, faces: 8, results: [5] });
+        const actor = { isOwner: true, items: { get: vi.fn() } };
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderAttack: true,
+                    renderDamage: true,
+                    rolls: [attack, damage]
+                },
+                dnd5e: { activity: { type: "attack" } }
+            },
+            getAssociatedActor: () => actor
+        });
+        const html = $(`
+            <article class="chat-message">
+                <div class="message-content">
+                    <div class="dnd5e2 chat-card usage-card">
+                        <div class="card-buttons">
+                            <button data-action="rollAttack"></button>
+                            <button data-action="rollDamage"></button>
+                        </div>
+                        <div class="card-tray targets-tray collapsible collapsed"></div>
+                        <damage-application></damage-application>
+                    </div>
+                </div>
+            </article>
+        `);
+
+        message._collapseTrays = vi.fn(root => {
+            expect(root.querySelector(".rsr-section-attack")).not.toBeNull();
+            expect(root.querySelector("[data-action=rollDamage]")).toBeNull();
+            expect(env.hookCalls.some(call =>
+                call.name === `${MODULE_SHORT}.renderRoll` && call.args[2] === "damage"
+            )).toBe(true);
+
+            root.querySelector(".targets-tray")?.classList.remove("collapsed");
+            root.querySelector("damage-application")?.setAttribute("open", "");
+        });
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+
+        expect(message._collapseTrays).toHaveBeenCalledTimes(1);
+        expect(message._collapseTrays).toHaveBeenCalledWith(html.find(".message-content")[0]);
+        expect(html.find(".targets-tray").hasClass("collapsed")).toBe(false);
+        expect(html.find("damage-application").attr("open")).not.toBeUndefined();
+    });
+
     it("uses native damage rendering when dnd5e damage apply mode is selected", async () => {
         env.settings.damageApplyMode = "dnd5e";
 

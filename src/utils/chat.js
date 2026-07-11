@@ -172,6 +172,7 @@ export class ChatUtility {
         }
 
         await _injectContent(message, type, content);
+        _applyDnd5eTrayState(message, content);
 
         if (SettingsUtility.getSettingValue(SETTING_NAMES.OVERLAY_BUTTONS_ENABLED)) {
             let hoverSetupComplete = false;
@@ -301,6 +302,17 @@ export class ChatUtility {
  */
 function _scrollChatToBottom() {
     if (ui.chat?.isAtBottom ?? true) ui.chat.scrollBottom();
+}
+
+/**
+ * Reapply dnd5e's native Target/Apply tray policy after RSR has rebuilt a
+ * processed usage card. This preserves autoCollapseChatTrays and any manual
+ * state captured in ChatMessage5e._trayStates without duplicating that logic.
+ */
+function _applyDnd5eTrayState(message, html) {
+    const root = html instanceof HTMLElement ? html : html?.[0];
+    if (!root || typeof message?._collapseTrays !== "function") return;
+    message._collapseTrays(root);
 }
 
 function _onOverlayHover(message, html) {
