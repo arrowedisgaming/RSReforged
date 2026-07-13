@@ -250,10 +250,10 @@ export class ActivityUtility {
 
         let currentRolls = Array.from(flags.rolls || []);
         const newRolls = [];
-        // Rolls preloaded onto the live document before the final DSN-watched update.
-        // Modern DSN skips these (it only animates rolls appended by the update), so
-        // _animateNewRolls rolls them itself — see _registerCardAsAttack.
-        let preloadedRolls = [];
+        // Raw source rolls from before _registerCardAsAttack temporarily preloads the
+        // attack. Restoring this snapshot just before the final update lets modern DSN
+        // observe every new roll in one appended batch (#32).
+        let rollSourceBeforeAttackRegistration = null;
 
         if (message.flags[MODULE_SHORT].renderAttack) {
             const rawAttack = await ActivityUtility.getAttackFromMessage(message);
@@ -280,10 +280,10 @@ export class ActivityUtility {
             // the registry would otherwise have no attack entry for this card. Must
             // run BEFORE the damage roll below so the lookup resolves during the
             // damage roll's hooks on the quick-roll (attack+damage) path.
+            const sourceRolls = message._source?.rolls ?? message.toObject?.().rolls ?? [];
+            const sourceRollSnapshot = foundry.utils.deepClone(sourceRolls);
             if (ActivityUtility._registerCardAsAttack(message, currentRolls)) {
-                // The attack rolls are now in the live document's source, so modern DSN
-                // will skip them on the final update — animate them ourselves below.
-                preloadedRolls = attackRolls;
+                rollSourceBeforeAttackRegistration = sourceRollSnapshot;
             }
         }
 
@@ -307,7 +307,7 @@ export class ActivityUtility {
             }
         }
 
-        await _animateNewRolls(newRolls, message, preloadedRolls);
+        await _provideNewRollFeedback(newRolls, message);
 
         message.flags[MODULE_SHORT].processed = true;
         const serializedRolls = CoreUtility.serializeRolls(currentRolls);
@@ -326,6 +326,10 @@ export class ActivityUtility {
             // every load. Pairs with the chat.js _injectContent guard that stops a
             // self-referencing card from being treated as its own merge parent.
             message.flags.dnd5e.originatingMessage = message.id;
+        }
+
+        if (rollSourceBeforeAttackRegistration !== null) {
+            ActivityUtility._restoreRollSource(message, rollSourceBeforeAttackRegistration);
         }
 
         await ChatUtility.updateChatMessage(message, {
@@ -355,7 +359,7 @@ export class ActivityUtility {
             }
         }
 
-        await _animateNewRolls(newRolls, message);
+        await _provideNewRollFeedback(newRolls, message);
 
         const serializedRolls = CoreUtility.serializeRolls(currentRolls);
         message.flags[MODULE_SHORT].rolls = serializedRolls;
@@ -384,10 +388,10 @@ export class ActivityUtility {
      * masteries) only ever see this live card. runActivityActions persists the final
      * state afterwards.
      *
-     * Dice So Nice consequence: preloading the attack here makes DSN treat it as
-     * pre-existing and animate only the later-appended damage. _animateNewRolls
-     * compensates by rolling the preloaded dice itself for modern DSN — see the note
-     * there. The caller learns what was preloaded from this method's return value.
+     * Dice So Nice consequence: preloading the attack here would make modern DSN treat
+     * it as pre-existing and animate only later-appended damage. The caller snapshots
+     * and restores the card's raw roll source after all dependent hooks have run, so
+     * DSN observes the complete attack-and-damage batch in the final message update.
      *
      * Safe despite the self-referential originatingMessage: chat.js _injectContent
      * guards against treating a self-referencing card as its own merge parent.
@@ -434,6 +438,30 @@ export class ActivityUtility {
         }
 
         return true;
+    }
+
+    /**
+     * Undo only the temporary native-roll preload performed by
+     * _registerCardAsAttack. The dnd5e registry flags written by that method remain in
+     * source, while an exact snapshot of the live flags and the prepared Roll instances
+     * are retained across Foundry's updateSource re-initialisation. This keeps registry consumers
+     * able to read the attack d20 while the immediately-following persisted update is
+     * pending, even though toObject().rolls exposes the restored raw source to DSN.
+     *
+     * @param {ChatMessage} message The activation card whose raw rolls should be restored.
+     * @param {object[]} sourceRolls Deep-cloned raw roll data captured before registration.
+     */
+    static _restoreRollSource(message, sourceRolls) {
+        const liveFlags = foundry.utils.deepClone(message.flags);
+        const liveRolls = message.rolls;
+        message.updateSource({ rolls: foundry.utils.deepClone(sourceRolls) });
+
+        // updateSource rebuilds flags from source. Clear that rebuilt object before
+        // restoring the snapshot so a namespace deleted by a damage hook is not
+        // resurrected and persisted by the immediately-following update.
+        for (const key of Object.keys(message.flags)) delete message.flags[key];
+        Object.assign(message.flags, liveFlags);
+        message.rolls = liveRolls;
     }
 
     /**
@@ -588,26 +616,16 @@ export class ActivityUtility {
 }
 
 /**
- * Trigger the audio/visual feedback for freshly added quick rolls. The caller's
- * subsequent ChatMessage.update includes the new rolls: Dice So Nice >= 5.1.0 watches
- * that update and animates the added rolls itself, so manually calling showForRoll as
- * well would double-animate the dice (#18). Older DSN versions only animate on message
- * creation, so trigger the 3D roll manually for them; with no enabled DSN at all, fall
- * back to playing the dice sound.
- *
- * Modern DSN only animates `message.rolls.slice(message.toObject().rolls.length)` on an
- * update — i.e. the rolls the update *appended*, skipping any already present in the
- * document source. _registerCardAsAttack preloads the attack roll in-memory (so AC5e and
- * WM5E can read it during the damage roll), which makes DSN treat the attack d20 as
- * pre-existing and animate only the damage. We therefore roll the preloaded dice
- * ourselves; DSN still animates everything else from the update, so there is no overlap.
+ * Provide any roll feedback that must happen before the final ChatMessage update.
+ * Modern Dice So Nice intentionally does nothing here because it watches that update
+ * and owns animation of the complete appended roll batch; manually calling showForRoll
+ * would double-animate the dice (#18). Older DSN versions ignore update-appended rolls,
+ * so animate them manually. With no enabled DSN, play the dice sound fallback.
  *
  * @param {Roll[]} newRolls The rolls added in this action.
  * @param {ChatMessage} message The message the rolls are persisted to.
- * @param {Roll[]} [preloadedRolls] Rolls already written to the document source before
- *   the final update (DSN skips these, so we animate them manually).
  */
-async function _animateNewRolls(newRolls, message, preloadedRolls = []) {
+async function _provideNewRollFeedback(newRolls, message) {
     if (newRolls.length === 0) return;
 
     if (!game.dice3d || !game.dice3d.isEnabled()) {
@@ -618,12 +636,5 @@ async function _animateNewRolls(newRolls, message, preloadedRolls = []) {
     if (!CoreUtility.dice3dAnimatesRollUpdates()) {
         // Legacy DSN ignores update-appended rolls entirely: animate every new roll.
         await CoreUtility.tryRollDice3D(newRolls, message.id);
-        return;
-    }
-
-    // Modern DSN animates the update-appended rolls itself; only the preloaded rolls
-    // (which it skips) need a manual nudge.
-    if (preloadedRolls.length > 0) {
-        await CoreUtility.tryRollDice3D(preloadedRolls, message.id);
     }
 }

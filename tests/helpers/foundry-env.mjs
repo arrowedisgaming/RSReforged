@@ -229,8 +229,15 @@ export async function setupFoundryEnv(options = {}) {
             // Persisted document source. A real ChatMessage rebuilds its live `flags`
             // from `_source` whenever updateSource() runs, so in-memory-only flag writes
             // that were never persisted to source are discarded at that point.
-            this._source = { flags: foundry.utils.deepClone(this.flags) };
+            this._source = {
+                flags: foundry.utils.deepClone(this.flags),
+                rolls: this.rolls.map((roll) => roll?.toJSON ? roll.toJSON() : foundry.utils.deepClone(roll))
+            };
             messages.set(this.id, this);
+        }
+
+        toObject() {
+            return foundry.utils.deepClone(this._source);
         }
 
         async renderHTML() {

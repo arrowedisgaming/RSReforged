@@ -280,7 +280,7 @@ describe("ActivityUtility roll action flow", () => {
         expect(ActivityUtility.isCriticalRoll(damage)).toBe(true);
     });
 
-    it("manually animates only the preloaded attack under modern Dice So Nice (DSN appends nothing new to animate)", async () => {
+    it("restores raw roll source so modern Dice So Nice animates an attack-only update exactly once", async () => {
         game.dice3d = {
             isEnabled: vi.fn(() => true),
             showForRoll: vi.fn()
@@ -295,22 +295,26 @@ describe("ActivityUtility roll action flow", () => {
                 }
             }
         });
+        const rawRollSource = structuredClone(message._source.rolls);
+        // Deliberately diverge the live Roll collection from raw source. The restore
+        // must use _source.rolls, not these instantiated Roll objects.
+        message.rolls = [makeRoll(env.classes.BasicRoll, { formula: "1d4", total: 3, faces: 4, results: [3] })];
         const tryRollDice3D = vi.spyOn(CoreUtility, "tryRollDice3D").mockResolvedValue(true);
 
         vi.spyOn(ActivityUtility, "getAttackFromMessage").mockResolvedValue([attack]);
 
         await ActivityUtility.runActivityActions(message);
 
-        // _registerCardAsAttack preloaded the attack into the document source, so the
-        // final update appends no *new* roll for DSN to animate — RSR must roll the
-        // attack d20 itself or it would never animate on an attack-only quick roll.
-        expect(tryRollDice3D).toHaveBeenCalledTimes(1);
-        expect(tryRollDice3D).toHaveBeenCalledWith([attack], "usage-dsn");
+        // RSR restores the raw pre-registration source, so modern DSN owns the complete
+        // appended update and no synchronized manual d20 broadcast is needed.
+        expect(tryRollDice3D).not.toHaveBeenCalled();
         expect(foundry.audio.AudioHelper.play).not.toHaveBeenCalled();
+        expect(message._source.rolls).toEqual(rawRollSource);
         expect(message.updatedWith.rolls).toHaveLength(1);
+        expect(message.updatedWith.rolls[0].class).toBe("D20Roll");
     });
 
-    it("preloads the attack on the live card for AC5e/WM5E and manually animates it under modern Dice So Nice", async () => {
+    it("temporarily preloads the attack for AC5e/WM5E while preserving live flag additions and deletions", async () => {
         game.dice3d = {
             isEnabled: vi.fn(() => true),
             showForRoll: vi.fn()
@@ -332,8 +336,21 @@ describe("ActivityUtility roll action flow", () => {
                     renderAttack: true,
                     renderDamage: true,
                     rolls: []
-                }
+                },
+                "test-removed-hook": { stale: true }
             }
+        });
+        const rawRollSource = structuredClone(message._source.rolls);
+        const updateSource = vi.spyOn(message, "updateSource");
+        const originalUpdate = message.update.bind(message);
+        let markUpdateStarted;
+        let releaseUpdate;
+        const updateStarted = new Promise((resolve) => { markUpdateStarted = resolve; });
+        const updateCanFinish = new Promise((resolve) => { releaseUpdate = resolve; });
+        vi.spyOn(message, "update").mockImplementation(async (update) => {
+            markUpdateStarted();
+            await updateCanFinish;
+            return originalUpdate(update);
         });
 
         vi.spyOn(ActivityUtility, "getAttackFromMessage").mockResolvedValue([attack]);
@@ -348,22 +365,95 @@ describe("ActivityUtility roll action flow", () => {
                 originatingMessage: "usage-dsn-weapon",
                 roll: { type: "attack" }
             });
+            expect(message._source.rolls[0]).not.toBe(attack);
+            expect(message._source.rolls[0].class).toBe("D20Roll");
+
+            // Simulate third-party damage hooks adding and deleting in-memory flags
+            // after the registration updateSource. The rolls-only restore must retain
+            // the exact live state rather than resurrecting source-only namespaces.
+            message.flags["test-damage-hook"] = { resolved: true };
+            delete message.flags["test-removed-hook"];
 
             return [damage];
         });
 
-        await ActivityUtility.runActivityActions(message);
+        const activityActions = ActivityUtility.runActivityActions(message);
+        await updateStarted;
 
-        // Modern DSN animates the update-appended damage itself; RSR animates only the
-        // preloaded attack d20 (which DSN skips) — exactly once, no double animation.
-        expect(tryRollDice3D).toHaveBeenCalledTimes(1);
-        expect(tryRollDice3D).toHaveBeenCalledWith([attack], "usage-dsn-weapon");
+        // While the persisted update is pending, DSN sees the restored raw source for
+        // its appended-roll diff, but registry consumers still see the prepared attack
+        // d20 and every live flag. The final two-roll update has not landed yet.
+        expect(message.toObject().rolls).toEqual(rawRollSource);
+        expect(message._source.rolls).toEqual(rawRollSource);
+        expect(message.rolls).toHaveLength(1);
+        // The lightweight test document retains serialized roll data here; Foundry's
+        // real ChatMessage.prepareDerivedData rebuilds this entry as a D20Roll instance.
+        expect(message.rolls[0].class).toBe("D20Roll");
+        expect(message._source.flags.dnd5e).toMatchObject({
+            originatingMessage: "usage-dsn-weapon",
+            roll: { type: "attack" }
+        });
+        expect(message.flags["test-damage-hook"]).toEqual({ resolved: true });
+        expect(message.flags).not.toHaveProperty("test-removed-hook");
+        expect(message.updatedWith).toBeUndefined();
+
+        releaseUpdate();
+        await activityActions;
+
+        expect(tryRollDice3D).not.toHaveBeenCalled();
         expect(foundry.audio.AudioHelper.play).not.toHaveBeenCalled();
+        expect(updateSource).toHaveBeenCalledTimes(2);
+        expect(updateSource.mock.calls[1][0]).toEqual({ rolls: rawRollSource });
         expect(message.updatedWith.rolls.map((roll) => roll.class)).toEqual([
             "D20Roll",
             "DamageRoll"
         ]);
         expect(message.rolls).toHaveLength(2);
+        expect(message.flags["test-damage-hook"]).toEqual({ resolved: true });
+        expect(message.updatedWith.flags).not.toHaveProperty("test-removed-hook");
+        expect(message._source.flags.dnd5e).toMatchObject({
+            originatingMessage: "usage-dsn-weapon",
+            roll: { type: "attack" }
+        });
+    });
+
+    it("does not restore or re-initialize roll source for a formula-only activity", async () => {
+        const formula = makeRoll(env.classes.BasicRoll, { formula: "1d6", total: 4, faces: 6, results: [4] });
+        const message = new env.classes.TestChatMessage({
+            id: "usage-formula-only",
+            flags: {
+                [MODULE_SHORT]: {
+                    renderFormula: true,
+                    rolls: []
+                }
+            }
+        });
+        const updateSource = vi.spyOn(message, "updateSource");
+        vi.spyOn(ActivityUtility, "getFormulaFromMessage").mockResolvedValue([formula]);
+
+        await ActivityUtility.runActivityActions(message);
+
+        expect(updateSource).not.toHaveBeenCalled();
+        expect(message.updatedWith.rolls.map((roll) => roll.class)).toEqual(["BasicRoll"]);
+    });
+
+    it("does not restore roll source when an attack action produces no attack roll", async () => {
+        const message = new env.classes.TestChatMessage({
+            id: "usage-empty-attack",
+            flags: {
+                [MODULE_SHORT]: {
+                    renderAttack: true,
+                    rolls: []
+                }
+            }
+        });
+        const updateSource = vi.spyOn(message, "updateSource");
+        vi.spyOn(ActivityUtility, "getAttackFromMessage").mockResolvedValue([]);
+
+        await ActivityUtility.runActivityActions(message);
+
+        expect(updateSource).not.toHaveBeenCalled();
+        expect(message.updatedWith.rolls).toEqual([]);
     });
 
     it("manually animates quick activity rolls for legacy Dice So Nice versions that do not watch roll updates", async () => {
@@ -377,11 +467,13 @@ describe("ActivityUtility roll action flow", () => {
             ? { active: true, version: "4.6.3" }
             : { active: false, version: "test" });
         const attack = makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 22, faces: 20, results: [17] });
+        const damage = makeRoll(env.classes.DamageRoll, { formula: "1d8+3", total: 8, faces: 8, results: [5] });
         const message = new env.classes.TestChatMessage({
             id: "usage-dsn-legacy",
             flags: {
                 [MODULE_SHORT]: {
                     renderAttack: true,
+                    renderDamage: true,
                     rolls: []
                 }
             }
@@ -389,12 +481,13 @@ describe("ActivityUtility roll action flow", () => {
         const tryRollDice3D = vi.spyOn(CoreUtility, "tryRollDice3D").mockResolvedValue(true);
 
         vi.spyOn(ActivityUtility, "getAttackFromMessage").mockResolvedValue([attack]);
+        vi.spyOn(ActivityUtility, "getDamageFromMessage").mockResolvedValue([damage]);
 
         await ActivityUtility.runActivityActions(message);
 
-        expect(tryRollDice3D).toHaveBeenCalledWith([attack], "usage-dsn-legacy");
+        expect(tryRollDice3D).toHaveBeenCalledWith([attack, damage], "usage-dsn-legacy");
         expect(foundry.audio.AudioHelper.play).not.toHaveBeenCalled();
-        expect(message.updatedWith.rolls).toHaveLength(1);
+        expect(message.updatedWith.rolls).toHaveLength(2);
     });
 
     it("derives render flags at render time when preCreate activity resolution failed", async () => {
