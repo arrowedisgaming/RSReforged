@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.11.4] — 2026-07-13
+
 ### Fixed
 
 - **Quick-roll attack and damage dice no longer have an RSR-imposed animation delay with Dice So Nice.** The attack d20 is still preloaded temporarily so dnd5e's message registry and condition/mastery modules can resolve it while damage hooks run, but RSReforged now restores the card's raw pre-registration roll source immediately before the final update. Modern Dice So Nice therefore receives the complete attack-and-damage batch through its normal message-update integration instead of waiting for a separately broadcast d20 animation to finish first. Fixes [#32](https://github.com/arrowedisgaming/RSReforged/issues/32).
@@ -279,7 +281,8 @@ The first RSReforged release. Forked from [MangoFVTT/fvtt-ready-set-roll-5e@v3.5
 - **MangoFVTT** — author and maintainer of upstream Ready Set Roll for D&D5e (the direct ancestor of this fork).
 - **RedReign** — author of the original [Better Rolls for 5e](https://github.com/RedReign/FoundryVTT-BetterRolls5e), which RSR is a rewrite of.
 
-[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.11.3...HEAD
+[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.11.4...HEAD
+[4.11.4]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.11.3...release-4.11.4
 [4.11.3]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.11.2...release-4.11.3
 [4.6.0]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.5.0...release-4.6.0
 [4.5.0]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.4.2...release-4.5.0
