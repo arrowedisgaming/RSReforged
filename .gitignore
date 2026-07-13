@@ -15,6 +15,10 @@ docs/other_modules/
 docs/errors/
 .claude/
 
+# Local implementation plans created for review before code changes. Keep all
+# current and future plan Markdown files here so they never ship with releases.
+.plans/
+
 # Local-only release outreach drafts (working text for upstream module-author
 # comments). Kept in the repo for convenient editing but never tracked, since
 # the actual posted comments and their substitutions are not artifacts.
