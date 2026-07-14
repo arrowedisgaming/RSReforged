@@ -181,9 +181,17 @@ export class HooksUtility {
                 messageConfig.flags[MODULE_SHORT] ??= {};
                 messageConfig.flags[MODULE_SHORT].ammunition = ammo._id;
 
-                // Temporarily restore the quantity so the attack roll can access live ammo
-                // data. The system will apply its own decrement after consumption.
-                if (ammo["system.quantity"] !== undefined) ammo["system.quantity"]++;
+                // Add back the single unit that dnd5e's rollAttack will itself decrement, but
+                // only when this item is a valid weapon-ammunition option that reaches
+                // rolls[].options.ammunition (dnd5e.mjs AttackActivity#rollAttack) — otherwise
+                // the consumption phase and the attack roll would each spend one. A standalone
+                // "material"/Consume-Resource target (e.g. a vehicle cannon's cannonballs) is
+                // decremented ONLY by the consumption phase, so adding one back here would
+                // cancel a unit of its consumption (issue #34).
+                if (ammo["system.quantity"] !== undefined) {
+                    const isWeaponAmmo = activity.item?.system?.ammunitionOptions?.some(o => o.value === ammo._id);
+                    if (isWeaponAmmo) ammo["system.quantity"]++;
+                }
             }
         });
     }

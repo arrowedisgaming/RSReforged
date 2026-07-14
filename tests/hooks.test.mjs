@@ -205,10 +205,17 @@ describe("HooksUtility preCreateChatMessage quick-roll flags", () => {
         expect(state.processActivity).not.toHaveBeenCalled();
     });
 
-    it("records consumed ammunition on attack message flags and restores temporary quantity", () => {
+    it("records consumed ammunition and restores quantity for weapon-ammunition targets rollAttack re-consumes", () => {
         const handlers = registerRollHooks();
         const activityConsumption = handlers.get("dnd5e.activityConsumption");
-        const activity = { type: "attack", hasOwnProperty: Object.prototype.hasOwnProperty };
+        // arrow-1 is a valid ammunitionOption, so dnd5e's rollAttack will consume it a
+        // second time — the restore cancels the consumption-phase decrement to avoid
+        // double-counting, leaving a single net decrement.
+        const activity = {
+            type: "attack",
+            hasOwnProperty: Object.prototype.hasOwnProperty,
+            item: { system: { ammunitionOptions: [{ value: "arrow-1" }] } }
+        };
         const messageConfig = {};
         const ammoUpdate = { _id: "arrow-1", "system.quantity": 0 };
 
@@ -216,6 +223,26 @@ describe("HooksUtility preCreateChatMessage quick-roll flags", () => {
 
         expect(messageConfig.flags[MODULE_SHORT].ammunition).toBe("arrow-1");
         expect(ammoUpdate["system.quantity"]).toBe(1);
+    });
+
+    it("preserves the consumption decrement for material/Consume-Resource targets (issue #34)", () => {
+        const handlers = registerRollHooks();
+        const activityConsumption = handlers.get("dnd5e.activityConsumption");
+        // A vehicle cannon's cannonballs are a "material" consumption target, not a weapon
+        // ammunition option — rollAttack never re-consumes them, so the consumption-phase
+        // decrement must survive. The old ++ restore turned this 9 into 10 (net 0 consumed).
+        const activity = {
+            type: "attack",
+            hasOwnProperty: Object.prototype.hasOwnProperty,
+            item: { system: { ammunitionOptions: [] } }
+        };
+        const messageConfig = {};
+        const ammoUpdate = { _id: "cannonball-1", "system.quantity": 9 };
+
+        activityConsumption(activity, {}, messageConfig, { item: [ammoUpdate] });
+
+        expect(messageConfig.flags[MODULE_SHORT].ammunition).toBe("cannonball-1");
+        expect(ammoUpdate["system.quantity"]).toBe(9);
     });
 
     it("preserves slow-roll flags written by the pre-use activity hook", () => {
