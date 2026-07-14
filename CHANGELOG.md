@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.11.5] — 2026-07-14
+
 ### Fixed
 
 - **Weapons that consume a resource via a "Consume Resource" target now spend the correct amount on a quick roll.** RSReforged was adding one unit back to dnd5e's already-computed consumption payload, which cancelled a unit of consumption for quantity-backed material targets — a vehicle cannon set to consume one cannonball consumed zero (and two consumed one), and the standalone **Consume Resource** button did nothing. The restore is now applied only to genuine weapon ammunition that dnd5e's attack roll consumes a second time, so material targets keep their full decrement while ammo still avoids double-counting. Fixes [#34](https://github.com/arrowedisgaming/RSReforged/issues/34).
