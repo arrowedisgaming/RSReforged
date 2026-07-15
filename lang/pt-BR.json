@@ -107,7 +107,8 @@
 				"rollCrit": "Clique para rolar dano crítico.",
 				"rollAdvantage": "Clique para rolar com vantagem.",
 				"rollDisadvantage": "Clique para rolar com desvantagem.",
-				"repeat": "Clique para repetir a rolagem rápida."
+				"repeat": "Clique para repetir a rolagem rápida.",
+				"damageType": "Clique para alterar o tipo de dano."
 			},
 			"prompts": {
 				"retroCrit": "Alterar para Crítico?",

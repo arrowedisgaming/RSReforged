@@ -95,6 +95,21 @@
 	position: relative;
 }
 
+/* Only parts with an alternative damage type get .rsr-damage-type-toggle, so a
+   fixed-type label stays inert while a changeable one reads as clickable. */
+.rsr-damage-type-toggle .total .label,
+.rsr-damage-type-toggle .total img {
+	cursor: pointer;
+}
+
+.rsr-damage-type-toggle .total .label:hover {
+	text-shadow: 0 0 10px var(--color-shadow-primary);
+}
+
+.rsr-damage-type-toggle .total img:hover {
+	filter: drop-shadow(0 0 4px var(--color-shadow-primary));
+}
+
 .rsr-damage-buttons,
 .rsr-damage-buttons-xl {
 	text-align: right!important;

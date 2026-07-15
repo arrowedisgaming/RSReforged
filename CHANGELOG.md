@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Damage types can now be changed on the chat card for activities that offer more than one.** Activities whose damage part lists several types (Pact of the Blade, Empowered Strikes, and similar) previously had their type auto-picked by dnd5e, because quick rolls skip the damage dialog where that choice normally lives — leaving no way to change it short of turning quick rolls off. The type label on such a damage part is now clickable and cycles through the available types. Nothing is re-rolled, so the total is untouched; only the type changes, and applying damage honors the new type's resistances and immunities. The choice sticks to the card, surviving a retroactive crit or a manual damage roll, and is limited to the GM and the card's author. Parts with a single fixed type are unchanged. Requires the **Damage Apply UI** setting to be *RSReforged quick buttons* — the dnd5e tray renders its own damage card, which RSReforged does not decorate. Implements [#27](https://github.com/arrowedisgaming/RSReforged/issues/27).
+- **A damage type picked on a card now becomes the activity's default for later rolls**, matching what dnd5e does when the choice is made in its own damage dialog — so a feature like Empowered Strikes, whose description promises the choice is remembered, no longer resets on every quick roll. As in dnd5e, the default is only recorded for an owned item that is still on the actor and not in a compendium.
+
 ## [4.11.5] — 2026-07-14
 
 ### Fixed

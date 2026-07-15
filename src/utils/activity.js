@@ -582,7 +582,44 @@ export class ActivityUtility {
         messageConfig.data.flags.dnd5e = { originatingMessage: message.id };
         messageConfig.flags.dnd5e      = { originatingMessage: message.id };
 
-        return activity.rollDamage(config, dialogConfig, messageConfig);
+        // Chained rather than awaited so the guards above stay synchronous — marking this
+        // method async would turn each of their early `null` returns into a Promise.
+        return Promise.resolve(activity.rollDamage(config, dialogConfig, messageConfig))
+            .then(rolls => _applyDamageTypeOverrides(message, rolls));
+    }
+
+    /**
+     * Record the chosen damage types as the activity's defaults, so the next roll starts
+     * from them (issue #27).
+     *
+     * This is dnd5e's own flag: Activity#rollDamage writes it after every damage build
+     * (not only dialog rolls), and Activity#_processDamagePart reads it back as `lastType`.
+     * A quick roll therefore already records a type — but only the one dnd5e auto-picked,
+     * because the card click that changes it never goes through rollDamage. Without this
+     * write, a feature like Empowered Strikes — whose dnd5e description promises the
+     * choice is remembered — would reset to the auto-pick on every roll.
+     *
+     * Keyed by damage-roll index to match dnd5e's own write. The guards mirror
+     * Activity#rollDamage: a compendium, unowned, or off-actor item must not be written to.
+     *
+     * @param {ChatMessage} message The card the choice was made on.
+     * @param {Roll[]} damageRolls The card's damage rolls, in order.
+     */
+    static async rememberDamageTypes(message, damageRolls) {
+        const activity = ActivityUtility._getActivityFromMessage(message);
+        const item = activity?.item;
+
+        if (!item?.isOwner || item.inCompendium) return;
+        if (!activity.actor?.items?.has(item.id)) return;
+
+        const lastDamageTypes = damageRolls.reduce((types, roll, index) => {
+            if (roll.options?.type) types[index] = roll.options.type;
+            return types;
+        }, {});
+
+        if (foundry.utils.isEmpty(lastDamageTypes)) return;
+
+        await item.setFlag("dnd5e", `last.${activity.id}.damageType`, lastDamageTypes);
     }
 
     /**
@@ -613,6 +650,35 @@ export class ActivityUtility {
 
         return activity.rollFormula(config, dialogConfig, messageConfig);
     }
+}
+
+/**
+ * Re-apply the damage types the user picked on the card (issue #27).
+ *
+ * rollDamage() re-runs dnd5e's _processDamagePart, which re-picks the default type
+ * (lastType ?? types.first()). Without this, every path that re-derives damage —
+ * retroactive crit, manual damage — would silently discard the user's choice.
+ *
+ * Overrides are keyed by index into the damage rolls, matching the array rollDamage
+ * returns. A saved type is ignored unless the roll still offers it, so an activity
+ * edited between rolls cannot resurrect a type it no longer has.
+ *
+ * @param {ChatMessage} message The card carrying the saved choices.
+ * @param {Roll[]} rolls The freshly derived damage rolls.
+ * @returns {Roll[]} The same rolls, with any saved types re-applied.
+ */
+function _applyDamageTypeOverrides(message, rolls) {
+    const overrides = message.flags?.[MODULE_SHORT]?.damageTypes;
+    if (!overrides || !Array.isArray(rolls)) return rolls;
+
+    for (const [index, type] of Object.entries(overrides)) {
+        const roll = rolls[Number(index)];
+        if (!roll?.options?.types?.includes(type)) continue;
+
+        roll.options.type = type;
+    }
+
+    return rolls;
 }
 
 /**

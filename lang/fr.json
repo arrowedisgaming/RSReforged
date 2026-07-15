@@ -101,7 +101,8 @@
                 "rollCrit": "Cliquez pour lancer des dégâts critiques.",
                 "rollAdvantage": "Cliquez pour lancer avec avantage.",
                 "rollDisadvantage": "Cliquez pour lancer avec désavantage.",
-                "repeat": "Cliquez pour répéter le jet rapide."
+                "repeat": "Cliquez pour répéter le jet rapide.",
+                "damageType": "Cliquez pour changer le type de dégâts."
             },
             "prompts": {
                 "retroCrit": "Améliorer en Critique ?",

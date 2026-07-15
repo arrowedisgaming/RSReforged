@@ -14,6 +14,10 @@ export const MESSAGE_TYPE = {
     USAGE: "usage",
 }
 
+// The clickable affordance for changing a damage type: the type's label and icon,
+// but not the value beside them.
+const DAMAGE_TYPE_TOGGLE_SELECTOR = '.rsr-damage-type-toggle .total .label, .rsr-damage-type-toggle .total img';
+
 export class ChatUtility {
     static getMessageRolls(message) {
         const flagRolls = message.flags?.[MODULE_SHORT]?.rolls;
@@ -377,6 +381,10 @@ function _setupCardListeners(message, html) {
         });
     }
 
+    html.find(DAMAGE_TYPE_TOGGLE_SELECTOR).click(async event => {
+        await _processDamageTypeCycleEvent(message, event);
+    });
+
     html.find(`[data-action='rsr-${ROLL_TYPE.CONCENTRATION}']`).click(async event => {
         await _processBreakConcentrationButtonEvent(message, event);
     });
@@ -592,6 +600,7 @@ async function _injectContent(message, type, html) {
 
                     await _injectDamageRoll(message, enricher, { contentHtml: html });
                     await _injectApplyDamageButtons(message, html);
+                    _injectDamageTypeToggles(message, html);
                     enricher.remove();
                 }
 
@@ -744,6 +753,7 @@ async function _injectContent(message, type, html) {
 
             if (useRsrDamageButtons) {
                 await _injectApplyDamageButtons(message, html);
+                _injectDamageTypeToggles(message, html);
                 const rootParent = html.closest('.message-content');
                 if (rootParent.length) rootParent.find('> .dice-roll').remove();
             }
@@ -990,6 +1000,107 @@ async function _injectBreakConcentrationButton(message, html) {
     });
 
     html.append($(render).addClass('rsr-concentration-buttons'));
+}
+
+/**
+ * Whether the viewing user may change the damage type on this card. Mirrors the
+ * gate the retroactive overlay controls use (_onOverlayHover).
+ */
+function _canChangeDamageType(message) {
+    return game.user.isGM || message?.isAuthor === true;
+}
+
+/**
+ * Whether a damage type is one the system currently registers.
+ *
+ * Reads the live registries rather than CONFIG.rsreforged.combinedDamageTypes, which is
+ * a snapshot taken on the ready hook: a module that registers a custom damage type later
+ * would otherwise be rejected here. Matches _getDamageTypeFromIcon below, and the
+ * late-registration handling in _getDamageLabelToTypeMap.
+ *
+ * hasOwn, not `in` — the latter would accept inherited keys like "constructor".
+ */
+function _isKnownDamageType(type) {
+    if (typeof type !== "string" || !type) return false;
+
+    return Object.hasOwn(CONFIG.DND5E?.damageTypes ?? {}, type)
+        || Object.hasOwn(CONFIG.DND5E?.healingTypes ?? {}, type);
+}
+
+/**
+ * The damage types a roll can be switched between. dnd5e stores the full candidate
+ * list on options.types alongside the auto-picked options.type (Activity#_processDamagePart).
+ * Unknown types are dropped so cycling can never land on a type dnd5e cannot render.
+ */
+function _getDamageTypeOptions(roll) {
+    const types = roll?.options?.types;
+    if (!Array.isArray(types)) return [];
+
+    return [...new Set(types.filter(_isKnownDamageType))];
+}
+
+/**
+ * The damage rolls currently showing `type` that offer an alternative type.
+ *
+ * Matching on type rather than index is deliberate: with CONFIG.DND5E.aggregateDamageDisplay
+ * on, dnd5e merges tooltip parts BY TYPE, so a part's index does not track a roll's index.
+ *
+ * Rolls sharing a type therefore cycle together. That is the only sensible reading when
+ * they are aggregated into one part, and un-aggregated it still means what the click says:
+ * change this damage type.
+ */
+function _getCyclableDamageRolls(damageRolls, type) {
+    if (!type) return [];
+
+    return damageRolls.filter(roll => roll.options?.type === type && _getDamageTypeOptions(roll).length > 1);
+}
+
+/**
+ * The damage type a rendered tooltip part is displaying, read from that part alone.
+ *
+ * Deliberately narrower than _getApplyDamageType: that helper falls back to the first
+ * typed roll on the card when a part carries no type signal, which is right for applying
+ * damage but wrong here — it would tag an untyped part as cyclable and cycle a different
+ * part's roll. An unresolvable part simply gets no affordance.
+ */
+function _getPartDamageType(total) {
+    return _getDamageTypeFromIcon(total.find('img').attr('src'))
+        ?? _getDamageTypeFromLabel(total.find('.label').text());
+}
+
+/**
+ * Mark damage tooltip parts whose type can be changed, so the type label reads as
+ * clickable (issue #27). Parts with a single candidate type get no affordance.
+ *
+ * dnd5e's tooltip markup carries no type or roll-index data attribute, so each part's
+ * current type is resolved from its own rendered DOM.
+ */
+function _injectDamageTypeToggles(message, html) {
+    // Cycling updates the message, and the re-render resets Foundry's dice-tooltip
+    // collapse state — snapping shut the very breakdown the type label lives in. Reopen
+    // it for the user who cycled; the marker is client-local, so nobody else's tooltip
+    // is forced open.
+    if (message._rsrExpandDamageTooltip) {
+        delete message._rsrExpandDamageTooltip;
+        html.find('.rsr-damage').closest('.dice-roll').addClass('expanded');
+    }
+
+    if (!_canChangeDamageType(message)) return;
+
+    const damageRolls = _getDamageRolls(message);
+    if (!damageRolls.length) return;
+
+    html.find('.rsr-damage .dice-tooltip .tooltip-part').each((_i, el) => {
+        const part = $(el);
+        const total = part.find('.total');
+        if (!total.length) return;
+
+        const type = _getPartDamageType(total);
+        if (!_getCyclableDamageRolls(damageRolls, type).length) return;
+
+        part.addClass('rsr-damage-type-toggle').attr('data-rsr-damage-type', type);
+        total.find('.label, img').attr('title', CoreUtility.localize(`${MODULE_SHORT}.chat.buttons.damageType`));
+    });
 }
 
 async function _injectApplyDamageButtons(message, html) {
@@ -1266,6 +1377,63 @@ function _isDamageRoll(roll) {
 
 function _getDamageRolls(message) {
     return ChatUtility.getMessageRolls(message).filter(_isDamageRoll);
+}
+
+/**
+ * Cycle a damage part to its next candidate type (issue #27).
+ *
+ * Nothing is re-rolled — only the type flavour changes, so the total is untouched.
+ * dnd5e regenerates the icon and label from options.type on re-render, and the apply
+ * buttons read the type back out of that DOM, so resistances/immunities follow.
+ */
+async function _processDamageTypeCycleEvent(message, event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Re-check rather than trusting the injected DOM.
+    if (!_canChangeDamageType(message)) return;
+
+    const type = $(event.currentTarget).closest('.rsr-damage-type-toggle').attr('data-rsr-damage-type');
+    if (!type) return;
+
+    const originalRolls = ChatUtility.getMessageRolls(message);
+    const damageRolls = originalRolls.filter(_isDamageRoll);
+    const targets = _getCyclableDamageRolls(damageRolls, type);
+    if (!targets.length) return;
+
+    const damageTypes = { ...(message.flags[MODULE_SHORT].damageTypes ?? {}) };
+
+    for (const roll of targets) {
+        const options = _getDamageTypeOptions(roll);
+        // A current type missing from the list wraps to the first entry rather than
+        // leaving the roll stuck.
+        const next = options[(options.indexOf(roll.options.type) + 1) % options.length];
+
+        roll.options.type = next;
+        // Keyed by index within the damage rolls — the array getDamageFromMessage returns.
+        damageTypes[damageRolls.indexOf(roll)] = next;
+    }
+
+    // The label is only reachable with the breakdown open, so remember to reopen it
+    // after the update re-renders the card (see _injectDamageTypeToggles).
+    message._rsrExpandDamageTooltip = $(event.currentTarget).closest('.dice-roll').hasClass('expanded');
+
+    message.flags[MODULE_SHORT].damageTypes = damageTypes;
+    // The mutated rolls are shared with originalRolls, so serializing the full array
+    // keeps the card's attack (and any other) rolls intact.
+    message.flags[MODULE_SHORT].rolls = CoreUtility.serializeRolls(originalRolls);
+
+    await ChatUtility.updateChatMessage(message, {
+        flags: message.flags
+    });
+
+    // Card first, then the activity's default — the visible change should not wait on an
+    // item write, and a failure to remember must not lose the choice already made here.
+    // Re-read rather than reusing the pre-await snapshot so the default records what the
+    // card actually says now. Two clients racing the same card can still land their card
+    // and item writes in different orders; only the remembered default is affected, and
+    // the next roll's own write corrects it.
+    await ActivityUtility.rememberDamageTypes(message, _getDamageRolls(message));
 }
 
 async function _processRetroAdvButtonEvent(message, event) {

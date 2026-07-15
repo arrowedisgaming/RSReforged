@@ -401,6 +401,15 @@ export async function setupFoundryEnv(options = {}) {
             deepClone: (value) => structuredClone(value),
             duplicate: (value) => structuredClone(value),
             mergeObject: (target, source) => ({ ...target, ...source }),
+            // Mirrors Foundry's isEmpty: nullish, or an empty string/array/Set/Map/object.
+            // Primitives are never "empty".
+            isEmpty: (value) => {
+                if (value === undefined || value === null) return true;
+                if (typeof value === "string" || Array.isArray(value)) return value.length === 0;
+                if (value instanceof Set || value instanceof Map) return value.size === 0;
+                if (typeof value === "object") return Object.keys(value).length === 0;
+                return false;
+            },
             // Mirrors Foundry's isNewerVersion: dot-separated numeric comparison,
             // missing parts treated as 0; returns true when v1 > v0.
             isNewerVersion: (v1, v0) => {

@@ -117,7 +117,8 @@
                 "rollCrit": "Click to roll critical damage.",
                 "rollAdvantage": "Click to roll with advantage.",
                 "rollDisadvantage": "Click to roll with disadvantage.",
-                "repeat": "Click to repeat the quick roll."
+                "repeat": "Click to repeat the quick roll.",
+                "damageType": "Click to change the damage type."
             },
             "prompts": {
                 "retroCrit": "Upgrade to Crit?",
