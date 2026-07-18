@@ -597,7 +597,7 @@ export class ActivityUtility {
         const storedAmmunition = message.flags?.dnd5e?.roll?.ammunitionData;
         const storedAmmunitionId = storedAmmunition?._id ?? storedAmmunition?.id;
         const ammunition = actor.items?.get(ammunitionId)
-            ?? (storedAmmunitionId === ammunitionId && globalThis.Item?.implementation
+            ?? (ammunitionId && storedAmmunitionId === ammunitionId && globalThis.Item?.implementation
                 ? new Item.implementation(storedAmmunition, { parent: actor })
                 : undefined);
         const config = {
