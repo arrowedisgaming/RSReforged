@@ -829,8 +829,17 @@ async function _injectAttackRoll(message, html, { contentHtml = html } = {}) {
         _applyHiddenRollPresentation(rollHTML, roll);
     }   
 
-    // dnd5e 5.3.0: getAssociatedActor() correctly resolves token actors.
-    const ammo = ChatUtility.getActorFromMessage(message)?.items?.get(message.flags[MODULE_SHORT].ammunition)?.name;
+    // dnd5e 5.3.0: getAssociatedActor() correctly resolves token actors. The stored
+    // fallback covers quantity-one autoDestroy ammunition, which is deleted before
+    // RSR renders the combined card.
+    const ammunitionId = message.flags[MODULE_SHORT].ammunition;
+    const liveAmmunition = ChatUtility.getActorFromMessage(message)?.items?.get(ammunitionId);
+    const storedAmmunition = message.flags?.dnd5e?.roll?.ammunitionData;
+    const storedAmmunitionId = storedAmmunition?._id ?? storedAmmunition?.id;
+    const ammo = liveAmmunition?.name
+        ?? (storedAmmunition && storedAmmunitionId === ammunitionId
+            ? storedAmmunition.name
+            : undefined);
 
     const sectionHTML = $(await RenderUtility.render(TEMPLATE.SECTION,
     {

@@ -19,6 +19,15 @@ describe("ActivityUtility roll action flow", () => {
         delete globalThis.dnd5e;
     });
 
+    function ammunitionOption(id, { equipped = false, quantity = 1, disabled = quantity <= 0 } = {}) {
+        return {
+            item: { id, system: { equipped, quantity } },
+            value: id,
+            label: id,
+            disabled
+        };
+    }
+
     it("resolves activities from native message methods before manual fallbacks", () => {
         const nativeActivity = { id: "native" };
         const itemActivity = { id: "item" };
@@ -126,6 +135,70 @@ describe("ActivityUtility roll action flow", () => {
         ]);
         expect(message.updatedWith.flags).toBe(message.flags);
         expect(foundry.audio.AudioHelper.play).toHaveBeenCalledWith({ src: "dice.wav" }, true);
+    });
+
+    it("publishes the evaluated attack ammunition before building damage", async () => {
+        const attack = makeRoll(env.classes.D20Roll, {
+            formula: "1d20+5",
+            total: 18,
+            faces: 20,
+            results: [13],
+            rollOptions: { ammunition: "normal-arrow" }
+        });
+        const message = new env.classes.TestChatMessage({
+            id: "usage-ammunition",
+            flags: {
+                [MODULE_SHORT]: {
+                    renderAttack: true,
+                    renderDamage: true,
+                    rolls: []
+                }
+            }
+        });
+
+        vi.spyOn(ActivityUtility, "getAttackFromMessage").mockResolvedValue([attack]);
+        const damageSpy = vi.spyOn(ActivityUtility, "getDamageFromMessage")
+            .mockImplementation(currentMessage => {
+                expect(currentMessage.flags[MODULE_SHORT].ammunition).toBe("normal-arrow");
+                return [];
+            });
+
+        await ActivityUtility.runActivityActions(message);
+
+        expect(damageSpy).toHaveBeenCalledTimes(1);
+        expect(message.updatedWith.flags[MODULE_SHORT].ammunition).toBe("normal-arrow");
+    });
+
+    it("clears stale captured ammunition when the evaluated attack used none", async () => {
+        const attack = makeRoll(env.classes.D20Roll, {
+            formula: "1d20+5",
+            total: 18,
+            faces: 20,
+            results: [13],
+            rollOptions: { ammunition: "" }
+        });
+        const message = new env.classes.TestChatMessage({
+            id: "usage-no-ammunition",
+            flags: {
+                [MODULE_SHORT]: {
+                    ammunition: "exhausted-arrow",
+                    renderAttack: true,
+                    renderDamage: true,
+                    rolls: []
+                }
+            }
+        });
+
+        vi.spyOn(ActivityUtility, "getAttackFromMessage").mockResolvedValue([attack]);
+        vi.spyOn(ActivityUtility, "getDamageFromMessage")
+            .mockImplementation(currentMessage => {
+                expect(currentMessage.flags[MODULE_SHORT]).not.toHaveProperty("ammunition");
+                return [];
+            });
+
+        await ActivityUtility.runActivityActions(message);
+
+        expect(message.updatedWith.flags[MODULE_SHORT]).not.toHaveProperty("ammunition");
     });
 
     it("passes a real d20 critical state from quick attack into quick damage rolls (#25, #28)", async () => {
@@ -544,6 +617,102 @@ describe("ActivityUtility roll action flow", () => {
         expect(message.flags[MODULE_SHORT]).not.toHaveProperty("renderAttack");
         expect(message.flags[MODULE_SHORT].rolls).toEqual([]);
         expect(getAttack).not.toHaveBeenCalled();
+    });
+
+    it("keeps a non-empty ammunition ID captured from configured activity consumption", () => {
+        const activity = {
+            id: "attack-1",
+            item: {
+                getFlag: vi.fn(() => undefined),
+                system: {
+                    ammunitionOptions: [
+                        ammunitionOption("fire-arrow"),
+                        ammunitionOption("normal-arrow", { equipped: true })
+                    ]
+                }
+            }
+        };
+
+        expect(ActivityUtility._resolveQuickRollAmmunition(activity, {
+            flags: { [MODULE_SHORT]: { ammunition: "fire-arrow" } }
+        })).toBe("fire-arrow");
+    });
+
+    it("prefers an available equipped option before a usable remembered choice", () => {
+        const activity = {
+            id: "attack-1",
+            item: {
+                getFlag: vi.fn(() => "ice-arrow"),
+                system: {
+                    ammunitionOptions: [
+                        ammunitionOption("fire-arrow"),
+                        ammunitionOption("ice-arrow"),
+                        ammunitionOption("normal-arrow", { equipped: true })
+                    ]
+                }
+            }
+        };
+
+        expect(ActivityUtility._resolveQuickRollAmmunition(activity, {
+            flags: { [MODULE_SHORT]: {} }
+        })).toBe("normal-arrow");
+    });
+
+    it("reuses a usable remembered choice when no ammunition is equipped", () => {
+        const activity = {
+            id: "attack-1",
+            item: {
+                getFlag: vi.fn(() => "ice-arrow"),
+                system: {
+                    ammunitionOptions: [
+                        ammunitionOption("fire-arrow"),
+                        ammunitionOption("ice-arrow"),
+                        ammunitionOption("normal-arrow")
+                    ]
+                }
+            }
+        };
+
+        expect(ActivityUtility._resolveQuickRollAmmunition(activity, {
+            flags: { [MODULE_SHORT]: {} }
+        })).toBe("ice-arrow");
+    });
+
+    it("uses dnd5e option order when none are equipped and returns blank when none are usable", () => {
+        const item = {
+            getFlag: vi.fn(() => undefined),
+            system: {
+                ammunitionOptions: [
+                    ammunitionOption("fire-arrow"),
+                    ammunitionOption("ice-arrow")
+                ]
+            }
+        };
+        const message = { flags: { [MODULE_SHORT]: {} } };
+
+        expect(ActivityUtility._resolveQuickRollAmmunition({ id: "attack-1", item }, message))
+            .toBe("fire-arrow");
+
+        item.system.ammunitionOptions = [
+            ammunitionOption("fire-arrow", { quantity: 0 }),
+            ammunitionOption("ice-arrow", { quantity: 0 })
+        ];
+        expect(ActivityUtility._resolveQuickRollAmmunition({ id: "attack-1", item }, message))
+            .toBe("");
+    });
+
+    it("returns undefined for weapons without ammunition options", () => {
+        const activity = {
+            id: "attack-1",
+            item: {
+                getFlag: vi.fn(),
+                system: { ammunitionOptions: [] }
+            }
+        };
+
+        expect(ActivityUtility._resolveQuickRollAmmunition(activity, {
+            flags: { [MODULE_SHORT]: {} }
+        })).toBeUndefined();
     });
 
     it("passes advantage, ammunition, and attackMode into rollAttack", () => {

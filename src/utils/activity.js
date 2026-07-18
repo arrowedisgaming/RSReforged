@@ -262,6 +262,14 @@ export class ActivityUtility {
             if (attackRolls.length > 0) {
                 currentRolls = RollUtility.mergeRollsByType(currentRolls, attackRolls, CONFIG.Dice.D20Roll);
                 newRolls.push(...attackRolls);
+                // dnd5e builds every D20 roll in this attack from one ammunition
+                // config, so the first roll is canonical (matching critical handling).
+                const ammunition = attackRolls[0]?.options?.ammunition;
+                if (ammunition) {
+                    message.flags[MODULE_SHORT].ammunition = ammunition;
+                } else {
+                    delete message.flags[MODULE_SHORT].ammunition;
+                }
                 // dual flag means a multi-roll was enforced by ALWAYS_ROLL_MULTIROLL;
                 // in that case isCritical is determined later during rendering.
                 message.flags[MODULE_SHORT].isCritical = message.flags[MODULE_SHORT].dual
@@ -465,6 +473,42 @@ export class ActivityUtility {
     }
 
     /**
+     * Resolve ammunition for a quick attack without replacing dnd5e's picker or
+     * remembered-choice flag.
+     *
+     * Precedence: configured consumption target, first usable equipped option,
+     * usable remembered choice, then first usable option in dnd5e's order.
+     *
+     * @param {Activity} activity The attack activity being rolled.
+     * @param {ChatMessage} message The combined usage card.
+     * @returns {string|undefined} Item ID, an empty string for no usable ammo, or
+     * undefined when the weapon has no ammunition options.
+     */
+    static _resolveQuickRollAmmunition(activity, message) {
+        const captured = message.flags?.[MODULE_SHORT]?.ammunition;
+        if (captured) return captured;
+
+        const options = activity.item?.system?.ammunitionOptions ?? [];
+        if (!options.length) return undefined;
+
+        const usable = options.filter(option => {
+            if (!option?.value || option.disabled === true) return false;
+            return (option.item?.system?.quantity ?? 1) > 0;
+        });
+
+        const equipped = usable.find(option => option.item?.system?.equipped === true);
+        if (equipped) return equipped.value;
+
+        const remembered = activity.item?.getFlag?.(
+            "dnd5e",
+            `last.${activity.id}.ammunition`
+        );
+        if (usable.some(option => option.value === remembered)) return remembered;
+
+        return usable[0]?.value ?? "";
+    }
+
+    /**
      * Roll the attack for the activity associated with this message.
      *
      * dnd5e 5.3.0: rollAttack() merges our config object into its own rollConfig via
@@ -472,20 +516,25 @@ export class ActivityUtility {
      * into D20Roll.applyKeybindings() (line 78549), which sets roll.options.advantageMode.
      * Passing them at the top level of the config object is therefore the correct approach.
      *
-     * The ammunition field passed here is the item ID stored during the
-     * activityConsumption hook. rollAttack() looks up the ammo item internally when
-     * needed; passing the ID in config means it reaches roll.options.ammunition for
-     * the PRE_ROLL_ATTACK hook to see.
+     * rollAttack() looks up the resolved ammunition item internally; passing its ID
+     * in config means it reaches roll.options.ammunition for damage and card state.
      */
     static getAttackFromMessage(message) {
         const activity = ActivityUtility._getActivityFromMessage(message);
         if (!activity || typeof activity.rollAttack !== "function") return null;
 
         const attackMode = message.flags[MODULE_SHORT].attackMode;
+        const ammunition = ActivityUtility._resolveQuickRollAmmunition(activity, message);
+        const actor = ActivityUtility._getActorFromMessage(message) ?? activity.actor;
+        const ammunitionItem = ammunition ? actor?.items?.get(ammunition) : undefined;
+        // dnd5e deletes quantity-one autoDestroy ammunition before rollAttack resolves.
+        // Snapshot it up front so the immediately-following damage roll can still merge
+        // ammunition-specific damage and properties if the live Item disappears.
+        const ammunitionData = ammunitionItem?.toObject?.();
         const config = {
             advantage:    message.flags[MODULE_SHORT].advantage    ?? false,
             disadvantage: message.flags[MODULE_SHORT].disadvantage ?? false,
-            ammunition:   message.flags[MODULE_SHORT].ammunition,
+            ...(ammunition !== undefined ? { ammunition } : {}),
             ...(attackMode ? { attackMode } : {})
         };
 
@@ -494,7 +543,15 @@ export class ActivityUtility {
         messageConfig.data.flags[MODULE_SHORT] = { quickRoll: true };
         messageConfig.flags[MODULE_SHORT]      = { quickRoll: true };
 
-        return activity.rollAttack(config, dialogConfig, messageConfig);
+        return Promise.resolve(activity.rollAttack(config, dialogConfig, messageConfig))
+            .then(rolls => {
+                if (ammunitionData && !actor?.items?.get(ammunition)) {
+                    message.flags.dnd5e ??= {};
+                    message.flags.dnd5e.roll ??= {};
+                    message.flags.dnd5e.roll.ammunitionData = ammunitionData;
+                }
+                return rolls;
+            });
     }
 
     /**
@@ -536,10 +593,18 @@ export class ActivityUtility {
         }
 
         const attackMode = message.flags[MODULE_SHORT].attackMode;
+        const ammunitionId = message.flags[MODULE_SHORT].ammunition;
+        const storedAmmunition = message.flags?.dnd5e?.roll?.ammunitionData;
+        const storedAmmunitionId = storedAmmunition?._id ?? storedAmmunition?.id;
+        const ammunition = actor.items?.get(ammunitionId)
+            ?? (storedAmmunitionId === ammunitionId && globalThis.Item?.implementation
+                ? new Item.implementation(storedAmmunition, { parent: actor })
+                : undefined);
         const config = {
             isCritical: message.flags[MODULE_SHORT].isCritical ?? false,
-            // Pass the live Item document so rollDamage can read ammo properties.
-            ammunition: actor.items?.get(message.flags[MODULE_SHORT].ammunition),
+            // Pass the live Item document, or dnd5e-style reconstructed data when the
+            // final autoDestroy unit was deleted, so rollDamage can read ammo properties.
+            ammunition,
             // Only override rollConfig.scaling when there's an upcast delta. For
             // cantrips and base-level casts, leave scaling undefined so dnd5e's
             // _processDamagePart falls through to rollData.scaling (the Scaling

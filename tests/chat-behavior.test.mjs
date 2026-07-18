@@ -144,6 +144,48 @@ describe("ChatUtility message lifecycle behavior", () => {
         ]);
     });
 
+    it("labels an attack with stored ammunition data after auto-destroy removes the live item", async () => {
+        const attack = makeRoll(env.classes.D20Roll, {
+            formula: "1d20+5", total: 18, faces: 20, results: [13]
+        });
+        const actor = { isOwner: true, items: { get: vi.fn(() => undefined) } };
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderAttack: true,
+                    ammunition: "last-arrow",
+                    rolls: [attack]
+                },
+                dnd5e: {
+                    activity: { type: "attack" },
+                    roll: {
+                        ammunitionData: { _id: "last-arrow", name: "Last Arrow" }
+                    }
+                }
+            },
+            getAssociatedActor: () => actor
+        });
+        const html = $(`
+            <article class="chat-message">
+                <div class="message-content">
+                    <div class="dnd5e2 chat-card usage-card">
+                        <div class="card-buttons"><button data-action="rollAttack"></button></div>
+                    </div>
+                </div>
+            </article>
+        `);
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+
+        expect(actor.items.get).toHaveBeenCalledWith("last-arrow");
+        expect(html.find(".rsr-section-attack .rsr-subtitle").text()).toContain("Last Arrow");
+    });
+
     it("reapplies dnd5e tray state after rebuilding a merged usage card (issue #33)", async () => {
         env.settings.damageApplyMode = "dnd5e";
 

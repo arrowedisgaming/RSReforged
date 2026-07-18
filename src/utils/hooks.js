@@ -170,6 +170,14 @@ export class HooksUtility {
                 || SettingsUtility.getSettingValue(SETTING_NAMES.QUICK_VANILLA_ENABLED)
             ) return;
 
+            // processActivity seeds this namespace during preUseActivity for both RSR
+            // quick rolls and RSR-managed slow rolls. dnd5e's later chat-card
+            // "Consume Resource" action invokes this same hook with an empty
+            // messageConfig and no rollAttack follows, so capturing/restoring ammo in
+            // that path would both overwrite card state and cancel real consumption.
+            const moduleFlags = messageConfig.data?.flags?.[MODULE_SHORT];
+            if (!moduleFlags) return;
+
             const hasAttack = activity.type === "attack" || !!activity.attack || activity.hasOwnProperty(ROLL_TYPE.ATTACK);
             const items = updates.item;
 
@@ -177,9 +185,7 @@ export class HooksUtility {
                 const ammo = items.find(i => i["system.quantity"] !== undefined || i["system.uses.spent"] !== undefined);
                 if (!ammo) return;
 
-                messageConfig.flags ??= {};
-                messageConfig.flags[MODULE_SHORT] ??= {};
-                messageConfig.flags[MODULE_SHORT].ammunition = ammo._id;
+                moduleFlags.ammunition = ammo._id;
 
                 // Add back the single unit that dnd5e's rollAttack will itself decrement, but
                 // only when this item is a valid weapon-ammunition option that reaches

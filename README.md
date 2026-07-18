@@ -78,6 +78,8 @@ Click *Install*. Foundry downloads the latest release and adds RSReforged to you
 
 Skill checks, ability checks, saving throws, tool checks, and item activities all roll straight to chat without the standard dnd5e dialog. Each category can be toggled independently in the module settings, or disable everything in one place with the *Use Vanilla Rolls with RSReforged Styling* master switch at the top — when that's on, dnd5e's normal roll dialogs are used everywhere and the per-category toggles are ignored. Hold the dnd5e *Skip Dialog* modifier (Shift by default) to invert RSReforged's quick-roll default and use the normal dnd5e dialog for one roll.
 
+For weapons with the Ammunition property, quick rolls prefer the first available equipped ammunition item. When no ammunition is equipped, RSReforged reuses the last usable ammunition used for that weapon's attack, then falls back to the first available option. Hold the **Skip Dialog** modifier (Shift by default) to choose a different ammunition type for one attack; dnd5e records it as the last-used option.
+
 Hold the *Advantage* or *Disadvantage* modifier while clicking to roll in that mode, including any extra dice from features like Elven Accuracy. The chat card highlights the kept die.
 
 ### Always roll two dice

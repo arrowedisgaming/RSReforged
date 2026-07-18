@@ -216,12 +216,15 @@ describe("HooksUtility preCreateChatMessage quick-roll flags", () => {
             hasOwnProperty: Object.prototype.hasOwnProperty,
             item: { system: { ammunitionOptions: [{ value: "arrow-1" }] } }
         };
-        const messageConfig = {};
+        const messageConfig = {
+            data: { flags: { [MODULE_SHORT]: { quickRoll: true } } }
+        };
         const ammoUpdate = { _id: "arrow-1", "system.quantity": 0 };
 
         activityConsumption(activity, {}, messageConfig, { item: [ammoUpdate] });
 
-        expect(messageConfig.flags[MODULE_SHORT].ammunition).toBe("arrow-1");
+        expect(messageConfig.data.flags[MODULE_SHORT].ammunition).toBe("arrow-1");
+        expect(messageConfig).not.toHaveProperty("flags");
         expect(ammoUpdate["system.quantity"]).toBe(1);
     });
 
@@ -236,13 +239,58 @@ describe("HooksUtility preCreateChatMessage quick-roll flags", () => {
             hasOwnProperty: Object.prototype.hasOwnProperty,
             item: { system: { ammunitionOptions: [] } }
         };
-        const messageConfig = {};
+        const messageConfig = {
+            data: { flags: { [MODULE_SHORT]: { quickRoll: true } } }
+        };
         const ammoUpdate = { _id: "cannonball-1", "system.quantity": 9 };
 
         activityConsumption(activity, {}, messageConfig, { item: [ammoUpdate] });
 
-        expect(messageConfig.flags[MODULE_SHORT].ammunition).toBe("cannonball-1");
+        expect(messageConfig.data.flags[MODULE_SHORT].ammunition).toBe("cannonball-1");
+        expect(messageConfig).not.toHaveProperty("flags");
         expect(ammoUpdate["system.quantity"]).toBe(9);
+    });
+
+    it("does not invent captured ammunition when activity consumption produced no item update", () => {
+        const handlers = registerRollHooks();
+        const activityConsumption = handlers.get("dnd5e.activityConsumption");
+        const activity = {
+            type: "attack",
+            hasOwnProperty: Object.prototype.hasOwnProperty,
+            item: {
+                system: {
+                    ammunitionOptions: [{ value: "fire-arrow" }, { value: "normal-arrow" }]
+                }
+            }
+        };
+        const messageConfig = {
+            data: { flags: { [MODULE_SHORT]: { quickRoll: true } } }
+        };
+
+        activityConsumption(activity, {}, messageConfig, { item: [] });
+
+        expect(messageConfig.data.flags[MODULE_SHORT]).not.toHaveProperty("ammunition");
+        expect(messageConfig).not.toHaveProperty("flags");
+    });
+
+    it("does not capture or restore ammunition for a chat-card Consume Resource action", () => {
+        const handlers = registerRollHooks();
+        const activityConsumption = handlers.get("dnd5e.activityConsumption");
+        const activity = {
+            type: "attack",
+            hasOwnProperty: Object.prototype.hasOwnProperty,
+            item: { system: { ammunitionOptions: [{ value: "arrow-1" }] } }
+        };
+        // dnd5e's chat-card Consume Resource action invokes the consumption hook with
+        // an empty messageConfig and applies the returned item update immediately. No
+        // rollAttack follows, so RSR must neither stamp card state nor add the unit back.
+        const messageConfig = {};
+        const ammoUpdate = { _id: "arrow-1", "system.quantity": 0 };
+
+        activityConsumption(activity, {}, messageConfig, { item: [ammoUpdate] });
+
+        expect(messageConfig).toEqual({});
+        expect(ammoUpdate["system.quantity"]).toBe(0);
     });
 
     it("preserves slow-roll flags written by the pre-use activity hook", () => {
