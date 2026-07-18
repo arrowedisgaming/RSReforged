@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.13.0] — 2026-07-17
+
+### Added
+
+- **Quick weapon attacks now prefer equipped ammunition.** RSReforged chooses an available equipped option first; when none is equipped, it reuses the last usable ammunition used for that weapon's attack and then falls back to the first available option. The chosen item remains consistent through attack consumption, ammunition-added damage, and the chat-card label. Hold the dnd5e **Skip Dialog** modifier to choose a different type for one attack; dnd5e records it as the last-used option. Implements [#35](https://github.com/arrowedisgaming/RSReforged/issues/35).
+
 ## [4.12.0] — 2026-07-15
 
 ### Added
@@ -294,7 +300,8 @@ The first RSReforged release. Forked from [MangoFVTT/fvtt-ready-set-roll-5e@v3.5
 - **MangoFVTT** — author and maintainer of upstream Ready Set Roll for D&D5e (the direct ancestor of this fork).
 - **RedReign** — author of the original [Better Rolls for 5e](https://github.com/RedReign/FoundryVTT-BetterRolls5e), which RSR is a rewrite of.
 
-[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.12.0...HEAD
+[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.0...HEAD
+[4.13.0]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.12.0...release-4.13.0
 [4.12.0]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.11.5...release-4.12.0
 [4.11.5]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.11.4...release-4.11.5
 [4.11.4]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.11.3...release-4.11.4
