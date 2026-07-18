@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.13.1] — 2026-07-18
+
+### Fixed
+
+- **Weapons without ammunition (melee and thrown weapons) roll again.** 4.13.0's equipped-ammunition support can rebuild deleted auto-destroy ammunition from a snapshot stored on the card, but for a weapon with no ammunition at all the rebuild guard compared two undefined values as equal and constructed an invalid Item — aborting the entire quick roll with a validation error: no rolls, no chat card. Ammunition weapons were unaffected. Fixes [#36](https://github.com/arrowedisgaming/RSReforged/issues/36).
+
 ## [4.13.0] — 2026-07-17
 
 ### Added
