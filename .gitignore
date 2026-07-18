@@ -18,6 +18,7 @@ docs/errors/
 # Local implementation plans created for review before code changes. Keep all
 # current and future plan Markdown files here so they never ship with releases.
 .plans/
+docs/superpowers/plans/
 
 # Local-only release outreach drafts (working text for upstream module-author
 # comments). Kept in the repo for convenient editing but never tracked, since
