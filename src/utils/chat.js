@@ -728,6 +728,17 @@ async function _injectContent(message, type, html) {
                 doomed.remove();
             }
 
+            if (useRsrDamageButtons) {
+                // dnd5e >= 5.3.1 renders its own damage-application tray into usage
+                // cards whose rolls contain DamageRolls (issue #37). In RSR apply mode
+                // RSR's buttons are the apply UI, so remove the system tray. No-op on
+                // dnd5e 5.3.0, which injects no tray.
+                html.find('damage-application').each((_, el) => {
+                    const wrapper = $(el).parent('.card-tray.damage-tray');
+                    (wrapper.length ? wrapper : $(el)).remove();
+                });
+            }
+
             if (message.flags[MODULE_SHORT].renderAttack || message.flags[MODULE_SHORT].renderAttack === false) {
                 html.find('[data-action=rollAttack], [data-action=attack]').remove();
                 await _injectAttackRoll(message, actions, { contentHtml: html });
@@ -932,6 +943,15 @@ async function _injectDamageRoll(message, html, { mode = "rsr", contentHtml = ht
         if (!nativeHTML.length) nativeHTML = renderedHTML.find('.dnd5e2.chat-card').not('.activation-card, .usage-card');
         if (!nativeHTML.length) nativeHTML = renderedHTML.find('.dice-roll').closest('.dnd5e2.chat-card');
         if (!nativeHTML.length) nativeHTML = renderedHTML.find('.dice-roll');
+
+        // dnd5e >= 5.3.1 already rendered its own damage-application tray into the
+        // usage card (issue #37). When present, keep the system's tray as the single
+        // apply UI and strip the synthetic fragment's duplicate. On dnd5e 5.3.0 the
+        // card has no system tray and the fragment's tray is kept, as before.
+        if (contentHtml.find('damage-application').length) {
+            nativeHTML = nativeHTML.not('damage-application');
+            nativeHTML.find('damage-application').remove();
+        }
 
         // The RSR-mode branch below builds its own section title and tags it with
         // "(Versatile)" via flags.versatile. dnd5e's native damage card has no such

@@ -86,6 +86,8 @@ Fires at the end of each section render — once per attack roll, once per damag
 
 `sectionHtml` is provided so listeners don't have to query the whole card to find what RSR just inserted.
 
+Note: in native damage-apply mode, `sectionHtml` only contains a `<damage-application>` tray on dnd5e versions that don't inject one into the usage card themselves (pre-5.3.1) — on newer dnd5e the system's own tray is kept and the fragment's duplicate is stripped, so query the card (`html`), not `sectionHtml`, when you need the tray.
+
 **Use case:** decorating only attack-roll sections (e.g. wm5e mastery links live on attack rolls, so a listener can early-return on other types).
 
 ### `rsreforged.renderApplyDamageButtons`

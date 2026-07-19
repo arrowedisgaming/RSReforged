@@ -239,7 +239,120 @@ describe("ChatUtility message lifecycle behavior", () => {
         expect(message._collapseTrays).toHaveBeenCalledTimes(1);
         expect(message._collapseTrays).toHaveBeenCalledWith(html.find(".message-content")[0]);
         expect(html.find(".targets-tray").hasClass("collapsed")).toBe(false);
+        // Exactly one apply tray survives the rebuild (issue #37) and it is the
+        // one _collapseTrays restored state onto.
+        expect(html.find("damage-application")).toHaveLength(1);
         expect(html.find("damage-application").attr("open")).not.toBeUndefined();
+    });
+
+    it("removes the dnd5e-injected damage tray in RSR apply mode (issue #37, dnd5e 5.3.1+)", async () => {
+        const damage = makeRoll(env.classes.DamageRoll, { formula: "1d8+3", total: 8, faces: 8, results: [5] });
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderDamage: true,
+                    rolls: [damage]
+                },
+                dnd5e: { activity: { type: "damage" } }
+            }
+        });
+        // dnd5e 5.3.1+ places its own tray inside the usage card because the
+        // message's persisted rolls contain DamageRolls.
+        const html = $(`
+            <article class="chat-message">
+                <div class="message-content">
+                    <div class="dnd5e2 chat-card usage-card">
+                        <div class="card-buttons"><button data-action="rollDamage"></button></div>
+                        <damage-application></damage-application>
+                    </div>
+                </div>
+            </article>
+        `);
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+
+        // RSR's buttons are the apply UI — the system tray must be gone.
+        expect(html.find("damage-application")).toHaveLength(0);
+        expect(html.find(".rsr-damage-buttons-xl")).toHaveLength(1);
+    });
+
+    it("keeps only the system's damage tray in native apply mode (issue #37, dnd5e 5.3.1+)", async () => {
+        env.settings.damageApplyMode = "dnd5e";
+
+        const damage = makeRoll(env.classes.DamageRoll, { formula: "1d8+3", total: 8, faces: 8, results: [5] });
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderDamage: true,
+                    rolls: [damage]
+                },
+                dnd5e: { activity: { type: "damage" } }
+            }
+        });
+        // Tag the system's tray so the assertion can prove which one survived —
+        // the fragment's tray (rendered via TestChatMessage.renderHTML) carries
+        // no such marker.
+        const html = $(`
+            <article class="chat-message">
+                <div class="message-content">
+                    <div class="dnd5e2 chat-card usage-card">
+                        <div class="card-buttons"><button data-action="rollDamage"></button></div>
+                        <damage-application data-origin="system"></damage-application>
+                    </div>
+                </div>
+            </article>
+        `);
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+
+        const trays = html.find("damage-application");
+        expect(trays).toHaveLength(1);
+        expect(trays.attr("data-origin")).toBe("system");
+    });
+
+    it("keeps the fragment's damage tray in native apply mode when the card has none (dnd5e 5.3.0)", async () => {
+        env.settings.damageApplyMode = "dnd5e";
+
+        const damage = makeRoll(env.classes.DamageRoll, { formula: "1d8+3", total: 8, faces: 8, results: [5] });
+        const message = new env.classes.TestChatMessage({
+            type: "usage",
+            isAuthor: true,
+            isContentVisible: true,
+            flags: {
+                [MODULE_SHORT]: {
+                    quickRoll: true,
+                    processed: true,
+                    renderDamage: true,
+                    rolls: [damage]
+                },
+                dnd5e: { activity: { type: "damage" } }
+            }
+        });
+        // Verified-baseline dnd5e 5.3.0: the usage card carries no system tray, so
+        // the synthetic fragment's tray is the only apply UI and must survive.
+        const html = $(`
+            <article class="chat-message">
+                <div class="message-content">
+                    <div class="dnd5e2 chat-card usage-card">
+                        <div class="card-buttons"><button data-action="rollDamage"></button></div>
+                    </div>
+                </div>
+            </article>
+        `);
+
+        await ChatUtility.processUsageChatMessage(message, html[0]);
+
+        expect(html.find("damage-application")).toHaveLength(1);
     });
 
     it("uses native damage rendering when dnd5e damage apply mode is selected", async () => {

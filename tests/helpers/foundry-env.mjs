@@ -242,7 +242,13 @@ export async function setupFoundryEnv(options = {}) {
 
         async renderHTML() {
             const rollHtml = this.rolls.map((roll) => renderRollHtml(roll)).join("");
-            return `<article class="chat-message" data-message-id="${this.id}"><div class="message-content"><div class="dnd5e2 chat-card">${rollHtml}</div></div></article>`;
+            // dnd5e 5.3.1+ injects a native damage-application tray into any message
+            // whose rolls contain DamageRolls (issue #37). Mirror that so synthetic
+            // fragments rendered through this class carry the tray too.
+            const tray = this.rolls.some((roll) => roll?.class === "DamageRoll")
+                ? `<damage-application></damage-application>`
+                : "";
+            return `<article class="chat-message" data-message-id="${this.id}"><div class="message-content"><div class="dnd5e2 chat-card">${rollHtml}</div>${tray}</div></article>`;
         }
 
         async update(update = {}) {
