@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.13.2] — 2026-07-19
+
 ### Fixed
 
 - **Quick-roll damage cards no longer show two damage-application trays on dnd5e 5.3.1+.** dnd5e 5.3.1 started injecting its own `<damage-application>` tray into any usage card whose rolls contain damage rolls, duplicating the apply UI RSReforged adds — one tray above the weapon properties and one below. With the *RSReforged quick buttons* apply mode the system tray is now removed (RSR's buttons are the apply UI); with the *dnd5e tray* apply mode the system's own tray is kept as the single tray and RSReforged's duplicate is dropped. Behavior on dnd5e 5.3.0 is unchanged, and tray collapse-state restoration (issue #33) targets the surviving tray. Verified compatibility bumped to dnd5e 5.3.3. Fixes [#37](https://github.com/arrowedisgaming/RSReforged/issues/37).
