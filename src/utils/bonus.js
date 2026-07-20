@@ -356,7 +356,7 @@ export class BonusManager {
     }
 }
 
-class BonusSelector extends ApplicationV2 {
+export class BonusSelector extends ApplicationV2 {
     constructor(options) {
         super(options);
         this.bonuses = options.bonuses;
@@ -389,6 +389,10 @@ class BonusSelector extends ApplicationV2 {
                         <input type="text" name="customFormula" placeholder="e.g. +5 or 1d4" style="width: 100%;">
                     </div>
                 </div>`;
+
+        // Effect name, icon path, and formula are world data a player can author on
+        // their own actor, so they must be escaped before interpolation into HTML.
+        const esc = foundry.utils.escapeHTML;
 
         this.bonuses.forEach((b, i) => {
             const checked = (i === 0 && !customChecked) ? "checked" : "";
@@ -425,8 +429,8 @@ class BonusSelector extends ApplicationV2 {
                     <div style="display:flex; align-items:center;">
                         <input type="radio" name="bonusIndex" value="${i}" id="bonus-${i}" ${checked}>
                         <label for="bonus-${i}" style="display:flex; align-items:center; cursor:pointer; flex:1; margin-left:12px;">
-                            <img src="${b.icon}" width="32" height="32" style="border:none; margin-right:12px;">
-                            <div><strong>${b.name}</strong><br><small>${b.rawFormula}</small></div>
+                            <img src="${esc(b.icon)}" width="32" height="32" style="border:none; margin-right:12px;">
+                            <div><strong>${esc(b.name)}</strong><br><small>${esc(b.rawFormula)}</small></div>
                         </label>
                     </div>
                     ${typeUI}
