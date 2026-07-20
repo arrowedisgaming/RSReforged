@@ -8,8 +8,8 @@ node_modules/
 .vscode/
 
 # Local reference material — vendored module sources kept for reading only,
-# never shipped. Tracked files under docs/ (foundry-listing.html, RELEASING.md,
-# upstream-v3.5.0-snapshot/) are unaffected.
+# never shipped. Tracked files under docs/ (foundry-listing.html, RELEASING.md)
+# are unaffected.
 docs/midi-qol-v13/
 docs/other_modules/
 docs/errors/
