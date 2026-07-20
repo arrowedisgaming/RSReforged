@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.13.3] — 2026-07-20
+
+### Security
+
+- **Effect-authored text can no longer inject HTML into the retroactive-bonus dialog.** The bonus picker rendered Active Effect names, icon paths, and bonus formulas into its HTML unescaped. Those values are world data any player can author on an actor they own, and the dialog opens on the GM's client, so a crafted effect name could execute script there. All three values are now escaped, with regression tests covering script and attribute-breaking payloads. A `SECURITY.md` with a private disclosure path has also been added to the repository.
+
+### Fixed
+
+- **Multi-roll rendering now reliably waits for bonus terms to evaluate.** The bonus-term evaluation loop used `await` on `Array.forEach`, which never actually waits, so terms could reach roll reconstruction unevaluated. Also replaced a deprecated bare `duplicate()` call with `foundry.utils.duplicate()` and removed dead logic in reroll result handling; no behavior change intended beyond the reliable await.
+
 ## [4.13.2] — 2026-07-19
 
 ### Fixed
