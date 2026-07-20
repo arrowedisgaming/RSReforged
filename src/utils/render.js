@@ -32,11 +32,11 @@ async function _renderMultiRoll(data = {}) {
     // Process bonuses beyond the base d20s into a single roll.
     const bonusTerms = roll.terms.slice(1);
 
-    await bonusTerms.forEach(async term => {            
+    for (const term of bonusTerms) {
         if (!term._evaluated) {
-            await term.evaluate()
+            await term.evaluate();
         }
-    });
+    }
 
     const bonusRoll = (bonusTerms && bonusTerms.length > 0) ? Roll.fromTerms(bonusTerms) : null;
 
@@ -52,7 +52,7 @@ async function _renderMultiRoll(data = {}) {
             }
 
             i++;
-            tmpResults.push(duplicate(d20Rolls.results[i]));
+            tmpResults.push(foundry.utils.duplicate(d20Rolls.results[i]));
         }
 
         const critOptions = { 
@@ -66,7 +66,7 @@ async function _renderMultiRoll(data = {}) {
         // Die terms must have active results or the base roll total of the generated roll is 0.
         // This does not apply to dice that have been rerolled (unless they are replaced by a fixer value eg. for reliable talent).
         tmpResults.forEach(r => {
-            r.active = !(r.rerolled && !r.count) ?? true; 
+            r.active = !(r.rerolled && !r.count);
         });
 
         const baseTerm = new foundry.dice.terms.Die({
