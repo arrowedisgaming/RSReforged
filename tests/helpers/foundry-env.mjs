@@ -319,7 +319,9 @@ export async function setupFoundryEnv(options = {}) {
     }
 
     function sumResults(results = []) {
-        return results.reduce((total, result) => total + (result.active === false ? 0 : Number(result.result ?? 0)), 0);
+        // Foundry's DiceTermResult: `count` (when present, e.g. a reroll fixed by
+        // reliable talent) overrides `result` as the value the die contributes.
+        return results.reduce((total, result) => total + (result.active === false ? 0 : Number(result.count ?? result.result ?? 0)), 0);
     }
 
     function renderRollHtml(roll) {
@@ -435,7 +437,9 @@ export async function setupFoundryEnv(options = {}) {
                 .replaceAll("'", "&#39;")
         }
     };
-    globalThis.duplicate = globalThis.foundry.utils.duplicate;
+    // No bare `duplicate` global on purpose: Foundry deprecated it, src must use
+    // foundry.utils.duplicate, and aliasing it here would mask a regression.
+    delete globalThis.duplicate;
 
     globalThis.CONST = {
         KEYBINDING_PRECEDENCE: { NORMAL: 0 }
