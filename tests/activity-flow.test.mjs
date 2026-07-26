@@ -748,6 +748,113 @@ describe("ActivityUtility roll action flow", () => {
         );
     });
 
+    it("stamps a capture token into the roll message config it hands to dnd5e", () => {
+        const rollAttack = vi.fn(() => []);
+        vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
+
+        ActivityUtility.getAttackFromMessage({ flags: { [MODULE_SHORT]: {} } });
+
+        const messageConfig = rollAttack.mock.calls[0][2];
+        expect(messageConfig.data.flags[MODULE_SHORT].quickRoll).toBe(true);
+        expect(typeof messageConfig.data.flags[MODULE_SHORT].captureId).toBe("string");
+        // The top-level flags block is what dnd5e copies onto the roll message itself;
+        // RSR's internal bookkeeping must stay out of it.
+        expect(messageConfig.flags).toEqual({ [MODULE_SHORT]: { quickRoll: true } });
+    });
+
+    it("applies target descriptors captured during the roll onto the card", async () => {
+        const rollAttack = vi.fn((config, dialog, messageConfig) => {
+            ActivityUtility.captureRollMessageConfig({
+                data: {
+                    flags: {
+                        [MODULE_SHORT]: messageConfig.data.flags[MODULE_SHORT],
+                        dnd5e: { targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 17 }] }
+                    }
+                }
+            });
+            return [];
+        });
+        vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
+
+        const message = {
+            flags: {
+                [MODULE_SHORT]: {},
+                // Stale pre-roll descriptors, as stamped by dnd5e's Activity#use.
+                dnd5e: { targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 15 }] }
+            }
+        };
+
+        await ActivityUtility.getAttackFromMessage(message);
+
+        expect(message.flags.dnd5e.targets).toEqual([
+            { name: "Goblin", uuid: "Actor.goblin", ac: 17 }
+        ]);
+    });
+
+    it("leaves the card's descriptors alone when no capture was taken", async () => {
+        const rollAttack = vi.fn(() => []);
+        vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
+
+        const message = {
+            flags: {
+                [MODULE_SHORT]: {},
+                dnd5e: { targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 15 }] }
+            }
+        };
+
+        await ActivityUtility.getAttackFromMessage(message);
+
+        expect(message.flags.dnd5e.targets).toEqual([
+            { name: "Goblin", uuid: "Actor.goblin", ac: 15 }
+        ]);
+    });
+
+    it("releases the capture when the attack roll rejects", async () => {
+        let captureId;
+        const rollAttack = vi.fn((config, dialog, messageConfig) => {
+            captureId = messageConfig.data.flags[MODULE_SHORT].captureId;
+            ActivityUtility.captureRollMessageConfig({
+                data: {
+                    flags: {
+                        [MODULE_SHORT]: { captureId },
+                        dnd5e: { targets: [{ uuid: "Actor.goblin", ac: 17 }] }
+                    }
+                }
+            });
+            return Promise.reject(new Error("roll cancelled"));
+        });
+        vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
+
+        await expect(ActivityUtility.getAttackFromMessage({ flags: { [MODULE_SHORT]: {} } }))
+            .rejects.toThrow("roll cancelled");
+
+        expect(ActivityUtility._consumeRollCapture(captureId)).toBeNull();
+    });
+
+    it("releases the capture when rollAttack throws synchronously", () => {
+        // dnd5e's own rollAttack is async and cannot do this, but a module that wraps or
+        // monkey-patches it can — and a synchronous throw skips the promise chain
+        // entirely, so the cleanup cannot live only in .finally().
+        let captureId;
+        const rollAttack = vi.fn((config, dialog, messageConfig) => {
+            captureId = messageConfig.data.flags[MODULE_SHORT].captureId;
+            ActivityUtility.captureRollMessageConfig({
+                data: {
+                    flags: {
+                        [MODULE_SHORT]: { captureId },
+                        dnd5e: { targets: [{ uuid: "Actor.goblin", ac: 17 }] }
+                    }
+                }
+            });
+            throw new Error("wrapper exploded");
+        });
+        vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
+
+        expect(() => ActivityUtility.getAttackFromMessage({ flags: { [MODULE_SHORT]: {} } }))
+            .toThrow("wrapper exploded");
+        expect(ActivityUtility._consumeRollCapture(captureId)).toBeNull();
+    });
+
     it("passes scaling, resolved ammunition, critical state, attackMode, and Midi options into rollDamage", async () => {
         vi.resetModules();
         env = await setupFoundryEnv({ modules: { "midi-qol": true } });

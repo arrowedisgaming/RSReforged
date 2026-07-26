@@ -648,20 +648,40 @@ export class ActivityUtility {
             ...(attackMode ? { attackMode } : {})
         };
 
+        // Correlation token for the capture hook (see captureRollMessageConfig). It goes
+        // in data.flags only — the top-level flags block is what dnd5e copies onto the
+        // roll message itself, and RSR's internal bookkeeping has no business there.
+        const captureId = ActivityUtility._nextRollCaptureId();
+
         const dialogConfig  = { configure: false };
         const messageConfig = { create: false, data: { flags: {} }, flags: {} };
-        messageConfig.data.flags[MODULE_SHORT] = { quickRoll: true };
+        messageConfig.data.flags[MODULE_SHORT] = { quickRoll: true, captureId };
         messageConfig.flags[MODULE_SHORT]      = { quickRoll: true };
 
-        return Promise.resolve(activity.rollAttack(config, dialogConfig, messageConfig))
+        let attackResult;
+        try {
+            attackResult = activity.rollAttack(config, dialogConfig, messageConfig);
+        } catch (err) {
+            // A synchronous throw (only reachable if something wraps rollAttack) skips
+            // the promise chain below, so the capture has to be released here too.
+            ActivityUtility._consumeRollCapture(captureId);
+            throw err;
+        }
+
+        return Promise.resolve(attackResult)
             .then(rolls => {
                 if (ammunitionData && !actor?.items?.get(ammunition)) {
                     message.flags.dnd5e ??= {};
                     message.flags.dnd5e.roll ??= {};
                     message.flags.dnd5e.roll.ammunitionData = ammunitionData;
                 }
+                // Carry the roll workflow's own view of the targets onto the card. Runs
+                // before runActivityActions calls _syncAttackTargets, which then finds
+                // nothing newer to offer and leaves this result in place.
+                ActivityUtility._applyRollCapture(message, ActivityUtility._consumeRollCapture(captureId));
                 return rolls;
-            });
+            })
+            .finally(() => { ActivityUtility._consumeRollCapture(captureId); });
     }
 
     /**
