@@ -16,6 +16,7 @@ export const HOOKS_DND5E = {
     PRE_ROLL_SKILL: "dnd5e.preRollSkill",
     PRE_ROLL_TOOL_CHECK: "dnd5e.preRollTool",
     PRE_ROLL_ATTACK: "dnd5e.preRollAttack",
+    POST_ROLL_CONFIGURATION: "dnd5e.postRollConfiguration",
     PRE_ROLL_DAMAGE: "dnd5e.preRollDamage",
     PRE_USE_ACTIVITY: "dnd5e.preUseActivity",
     // POST_USE_ACTIVITY removed: in dnd5e 5.3.0 we use usageConfig.subsequentActions = false
@@ -142,6 +143,25 @@ export class HooksUtility {
             }
             dialog.configure = false;
             return true;
+        });
+
+        // The last configuration hook dnd5e fires before a roll is evaluated. An attack
+        // fires three in sequence — postAttackRollConfiguration, postD20TestRollConfiguration,
+        // postRollConfiguration — as BasicRoll.buildConfigure walks config.hookNames, so
+        // only this one is guaranteed to run after every listener that adjusts a roll
+        // against its targets (cover, condition automation) has rewritten the pending
+        // message configuration.
+        //
+        // RSR rolls with create:false, so dnd5e discards that configuration; without this
+        // capture the card keeps the target descriptors Activity#use stamped on it before
+        // the roll, which predate all of those adjustments (issue #38).
+        //
+        // Registered for every roll type rather than just attacks: captureRollMessageConfig
+        // no-ops unless the config carries RSR's own correlation token, which is cheaper
+        // and more robust than re-deriving the quick-roll settings here. Must not return
+        // false — dnd5e treats that as a veto and cancels the roll.
+        Hooks.on(HOOKS_DND5E.POST_ROLL_CONFIGURATION, (rolls, config, dialog, message) => {
+            ActivityUtility.captureRollMessageConfig(message);
         });
 
         Hooks.on(HOOKS_DND5E.PRE_ROLL_DAMAGE, (config, dialog, message) => {

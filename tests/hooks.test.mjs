@@ -17,7 +17,8 @@ const state = vi.hoisted(() => ({
     processChatMessage: vi.fn(),
     processUsageChatMessage: vi.fn(),
     processActivity: vi.fn(),
-    processRoll: vi.fn()
+    processRoll: vi.fn(),
+    captureRollMessageConfig: vi.fn()
 }));
 
 vi.mock("../src/utils/activity.js", async () => {
@@ -28,7 +29,8 @@ vi.mock("../src/utils/activity.js", async () => {
     return {
         ActivityUtility: {
             _getActivityFromMessage: vi.fn((message) => message._activity ?? null),
-            setRenderFlags: actual.ActivityUtility.setRenderFlags
+            setRenderFlags: actual.ActivityUtility.setRenderFlags,
+            captureRollMessageConfig: state.captureRollMessageConfig
         }
     };
 });
@@ -129,6 +131,7 @@ describe("HooksUtility preCreateChatMessage quick-roll flags", () => {
         state.processUsageChatMessage.mockClear();
         state.processActivity.mockClear();
         state.processRoll.mockClear();
+        state.captureRollMessageConfig.mockClear();
     });
 
     it("honors the skill quick-roll setting at roll time", () => {
@@ -400,5 +403,32 @@ describe("HooksUtility preCreateChatMessage quick-roll flags", () => {
         expect(state.processUsageChatMessage).toHaveBeenCalledWith(message, html);
         expect(state.restoreDnd5eEnrichedRollFlavor.mock.invocationCallOrder[0])
             .toBeLessThan(state.processUsageChatMessage.mock.invocationCallOrder[0]);
+    });
+
+    it("registers a capture listener on dnd5e's final roll configuration hook", () => {
+        const handlers = registerRollHooks();
+
+        // dnd5e fires postAttackRollConfiguration, then postD20TestRollConfiguration,
+        // then postRollConfiguration (BasicRoll.buildConfigure over config.hookNames).
+        // Only the last one is guaranteed to run after every mutating listener.
+        expect(handlers.has("dnd5e.postRollConfiguration")).toBe(true);
+    });
+
+    it("forwards the pending roll message config to the capture registry", () => {
+        const handlers = registerRollHooks();
+        const postRollConfig = handlers.get("dnd5e.postRollConfiguration");
+        const messageConfig = { data: { flags: { [MODULE_SHORT]: { captureId: "rsr-capture-1" } } } };
+
+        postRollConfig([], {}, {}, messageConfig);
+
+        expect(state.captureRollMessageConfig).toHaveBeenCalledWith(messageConfig);
+    });
+
+    it("never vetoes the roll from the capture listener", () => {
+        const handlers = registerRollHooks();
+        const postRollConfig = handlers.get("dnd5e.postRollConfiguration");
+
+        // dnd5e cancels the roll when any postRollConfiguration listener returns false.
+        expect(postRollConfig([], {}, {}, { data: { flags: {} } })).not.toBe(false);
     });
 });
