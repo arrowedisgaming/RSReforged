@@ -74,7 +74,8 @@ export class ActivityUtility {
      * unless we copy it during child-merge or stamp it from the user's targeted tokens
      * at attack-roll time.
      *
-     * Does not overwrite targets already stamped on the card.
+     * A child roll message's targets overwrite whatever is on the card; the
+     * current-targets fallback never does.
      * @param {ChatMessage} message The activation card to stamp.
      * @param {ChatMessage} [sourceMessage] Optional child attack-roll message to copy from.
      */
@@ -82,13 +83,21 @@ export class ActivityUtility {
         if (!message) return;
 
         message.flags.dnd5e ??= {};
-        if (message.flags.dnd5e.targets?.length) return;
 
+        // A child roll message wins outright. dnd5e's Activity#use stamps descriptors on
+        // the usage card from getTargetDescriptors() before any roll happens, so whatever
+        // is already on the card predates every target-dependent adjustment made during
+        // the roll — cover bonuses, condition-driven AC changes. The child message was
+        // created later in that same workflow and carries the adjusted values (#38).
         const fromSource = sourceMessage?.flags?.dnd5e?.targets;
         if (fromSource?.length) {
             message.flags.dnd5e.targets = foundry.utils.deepClone(fromSource);
             return;
         }
+
+        // No child message means the only other source is the user's current targets,
+        // which are no fresher than what the card already holds — so never clobber here.
+        if (message.flags.dnd5e.targets?.length) return;
 
         const tokens = Array.from(game.user?.targets ?? []);
         if (!tokens.length) return;

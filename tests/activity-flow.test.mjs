@@ -889,18 +889,21 @@ describe("ActivityUtility roll action flow", () => {
         expect(message.flags.dnd5e.targets[0].uuid).toBe("Actor.twin");
     });
 
-    it("does not overwrite existing flags.dnd5e.targets on the card", () => {
+    it("lets a child attack message's targets overwrite the card's stale ones", () => {
+        // dnd5e's Activity#use stamps descriptors on the usage card before the attack
+        // roll runs. The child roll message is created later in the workflow, after any
+        // module has adjusted the descriptors against the roll, so it wins (#38).
         const message = {
             flags: {
                 dnd5e: {
-                    targets: [{ name: "Existing", uuid: "Actor.existing", ac: 10 }]
+                    targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 15 }]
                 }
             }
         };
         const child = {
             flags: {
                 dnd5e: {
-                    targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 13 }]
+                    targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 17 }]
                 }
             }
         };
@@ -908,7 +911,45 @@ describe("ActivityUtility roll action flow", () => {
         ActivityUtility._syncAttackTargets(message, child);
 
         expect(message.flags.dnd5e.targets).toEqual([
+            { name: "Goblin", uuid: "Actor.goblin", ac: 17 }
+        ]);
+    });
+
+    it("does not overwrite the card's targets when there is no child message to offer", () => {
+        // Without a child message the only alternative source is the user's current
+        // targets, which are not newer than what the card already has — never clobber.
+        game.user.targets = new Set([
+            {
+                name: "Bandit",
+                actor: {
+                    uuid: "Actor.bandit",
+                    system: { attributes: { ac: { value: 12 } } },
+                    statuses: new Set()
+                }
+            }
+        ]);
+        const message = {
+            flags: {
+                dnd5e: {
+                    targets: [{ name: "Existing", uuid: "Actor.existing", ac: 10 }]
+                }
+            }
+        };
+
+        ActivityUtility._syncAttackTargets(message);
+
+        expect(message.flags.dnd5e.targets).toEqual([
             { name: "Existing", uuid: "Actor.existing", ac: 10 }
         ]);
+    });
+
+    it("deep-copies the child's targets so the card does not alias the child message", () => {
+        const childTargets = [{ name: "Goblin", uuid: "Actor.goblin", ac: 17 }];
+        const message = { flags: { dnd5e: {} } };
+
+        ActivityUtility._syncAttackTargets(message, { flags: { dnd5e: { targets: childTargets } } });
+
+        expect(message.flags.dnd5e.targets).not.toBe(childTargets);
+        expect(message.flags.dnd5e.targets[0]).not.toBe(childTargets[0]);
     });
 });
