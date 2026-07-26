@@ -952,4 +952,129 @@ describe("ActivityUtility roll action flow", () => {
         expect(message.flags.dnd5e.targets).not.toBe(childTargets);
         expect(message.flags.dnd5e.targets[0]).not.toBe(childTargets[0]);
     });
+
+    it("issues a unique capture id per call", () => {
+        const first = ActivityUtility._nextRollCaptureId();
+        const second = ActivityUtility._nextRollCaptureId();
+
+        expect(typeof first).toBe("string");
+        expect(first).not.toBe(second);
+    });
+
+    it("captures the target descriptors a roll workflow wrote into the message config", () => {
+        const captureId = ActivityUtility._nextRollCaptureId();
+        const messageConfig = {
+            data: {
+                flags: {
+                    [MODULE_SHORT]: { quickRoll: true, captureId },
+                    dnd5e: { targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 17 }] }
+                }
+            }
+        };
+
+        ActivityUtility.captureRollMessageConfig(messageConfig);
+
+        expect(ActivityUtility._consumeRollCapture(captureId)).toEqual({
+            targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 17 }],
+            flags: messageConfig.data.flags
+        });
+    });
+
+    it("copies the captured descriptors so later mutation of the config cannot change them", () => {
+        const captureId = ActivityUtility._nextRollCaptureId();
+        const target = { name: "Goblin", uuid: "Actor.goblin", ac: 17 };
+        ActivityUtility.captureRollMessageConfig({
+            data: { flags: { [MODULE_SHORT]: { captureId }, dnd5e: { targets: [target] } } }
+        });
+
+        target.ac = 99;
+
+        expect(ActivityUtility._consumeRollCapture(captureId).targets).toEqual([
+            { name: "Goblin", uuid: "Actor.goblin", ac: 17 }
+        ]);
+    });
+
+    it("ignores roll message configs that carry no RSR capture token", () => {
+        const captureId = ActivityUtility._nextRollCaptureId();
+
+        // A roll from another module, or a vanilla dnd5e roll: no token, nothing stored.
+        ActivityUtility.captureRollMessageConfig({
+            data: { flags: { dnd5e: { targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 17 }] } } }
+        });
+        ActivityUtility.captureRollMessageConfig(undefined);
+        ActivityUtility.captureRollMessageConfig({});
+
+        expect(ActivityUtility._consumeRollCapture(captureId)).toBeNull();
+    });
+
+    it("distinguishes a roll with no targets from a config that carries no target list", () => {
+        const emptyId = ActivityUtility._nextRollCaptureId();
+        ActivityUtility.captureRollMessageConfig({
+            data: { flags: { [MODULE_SHORT]: { captureId: emptyId }, dnd5e: { targets: [] } } }
+        });
+        expect(ActivityUtility._consumeRollCapture(emptyId).targets).toEqual([]);
+
+        const absentId = ActivityUtility._nextRollCaptureId();
+        ActivityUtility.captureRollMessageConfig({
+            data: { flags: { [MODULE_SHORT]: { captureId: absentId }, dnd5e: {} } }
+        });
+        expect(ActivityUtility._consumeRollCapture(absentId).targets).toBeNull();
+    });
+
+    it("removes a capture once consumed so the registry cannot leak", () => {
+        const captureId = ActivityUtility._nextRollCaptureId();
+        ActivityUtility.captureRollMessageConfig({
+            data: { flags: { [MODULE_SHORT]: { captureId }, dnd5e: { targets: [{ uuid: "Actor.a", ac: 1 }] } } }
+        });
+
+        expect(ActivityUtility._consumeRollCapture(captureId)).not.toBeNull();
+        expect(ActivityUtility._consumeRollCapture(captureId)).toBeNull();
+    });
+
+    it("overwrites the card's stale use-time target descriptors with the captured set", () => {
+        const message = {
+            flags: { dnd5e: { targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 15 }] } }
+        };
+
+        expect(ActivityUtility._applyRollCapture(message, {
+            targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 17 }],
+            flags: {}
+        })).toBe(true);
+        expect(message.flags.dnd5e.targets).toEqual([
+            { name: "Goblin", uuid: "Actor.goblin", ac: 17 }
+        ]);
+    });
+
+    it("clears stale descriptors when the roll itself had no targets", () => {
+        // The user cleared their targets between activity use and the attack roll. The
+        // roll's view is authoritative, so the card must not keep advertising a target
+        // that was never rolled against.
+        const message = {
+            flags: { dnd5e: { targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 15 }] } }
+        };
+
+        expect(ActivityUtility._applyRollCapture(message, { targets: [], flags: {} })).toBe(true);
+        expect(message.flags.dnd5e.targets).toEqual([]);
+    });
+
+    it("leaves the card untouched when there is nothing captured to apply", () => {
+        const targets = [{ name: "Goblin", uuid: "Actor.goblin", ac: 15 }];
+        const message = { flags: { dnd5e: { targets } } };
+
+        expect(ActivityUtility._applyRollCapture(message, null)).toBe(false);
+        expect(ActivityUtility._applyRollCapture(message, { targets: null, flags: {} })).toBe(false);
+        expect(message.flags.dnd5e.targets).toBe(targets);
+    });
+
+    it("creates the dnd5e flag namespace when applying to a card that has none", () => {
+        const message = {};
+
+        expect(ActivityUtility._applyRollCapture(message, {
+            targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 17 }],
+            flags: {}
+        })).toBe(true);
+        expect(message.flags.dnd5e.targets).toEqual([
+            { name: "Goblin", uuid: "Actor.goblin", ac: 17 }
+        ]);
+    });
 });

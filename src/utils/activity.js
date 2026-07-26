@@ -5,6 +5,17 @@ import { CoreUtility } from "./core.js";
 import { CRIT_TYPE, ROLL_TYPE, RollUtility } from "./roll.js";
 import { SETTING_NAMES, SettingsUtility } from "./settings.js";
 
+/**
+ * Snapshots of the pending dnd5e roll-message configuration, keyed by the correlation
+ * token RSR stamps into the configuration it hands to the roll workflow.
+ *
+ * Entries are written by captureRollMessageConfig (from the dnd5e postRollConfiguration
+ * hook) and removed by _consumeRollCapture, which getAttackFromMessage calls on every
+ * settle path so the map cannot grow unbounded.
+ */
+const _rollCaptures = new Map();
+let _rollCaptureSequence = 0;
+
 export class ActivityUtility {
 
     /**
@@ -116,6 +127,96 @@ export class ActivityUtility {
         }
 
         if (targets.size) message.flags.dnd5e.targets = Array.from(targets.values());
+    }
+
+    /**
+     * Mint a correlation token for one roll issued by RSR.
+     *
+     * dnd5e's rollAttack merges the message configuration RSR passes into its OWN
+     * defaults (foundry.utils.mergeObject mutates the first argument and returns it), so
+     * the object every roll hook receives is not the object RSR handed over. RSR cannot
+     * read its own reference back; it has to recognise its roll from inside the
+     * workflow, which is what this token is for.
+     */
+    static _nextRollCaptureId() {
+        _rollCaptureSequence += 1;
+        return `${MODULE_SHORT}-capture-${_rollCaptureSequence}`;
+    }
+
+    /**
+     * Snapshot a pending dnd5e roll-message configuration mid-workflow.
+     *
+     * dnd5e seeds `data.flags.dnd5e.targets` from getTargetDescriptors() inside
+     * rollAttack, and modules that adjust a roll against its targets (cover, condition
+     * automation) rewrite those entries during the preRoll hooks. Because RSR rolls with
+     * `create: false`, dnd5e never turns the configuration into a message, so without
+     * this snapshot every one of those adjustments is discarded and the card keeps the
+     * descriptors Activity#use() stamped on it before the roll.
+     *
+     * Called from dnd5e's postRollConfiguration hook — the last of the three post-config
+     * hooks an attack fires (postAttackRollConfiguration, postD20TestRollConfiguration,
+     * postRollConfiguration; see BasicRoll.buildConfigure) — so every mutating listener
+     * on any of them has already run.
+     *
+     * A missing `targets` array and an empty one mean different things and are recorded
+     * differently: `null` for "this configuration never had a target list" (leave the
+     * card alone), `[]` for "this roll had no targets" (clear the card's stale list).
+     *
+     * The descriptor entries are copied because the configuration keeps being mutated
+     * after this point; the flags object itself is kept by reference — it outlives the
+     * roll, and the capture is consumed before the roll's promise settles.
+     *
+     * @param {object} messageConfig The pending roll-message configuration.
+     */
+    static captureRollMessageConfig(messageConfig) {
+        const flags = messageConfig?.data?.flags;
+        const captureId = flags?.[MODULE_SHORT]?.captureId;
+        if (!captureId) return;
+
+        const targets = Array.isArray(flags.dnd5e?.targets)
+            ? flags.dnd5e.targets.map(target => ({ ...target }))
+            : null;
+
+        _rollCaptures.set(captureId, { targets, flags });
+    }
+
+    /**
+     * Read and remove a capture. Safe to call more than once for the same token, and
+     * safe to call for a roll that was cancelled before the capture hook ran.
+     *
+     * @param {string} captureId The token minted by _nextRollCaptureId.
+     * @returns {{targets: object[]|null, flags: object}|null}
+     */
+    static _consumeRollCapture(captureId) {
+        if (!captureId) return null;
+        const capture = _rollCaptures.get(captureId) ?? null;
+        _rollCaptures.delete(captureId);
+        return capture;
+    }
+
+    /**
+     * Write a capture onto the RSR card.
+     *
+     * This OVERWRITES `flags.dnd5e.targets`, including with an empty list. dnd5e's
+     * Activity#use already stamped descriptors on the usage card from
+     * getTargetDescriptors() before the attack roll ran, so the existing entries are the
+     * stale pre-roll set that produces both the wrong AC and the wrong hit/miss verdict
+     * in the target tray (issue #38; the tray derives its per-row verdict from the
+     * descriptor AC — dnd5e chat-message.mjs:462). The captured set has the identical
+     * shape and is produced later in the same workflow.
+     *
+     * @param {object} message The RSR card to write to.
+     * @param {{targets: object[]|null, flags: object}|null} capture
+     * @returns {boolean} Whether anything was written.
+     */
+    static _applyRollCapture(message, capture) {
+        const targets = capture?.targets;
+        if (!message || !Array.isArray(targets)) return false;
+
+        message.flags ??= {};
+        message.flags.dnd5e ??= {};
+        message.flags.dnd5e.targets = targets;
+        return true;
     }
 
     /**
