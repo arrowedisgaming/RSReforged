@@ -212,6 +212,52 @@ Single post hook is enough. Listener is naturally idempotent — `.attr()` overw
 
 ---
 
+## Target descriptors on RSR cards
+
+dnd5e's `Activity#use()` stamps `flags.dnd5e.targets` onto the usage card from
+`getTargetDescriptors()` *before* any attack roll happens. Those descriptors predate
+anything your module does during the roll. RSR therefore treats them as provisional and
+replaces them with the roll's own view, from whichever of these is available:
+
+- **A real attack-roll message** merged into the card. RSR copies its descriptors over
+  the card's.
+- **The pending roll-message configuration**, on RSR's quick-roll path. RSR rolls with
+  `create: false`, so dnd5e never turns that configuration into a message and everything
+  written into it would otherwise be discarded. RSR captures
+  `data.flags.dnd5e.targets` from it at `dnd5e.postRollConfiguration` and copies the
+  result onto the card.
+
+If your module adjusts target descriptors during an attack roll (cover bonuses,
+condition-driven AC changes), write them the way you would for a native dnd5e roll and
+RSR will pick them up:
+
+```js
+Hooks.on("dnd5e.preRollAttack", (config, dialog, message) => {
+    for ( const target of message.data?.flags?.dnd5e?.targets ?? [] ) {
+        if ( target.uuid === myTargetUuid ) target.ac = myAdjustedAC;
+    }
+});
+```
+
+Constraints:
+
+- **Write during or before `dnd5e.postRollConfiguration`.** That is the last of the
+  three post-configuration hooks an attack fires (`postAttackRollConfiguration`,
+  `postD20TestRollConfiguration`, `postRollConfiguration`) and is where RSR captures.
+  `dnd5e.rollAttack` and `dnd5e.postRollAttack` are both too late.
+- **Mutate the descriptor entries in place, or replace the `targets` array on the
+  configuration.** RSR reads whatever is on `message.data.flags.dnd5e.targets` at
+  capture time.
+- **The captured set replaces what is on the card, including with an empty list.** An
+  attack rolled against no targets clears the card's descriptors rather than leaving
+  the pre-roll set showing.
+- **Only attack rolls are captured.** Damage and formula rolls are not.
+
+This is not an RSR-specific API — it is RSR declining to discard the dnd5e workflow's
+own data. A module written against native dnd5e needs no RSR-specific code to benefit.
+
+---
+
 ## Versioning
 
 Hook names, argument positions, and argument types listed in this document are stable. Changes will follow [Keep a Changelog](https://keepachangelog.com/) conventions:

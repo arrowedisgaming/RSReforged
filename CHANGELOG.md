@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Target AC on RSReforged cards now reflects adjustments made during the attack roll.** dnd5e stamps target descriptors onto the card when the activity is used, before any roll happens, and RSReforged kept those in preference to the roll's own — so a target behind cover displayed its base AC. Because dnd5e's target tray derives each row's hit/miss tick from the AC it displays, the tray could also show a hit on a roll that actually missed. Both paths are fixed: a real attack-roll message merged into a card now replaces the card's descriptors, and on the quick-roll path (where RSReforged rolls without creating a message, so dnd5e discards the pending roll-message configuration) the descriptors are captured from the roll workflow and applied to the card. This is generic to the dnd5e hook contract — no module-specific code — and is documented for module authors in [`docs/INTEGRATION.md`](docs/INTEGRATION.md). Fixes [#38](https://github.com/arrowedisgaming/RSReforged/issues/38).
+
 ## [4.13.3] — 2026-07-20
 
 ### Security
