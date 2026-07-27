@@ -16,6 +16,24 @@ import { SETTING_NAMES, SettingsUtility } from "./settings.js";
 const _rollCaptures = new Map();
 let _rollCaptureSequence = 0;
 
+/**
+ * Cards whose `flags.dnd5e.targets` was written by the roll capture on the current
+ * quick-roll pass.
+ *
+ * Two writers touch that field on the quick-roll path and they must not race:
+ * getAttackFromMessage applies the capture as the attack roll settles, and
+ * runActivityActions calls _syncAttackTargets immediately afterwards. The capture is
+ * strictly newer (it is the roll workflow's own view, taken after every listener that
+ * adjusts a roll against its targets has run), so when it wrote, the second writer is
+ * skipped outright rather than being asked to recognise the write after the fact —
+ * `targets: []` is a decided answer that no `?.length` guard can distinguish from
+ * "nothing here yet" (issue #38).
+ *
+ * Keyed weakly on the message document so a card that never reaches runActivityActions
+ * (a cancelled roll, a direct getAttackFromMessage call) leaves nothing behind.
+ */
+const _captureWrittenCards = new WeakSet();
+
 export class ActivityUtility {
 
     /**
@@ -85,8 +103,18 @@ export class ActivityUtility {
      * unless we copy it during child-merge or stamp it from the user's targeted tokens
      * at attack-roll time.
      *
-     * A child roll message's targets overwrite whatever is on the card; the
-     * current-targets fallback never does.
+     * Precedence, highest first:
+     *   1. The pending roll-message configuration captured mid-workflow. That writer is
+     *      NOT here — getAttackFromMessage applies it via _applyRollCapture before
+     *      runActivityActions reaches this method, and runActivityActions skips this
+     *      method entirely when it wrote (see _captureWrittenCards). It is listed
+     *      because it is the source that outranks both of the two below.
+     *   2. A child attack-roll message merged into the card (`sourceMessage`), which
+     *      overwrites whatever is on the card — including with an empty list, which
+     *      means "this roll had no targets" and not "nothing to offer".
+     *   3. The user's currently targeted tokens, which are no fresher than the card's
+     *      own descriptors and therefore never clobber them.
+     *
      * @param {ChatMessage} message The activation card to stamp.
      * @param {ChatMessage} [sourceMessage] Optional child attack-roll message to copy from.
      */
@@ -100,14 +128,25 @@ export class ActivityUtility {
         // is already on the card predates every target-dependent adjustment made during
         // the roll — cover bonuses, condition-driven AC changes. The child message was
         // created later in that same workflow and carries the adjusted values (#38).
+        // Array.isArray, not `?.length`: a child message carrying `targets: []` rolled
+        // against nothing, and that is an answer. Treating it as "no offer" would leave
+        // the card advertising a target the roll never happened against, which is the
+        // opposite of the contract published in docs/INTEGRATION.md.
         const fromSource = sourceMessage?.flags?.dnd5e?.targets;
-        if (fromSource?.length) {
+        if (Array.isArray(fromSource)) {
             message.flags.dnd5e.targets = foundry.utils.deepClone(fromSource);
             return;
         }
 
         // No child message means the only other source is the user's current targets,
         // which are no fresher than what the card already holds — so never clobber here.
+        //
+        // Deliberately `?.length` rather than the Array.isArray used above: Activity#use
+        // stamps `targets: []` on every card used with nothing targeted, and this fallback
+        // exists precisely to fill that case in from the tokens the user has targeted by
+        // attack-roll time. The writer that must be able to say "empty on purpose" is the
+        // roll capture, and it never reaches this point — runActivityActions skips the
+        // whole method when the capture wrote (see _captureWrittenCards).
         if (message.flags.dnd5e.targets?.length) return;
 
         const tokens = Array.from(game.user?.targets ?? []);
@@ -174,9 +213,13 @@ export class ActivityUtility {
         if (!captureId) return;
 
         const targets = Array.isArray(flags.dnd5e?.targets)
-            ? flags.dnd5e.targets.map(target => ({ ...target }))
+            ? foundry.utils.deepClone(flags.dnd5e.targets)
             : null;
 
+        // `flags` is intentionally unread today. It is the hook for the deferred
+        // "carry third-party flag namespaces from the roll config onto the card" work
+        // (see the roll-message-capture plan's deferred section) — keeping the live
+        // reference here means that feature needs no change to the capture contract.
         _rollCaptures.set(captureId, { targets, flags });
     }
 
@@ -216,6 +259,20 @@ export class ActivityUtility {
         message.flags ??= {};
         message.flags.dnd5e ??= {};
         message.flags.dnd5e.targets = targets;
+        return true;
+    }
+
+    /**
+     * Read and clear the "the capture already decided this card's targets" marker set by
+     * getAttackFromMessage. Consumed by runActivityActions to decide whether
+     * _syncAttackTargets should run at all on this pass.
+     *
+     * @param {object} message The RSR card.
+     * @returns {boolean} Whether the capture wrote this card's descriptors.
+     */
+    static _consumeCaptureWrite(message) {
+        if (!message || !_captureWrittenCards.has(message)) return false;
+        _captureWrittenCards.delete(message);
         return true;
     }
 
@@ -389,7 +446,14 @@ export class ActivityUtility {
                 message.flags[MODULE_SHORT].isCritical = false;
             }
 
-            ActivityUtility._syncAttackTargets(message);
+            // Only when the roll capture did not already decide this card's descriptors.
+            // The capture is the roll workflow's own view and is strictly newer than
+            // anything _syncAttackTargets can offer here, so letting both writers run
+            // would let the current-targets fallback re-stamp a set the capture just
+            // cleared on purpose (#38).
+            if (!ActivityUtility._consumeCaptureWrite(message)) {
+                ActivityUtility._syncAttackTargets(message);
+            }
 
             // Register this card as its own "attack" roll message so condition
             // modules (AC5e) and dnd5e's native attack->damage association can find
@@ -538,7 +602,16 @@ export class ActivityUtility {
         // persisted to source. Capture the live RSR flags first and restore them after,
         // so the crit state and render flags survive into the damage roll below. Without
         // this, a crit's damage dice were never doubled (#25, #28).
+        //
+        // `flags.dnd5e.targets` is in-memory-only for exactly the same reason and needs
+        // the same treatment: the roll workflow's target descriptors are written onto the
+        // live card by _applyRollCapture (quick-roll capture) or _syncAttackTargets just
+        // before this call, while source still holds the stale pre-roll set Activity#use
+        // stamped. Without carrying them across, the rebuild reverts every roll-time AC
+        // adjustment and the final persisted update saves the stale set — the exact
+        // symptom of issue #38, on the path that was supposed to fix it.
         const moduleFlags = message.flags?.[MODULE_SHORT];
+        const targetDescriptors = message.flags?.dnd5e?.targets;
         message.updateSource({
             rolls: CoreUtility.serializeRolls(currentRolls),
             "flags.dnd5e.roll": rollFlag,
@@ -547,6 +620,11 @@ export class ActivityUtility {
         if (moduleFlags) {
             message.flags ??= {};
             message.flags[MODULE_SHORT] = moduleFlags;
+        }
+        if (targetDescriptors !== undefined) {
+            message.flags ??= {};
+            message.flags.dnd5e ??= {};
+            message.flags.dnd5e.targets = targetDescriptors;
         }
 
         try {
@@ -675,10 +753,15 @@ export class ActivityUtility {
                     message.flags.dnd5e.roll ??= {};
                     message.flags.dnd5e.roll.ammunitionData = ammunitionData;
                 }
-                // Carry the roll workflow's own view of the targets onto the card. Runs
-                // before runActivityActions calls _syncAttackTargets, which then finds
-                // nothing newer to offer and leaves this result in place.
-                ActivityUtility._applyRollCapture(message, ActivityUtility._consumeRollCapture(captureId));
+                // Carry the roll workflow's own view of the targets onto the card, and
+                // record that it happened. runActivityActions calls _syncAttackTargets
+                // right after this and would otherwise re-derive the descriptors from the
+                // user's current targets whenever the capture wrote an EMPTY list — the
+                // one case a `?.length` guard there cannot tell apart from "no targets
+                // written yet". The marker makes the capture the final word instead (#38).
+                if (ActivityUtility._applyRollCapture(message, ActivityUtility._consumeRollCapture(captureId))) {
+                    _captureWrittenCards.add(message);
+                }
                 return rolls;
             })
             .finally(() => { ActivityUtility._consumeRollCapture(captureId); });

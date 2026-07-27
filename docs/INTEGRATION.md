@@ -241,16 +241,25 @@ Hooks.on("dnd5e.preRollAttack", (config, dialog, message) => {
 
 Constraints:
 
-- **Write during or before `dnd5e.postRollConfiguration`.** That is the last of the
-  three post-configuration hooks an attack fires (`postAttackRollConfiguration`,
-  `postD20TestRollConfiguration`, `postRollConfiguration`) and is where RSR captures.
+- **Write from `dnd5e.preRollAttack`, `dnd5e.postAttackRollConfiguration`, or
+  `dnd5e.postD20TestRollConfiguration`.** RSR captures from a listener on
+  `dnd5e.postRollConfiguration` — the last of the three post-configuration hooks an
+  attack fires, in the order `postAttackRollConfiguration`,
+  `postD20TestRollConfiguration`, `postRollConfiguration` — so a write from any hook
+  strictly earlier than that one is always observed.
   `dnd5e.rollAttack` and `dnd5e.postRollAttack` are both too late.
+- **Do not rely on `dnd5e.postRollConfiguration` itself.** Within a single hook, Foundry
+  calls listeners in registration order, and RSR registers its capture during its own
+  `init`. Whether your same-hook listener runs before or after RSR's is therefore
+  decided by module load order, which neither of us controls. Use one of the earlier
+  hooks above instead.
 - **Mutate the descriptor entries in place, or replace the `targets` array on the
   configuration.** RSR reads whatever is on `message.data.flags.dnd5e.targets` at
   capture time.
 - **The captured set replaces what is on the card, including with an empty list.** An
   attack rolled against no targets clears the card's descriptors rather than leaving
-  the pre-roll set showing.
+  the pre-roll set showing. The same holds for the merge path: a real attack-roll
+  message that carries `targets: []` clears the card too.
 - **Only attack rolls are captured.** Damage and formula rolls are not.
 
 This is not an RSR-specific API — it is RSR declining to discard the dnd5e workflow's

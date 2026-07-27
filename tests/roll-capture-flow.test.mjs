@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { setupFoundryEnv } from "./helpers/foundry-env.mjs";
+import { makeRoll, setupFoundryEnv } from "./helpers/foundry-env.mjs";
 
 describe("attack roll capture end to end", () => {
     let env;
@@ -37,7 +37,12 @@ describe("attack roll capture end to end", () => {
     // getTargetDescriptors), merges RSR's config INTO them, lets a cover-style module
     // adjust the descriptors during preRollAttack, then fires the three post-config
     // hooks in dnd5e's order.
-    function fakeRollAttack({ baseAC = 15, coverBonus = 2, targets = true } = {}) {
+    //
+    // `lateBonus` models a listener on the SECOND post-config hook: it lands between the
+    // second and third hook, so it is visible only to a capture taken at the third and
+    // last one. `rolls` is what the fake resolves with, so callers can drive the parts of
+    // runActivityActions that only run when an attack roll actually came back.
+    function fakeRollAttack({ baseAC = 15, coverBonus = 2, lateBonus = 0, targets = true, rolls = [] } = {}) {
         return vi.fn(async (config, dialogConfig, messageConfig) => {
             const merged = mergeObject({
                 create: true,
@@ -58,15 +63,19 @@ describe("attack roll capture end to end", () => {
             // A cover module in dnd5e.preRollAttack.
             for (const target of merged.data.flags.dnd5e.targets) target.ac += coverBonus;
 
-            for (const name of [
+            const hookNames = [
                 "dnd5e.postAttackRollConfiguration",
                 "dnd5e.postD20TestRollConfiguration",
                 "dnd5e.postRollConfiguration"
-            ]) {
+            ];
+            for (const [index, name] of hookNames.entries()) {
+                if (index === hookNames.length - 1) {
+                    for (const target of merged.data.flags.dnd5e.targets) target.ac += lateBonus;
+                }
                 env.hookHandlers.get(name)?.([], config, dialogConfig, merged);
             }
 
-            return [];
+            return rolls;
         });
     }
 
@@ -95,7 +104,21 @@ describe("attack roll capture end to end", () => {
         ]);
     });
 
-    it("keeps RSR's correlation token out of the flags dnd5e copies onto the roll", async () => {
+    it("captures at the last post-configuration hook, after every earlier listener", async () => {
+        // A cover module writes +2 before the first hook, a second module writes +3
+        // between the second and third. Only a capture taken at the third and last hook
+        // sees both; capturing at postAttackRollConfiguration or
+        // postD20TestRollConfiguration would land 17 instead of 20.
+        const rollAttack = fakeRollAttack({ baseAC: 15, coverBonus: 2, lateBonus: 3 });
+        vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
+        const message = usageCard(15);
+
+        await ActivityUtility.getAttackFromMessage(message);
+
+        expect(message.flags.dnd5e.targets[0].ac).toBe(20);
+    });
+
+    it("does not put the correlation token in the top-level flags block", async () => {
         const rollAttack = fakeRollAttack();
         vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
 
@@ -149,5 +172,96 @@ describe("attack roll capture end to end", () => {
         expect(message.flags.dnd5e.targets).toEqual([
             { name: "Goblin", img: "goblin.webp", uuid: "Actor.goblin", ac: 17 }
         ]);
+    });
+
+    // The two writers that touch flags.dnd5e.targets on the quick-roll path only ever
+    // meet inside runActivityActions: getAttackFromMessage applies the capture, then
+    // runActivityActions runs _syncAttackTargets and _registerCardAsAttack over the same
+    // field. Driving getAttackFromMessage alone cannot see any of that.
+    describe("through the full runActivityActions pass", () => {
+        // A persisted card, unlike the plain object above: its _source holds the stale
+        // pre-roll descriptors, so updateSource-driven flag rebuilds behave as they do
+        // on a real ChatMessage.
+        function usageDocument(staleAC = 15) {
+            return new env.classes.TestChatMessage({
+                id: "usage-1",
+                flags: {
+                    [MODULE_SHORT]: { quickRoll: true, renderAttack: true, rolls: [] },
+                    dnd5e: {
+                        targets: [{ name: "Goblin", img: "goblin.webp", uuid: "Actor.goblin", ac: staleAC }]
+                    }
+                }
+            });
+        }
+
+        function attackRoll() {
+            return makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 15, faces: 20, results: [10] });
+        }
+
+        it("persists the roll-time AC rather than the stale pre-roll set", async () => {
+            const rollAttack = fakeRollAttack({ baseAC: 15, coverBonus: 2, rolls: [attackRoll()] });
+            vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
+            const message = usageDocument(15);
+
+            await ActivityUtility.runActivityActions(message);
+
+            expect(message.flags.dnd5e.targets).toEqual([
+                { name: "Goblin", img: "goblin.webp", uuid: "Actor.goblin", ac: 17 }
+            ]);
+            // What actually reaches the database, after _registerCardAsAttack's
+            // updateSource re-initialises the live flags from source.
+            expect(message.updatedWith.flags.dnd5e.targets[0].ac).toBe(17);
+        });
+
+        it("does not re-stamp the user's targets over a capture that cleared them", async () => {
+            // A third-party module emptied the configuration's target list, which is the
+            // documented way to say "this roll had no targets". The user still has a token
+            // targeted, so the _syncAttackTargets fallback would happily re-stamp it.
+            game.user.targets = new Set([{
+                name: "Bandit",
+                actor: {
+                    uuid: "Actor.bandit",
+                    img: "bandit.webp",
+                    system: { attributes: { ac: { value: 12 } } },
+                    statuses: new Set()
+                }
+            }]);
+
+            const rollAttack = fakeRollAttack({ targets: false, rolls: [attackRoll()] });
+            vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
+            const message = usageDocument(15);
+
+            await ActivityUtility.runActivityActions(message);
+
+            expect(message.flags.dnd5e.targets).toEqual([]);
+            expect(message.updatedWith.flags.dnd5e.targets).toEqual([]);
+        });
+
+        it("still falls back to the user's targets when no capture was taken", async () => {
+            // No capture hook fires (a cancelled roll, or a dnd5e build that never seeds a
+            // target list), so the card keeps its own pre-roll answer and the fallback
+            // stays available for cards that have none.
+            const rollAttack = vi.fn(async () => [attackRoll()]);
+            vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
+            game.user.targets = new Set([{
+                name: "Bandit",
+                actor: {
+                    uuid: "Actor.bandit",
+                    img: "bandit.webp",
+                    system: { attributes: { ac: { value: 12 } } },
+                    statuses: new Set()
+                }
+            }]);
+            const message = new env.classes.TestChatMessage({
+                id: "usage-2",
+                flags: { [MODULE_SHORT]: { quickRoll: true, renderAttack: true, rolls: [] } }
+            });
+
+            await ActivityUtility.runActivityActions(message);
+
+            expect(message.flags.dnd5e.targets).toEqual([
+                { name: "Bandit", img: "bandit.webp", uuid: "Actor.bandit", ac: 12 }
+            ]);
+        });
     });
 });

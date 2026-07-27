@@ -1022,6 +1022,29 @@ describe("ActivityUtility roll action flow", () => {
         ]);
     });
 
+    it("lets a child attack message with an empty target list clear the card's stale ones", () => {
+        // `targets: []` on the child is an answer — the roll happened against nothing —
+        // not an absence of one, so it must clear the card rather than fall through to
+        // the current-targets fallback (see the contract in docs/INTEGRATION.md).
+        game.user.targets = new Set([
+            {
+                name: "Bandit",
+                actor: {
+                    uuid: "Actor.bandit",
+                    system: { attributes: { ac: { value: 12 } } },
+                    statuses: new Set()
+                }
+            }
+        ]);
+        const message = {
+            flags: { dnd5e: { targets: [{ name: "Goblin", uuid: "Actor.goblin", ac: 15 }] } }
+        };
+
+        ActivityUtility._syncAttackTargets(message, { flags: { dnd5e: { targets: [] } } });
+
+        expect(message.flags.dnd5e.targets).toEqual([]);
+    });
+
     it("does not overwrite the card's targets when there is no child message to offer", () => {
         // Without a child message the only alternative source is the user's current
         // targets, which are not newer than what the card already has — never clobber.
