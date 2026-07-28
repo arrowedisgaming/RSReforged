@@ -38,11 +38,16 @@ describe("attack roll capture end to end", () => {
     // adjust the descriptors during preRollAttack, then fires the three post-config
     // hooks in dnd5e's order.
     //
+    function attackRoll() {
+        return makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 15, faces: 20, results: [10] });
+    }
+
     // `lateBonus` models a listener on the SECOND post-config hook: it lands between the
     // second and third hook, so it is visible only to a capture taken at the third and
-    // last one. `rolls` is what the fake resolves with, so callers can drive the parts of
-    // runActivityActions that only run when an attack roll actually came back.
-    function fakeRollAttack({ baseAC = 15, coverBonus = 2, lateBonus = 0, targets = true, rolls = [] } = {}) {
+    // last one. `rolls` is what the fake resolves with; it defaults to a single attack
+    // roll because that is what a real rollAttack returns. Pass `rolls: null` to model a
+    // vetoed roll — dnd5e returns null, never an empty array (attack.mjs:166).
+    function fakeRollAttack({ baseAC = 15, coverBonus = 2, lateBonus = 0, targets = true, rolls } = {}) {
         return vi.fn(async (config, dialogConfig, messageConfig) => {
             const merged = mergeObject({
                 create: true,
@@ -75,7 +80,7 @@ describe("attack roll capture end to end", () => {
                 env.hookHandlers.get(name)?.([], config, dialogConfig, merged);
             }
 
-            return rolls;
+            return rolls === undefined ? [attackRoll()] : rolls;
         });
     }
 
@@ -116,6 +121,34 @@ describe("attack roll capture end to end", () => {
         await ActivityUtility.getAttackFromMessage(message);
 
         expect(message.flags.dnd5e.targets[0].ac).toBe(20);
+    });
+
+    it("ignores a capture from an attack that was vetoed after RSR snapshotted it", async () => {
+        // A module registered after RSR on dnd5e.postRollConfiguration returns false.
+        // BasicRoll.buildConfigure returns [] and rollAttack returns null — but RSR's
+        // capture listener already ran on that same hook. The card must keep the
+        // descriptors it had rather than showing a roll that never happened.
+        const rollAttack = fakeRollAttack({ baseAC: 15, coverBonus: 2, rolls: null });
+        vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
+        const message = usageCard(15);
+
+        await ActivityUtility.getAttackFromMessage(message);
+
+        expect(message.flags.dnd5e.targets).toEqual([
+            { name: "Goblin", img: "goblin.webp", uuid: "Actor.goblin", ac: 15 }
+        ]);
+    });
+
+    it("leaves the _syncAttackTargets fallback live when a vetoed attack captured nothing", async () => {
+        // The suppression marker must not be set either, or runActivityActions would
+        // skip the fallback that is the card's only remaining source of descriptors.
+        const rollAttack = fakeRollAttack({ baseAC: 15, coverBonus: 2, rolls: null });
+        vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
+        const message = usageCard(15);
+
+        await ActivityUtility.getAttackFromMessage(message);
+
+        expect(ActivityUtility._consumeCaptureWrite(message)).toBe(false);
     });
 
     it("does not put the correlation token in the top-level flags block", async () => {
@@ -192,10 +225,6 @@ describe("attack roll capture end to end", () => {
                     }
                 }
             });
-        }
-
-        function attackRoll() {
-            return makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 15, faces: 20, results: [10] });
         }
 
         it("persists the roll-time AC rather than the stale pre-roll set", async () => {

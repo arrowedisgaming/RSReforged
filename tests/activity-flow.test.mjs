@@ -772,7 +772,10 @@ describe("ActivityUtility roll action flow", () => {
                     }
                 }
             });
-            return [];
+            // A real rollAttack resolves with its rolls; it returns null, never an
+            // empty array, when the roll produced nothing (dnd5e attack.mjs:166). The
+            // capture is only applied when rolls came back, so this has to be truthful.
+            return [makeRoll(env.classes.D20Roll, { formula: "1d20+5", total: 15, faces: 20, results: [10] })];
         });
         vi.spyOn(ActivityUtility, "_getActivityFromMessage").mockReturnValue({ rollAttack });
 

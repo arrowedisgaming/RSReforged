@@ -759,7 +759,18 @@ export class ActivityUtility {
                 // user's current targets whenever the capture wrote an EMPTY list — the
                 // one case a `?.length` guard there cannot tell apart from "no targets
                 // written yet". The marker makes the capture the final word instead (#38).
-                if (ActivityUtility._applyRollCapture(message, ActivityUtility._consumeRollCapture(captureId))) {
+                //
+                // Only when the attack actually produced rolls. A listener on
+                // dnd5e.postRollConfiguration can veto by returning false, at which point
+                // BasicRoll.buildConfigure returns [] and rollAttack returns null (dnd5e
+                // basic-roll.mjs:142, attack.mjs:166). RSR captures on that same hook, so
+                // a module registered after RSR vetoes AFTER the snapshot was taken —
+                // applying it would stamp the card with descriptors from a roll that never
+                // happened, and the marker would suppress the fallback that corrects it.
+                // The capture is consumed either way so the registry cannot retain it.
+                const capture = ActivityUtility._consumeRollCapture(captureId);
+                if (ActivityUtility._extractRolls(rolls).length > 0
+                    && ActivityUtility._applyRollCapture(message, capture)) {
                     _captureWrittenCards.add(message);
                 }
                 return rolls;
