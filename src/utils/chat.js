@@ -4,6 +4,7 @@ import { TEMPLATE } from "../module/templates.js";
 import { ActivityUtility } from "./activity.js";
 import { CoreUtility } from "./core.js";
 import { DialogUtility } from "./dialog.js";
+import { getRollType, usesNativeWorkflow } from "./dnd5e-compat.js";
 import { LogUtility } from "./log.js";
 import { RenderUtility } from "./render.js";
 import { ROLL_STATE, ROLL_TYPE, RollUtility } from "./roll.js";
@@ -14,12 +15,16 @@ export const MESSAGE_TYPE = {
     USAGE: "usage",
 }
 
+const NATIVE_ROLL_MESSAGE_TYPES = new Set(["attack", "damage", "healing", "check", "save", "generic"]);
+
 // The clickable affordance for changing a damage type: the type's label and icon,
 // but not the value beside them.
 const DAMAGE_TYPE_TOGGLE_SELECTOR = '.rsr-damage-type-toggle .total .label, .rsr-damage-type-toggle .total img';
 
 export class ChatUtility {
     static getMessageRolls(message) {
+        if (NATIVE_ROLL_MESSAGE_TYPES.has(message?.type)) return Array.from(message.rolls ?? []);
+
         const flagRolls = message.flags?.[MODULE_SHORT]?.rolls;
         if (flagRolls && Array.isArray(flagRolls)) {
             return flagRolls.map(r => {
@@ -196,6 +201,15 @@ export class ChatUtility {
 
     static async updateChatMessage(message, update = {}, context = {}) {
         if (message instanceof ChatMessage) {
+            if (usesNativeWorkflow() && NATIVE_ROLL_MESSAGE_TYPES.has(message.type)) {
+                const cached = update.flags?.[MODULE_SHORT]?.rolls;
+                if (cached) {
+                    update.rolls ??= cached;
+                    update.flags = foundry.utils.deepClone(update.flags);
+                    delete update.flags[MODULE_SHORT].rolls;
+                    update.flags[MODULE_SHORT]['-=rolls'] = null;
+                }
+            }
             if (update.rolls && Array.isArray(update.rolls)) {
                 update.rolls = CoreUtility.serializeRolls(update.rolls);
             }
@@ -237,26 +251,7 @@ export class ChatUtility {
     }
 
     static getMessageType(message) {
-        const t = message.type;
-
-        // dnd5e 5.3.0: usage messages have type "usage" (plain string).
-        if (t === "usage" || t === "dnd5e.usage") return ROLL_TYPE.ACTIVITY;
-
-        // Roll messages use type "roll" and store the specific roll type in flags.
-        // message.system?.roll?.type is checked first as a future-proofing measure but
-        // dnd5e 5.3.0 does not register a system data model for "roll" typed messages,
-        // so flags.dnd5e.roll.type is the live path.
-        if (t === "roll" || t === "dnd5e.roll") {
-            return message.system?.roll?.type ?? message.flags?.dnd5e?.roll?.type ?? null;
-        }
-
-        // Legacy V12 fallbacks for messages created before dnd5e 4.x.
-        if (message.flags?.dnd5e?.messageType === MESSAGE_TYPE.USAGE || !!message.flags?.dnd5e?.use) return ROLL_TYPE.ACTIVITY;
-        if (message.flags?.dnd5e?.messageType === MESSAGE_TYPE.ROLL || !!message.flags?.dnd5e?.roll) {
-            return message.flags?.dnd5e?.roll?.type ?? null;
-        }
-        
-        return null;
+        return getRollType(message);
     }
 
     static getActivityType(message) {

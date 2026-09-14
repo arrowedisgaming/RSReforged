@@ -335,3 +335,25 @@
     opacity: 0.75;
     font-size: 0.9em;
 }
+
+/* dnd5e 6: real native source messages embedded in a usage card. */
+.rsr-native-combined { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.rsr-native-combined > .rsr-native-source.chat-message {
+    list-style: none; margin: 0; padding: 6px; box-shadow: none; min-width: 0;
+}
+.rsr-native-source > .message-header { display: none; }
+.rsr-native-controls { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.rsr-native-controls > button { flex: 1; height: auto; min-height: 24px; font-size: 11px; }
+.rsr-native-combined-original { display: none !important; }
+.rsr-native-source .card-header, .rsr-native-source .chat-card > .icon-row { display: none; }
+.rsr-native-parts { display: grid; gap: 4px; }
+.rsr-native-parts .dice-roll { display: block; }
+.rsr-native-total { width: 100%; font-weight: bold; }
+.rsr-native-parts [hidden] { display: none !important; }
+.rsr-native-on-hover { opacity: 0; }
+.dice-roll:hover > .rsr-native-on-hover, .rsr-native-on-hover:focus-within { opacity: 1; }
+.rsr-native-controls.rsr-native-apply { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rsr-native-apply > button { white-space: nowrap; }
+.rsr-native-alternatives { display: flex; gap: 4px; font-weight: bold; }
+.rsr-native-alternatives > span { padding: 2px 8px; border: 1px solid var(--color-border-light-primary); }
+.rsr-native-group-totals { font-weight: bold; padding: 4px; }

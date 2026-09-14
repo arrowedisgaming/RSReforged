@@ -131,6 +131,21 @@
 			"damageType": "Tipo de dano:",
 			"randomType": "Tipo aleatório: {types}",
 			"fixedType": "Dano de {type}"
+		},
+		"native": {
+			"Advantage": "Vantagem",
+			"Disadvantage": "Desvantagem",
+			"Add Bonus": "Adicionar bônus",
+			"Roll Damage": "Rolar dano",
+			"Damage type": "Tipo de dano",
+			"Apply": "Aplicar",
+			"Half": "Metade",
+			"Double": "Dobro",
+			"Heal": "Curar",
+			"Temp HP": "PV temporários",
+			"Critical": "Crítico",
+			"Normal Damage": "Dano normal",
+			"Quarter": "Quarto"
 		}
 	}
 }

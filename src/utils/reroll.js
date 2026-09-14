@@ -14,7 +14,7 @@ export class RerollManager {
             if (!SettingsUtility.getSettingValue(SETTING_NAMES.REROLL_EVERYONE)) return;
             
             const dieElement = $(event.currentTarget);
-            const messageElement = dieElement.closest(".chat-message");
+            const messageElement = dieElement.closest("[data-rsr-message-id], .chat-message");
             const messageId = messageElement.data("messageId");
             const message = game.messages.get(messageId);
 
@@ -62,6 +62,7 @@ export class RerollManager {
         targetTerm.results[resultIndex].result = newResult.result;
         this._recalculateModifiers(targetTerm);
         targetRoll._total = targetRoll._evaluateTotal();
+        delete targetRoll.options.rsreforgedCriticalBase;
 
         _persistRolls(message, rolls);
 
@@ -147,6 +148,7 @@ export class RerollManager {
         targetTerm.results[resultIndex].result = newVal;
         this._recalculateModifiers(targetTerm);
         targetRoll._total = targetRoll._evaluateTotal();
+        delete targetRoll.options.rsreforgedCriticalBase;
 
         _persistRolls(message, rolls);
     }
@@ -168,7 +170,8 @@ export class RerollManager {
 
         const diceRoll = dieElement.closest(".dice-roll");
         const allDiceRolls = dieElement.closest(".message-content").find(".dice-roll");
-        const rollIndex = Math.max(0, allDiceRolls.index(diceRoll));
+        const sourceIndex = dieElement.closest("[data-rsr-roll-index]").attr("data-rsr-roll-index");
+        const rollIndex = sourceIndex === undefined ? Math.max(0, allDiceRolls.index(diceRoll)) : Number(sourceIndex);
 
         const resultIndex = dieElement.index();
 

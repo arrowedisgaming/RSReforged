@@ -1,0 +1,653 @@
+{
+  "provenance": {
+    "foundry": "14.367",
+    "dnd5e": "6.0.1",
+    "upstreamCommit": "14037023a87372688bbb59be99f55fcd3a83318d",
+    "synthetic": true
+  },
+  "spike": {
+    "hp": 85,
+    "expected": 85,
+    "childId": "65TjPiCJrHKpZdz6"
+  },
+  "records": [
+    {
+      "source": {
+        "flags": {
+          "core": {
+            "canPopout": true
+          }
+        },
+        "speaker": {
+          "scene": "lIii5ABhdQA36LKJ",
+          "actor": "bmj6pkmqkx2VSmqn",
+          "token": null,
+          "alias": "RSR Test Attacker"
+        },
+        "system": {
+          "identified": true,
+          "activation": {
+            "type": "action",
+            "value": null
+          },
+          "duration": {
+            "value": null,
+            "units": "inst",
+            "expiry": null,
+            "concentration": false
+          },
+          "range": {
+            "value": null,
+            "long": null,
+            "units": "ft"
+          },
+          "target": {
+            "template": {
+              "contiguous": false,
+              "stationary": false,
+              "units": "ft"
+            },
+            "affects": {
+              "choice": false
+            }
+          },
+          "activity": {
+            "id": "xpRtRu1hSogTgcZT",
+            "img": "systems/dnd5e/icons/svg/activity/attack.svg",
+            "name": "Strike",
+            "type": "attack",
+            "uuid": "Actor.bmj6pkmqkx2VSmqn.Item.t8tmyTyukcln1Y5a.Activity.xpRtRu1hSogTgcZT",
+            "chatFlavor": ""
+          },
+          "concealed": false,
+          "description": "",
+          "item": {
+            "id": "t8tmyTyukcln1Y5a",
+            "img": "systems/dnd5e/icons/svg/items/weapon.svg",
+            "name": "RSR Test Sword",
+            "type": "weapon",
+            "uuid": "Actor.bmj6pkmqkx2VSmqn.Item.t8tmyTyukcln1Y5a",
+            "compendiumSource": null,
+            "properties": [
+              "gear"
+            ]
+          },
+          "level": null,
+          "properties": [
+            {
+              "type": "label",
+              "label": "TYPES.Item.weapon",
+              "identity": true
+            },
+            {
+              "type": "weapon:category",
+              "category": "sim",
+              "identity": true
+            },
+            {
+              "type": "weapon:class",
+              "class": "melee",
+              "identity": true
+            },
+            {
+              "type": "activation",
+              "identity": false
+            },
+            {
+              "type": "range",
+              "identity": false
+            },
+            {
+              "type": "proficiency",
+              "proficiency": 1,
+              "identity": false
+            }
+          ],
+          "subtitle": [
+            "Simple Melee"
+          ],
+          "buttons": [
+            {
+              "action": "rollAttack",
+              "icon": "fa-solid fa-sword",
+              "label": {
+                "value": "DND5E.Attack"
+              },
+              "canGroup": false,
+              "dataset": {},
+              "visibility": "creator"
+            },
+            {
+              "action": "rollDamage",
+              "icon": "fa-solid fa-burst",
+              "label": {
+                "value": "DND5E.Damage"
+              },
+              "canGroup": false,
+              "dataset": {},
+              "visibility": "creator"
+            }
+          ],
+          "targets": [
+            {
+              "actor": "Actor.KJM8iZPg9w1Ig9Rv",
+              "ac": 10,
+              "img": "icons/svg/mystery-man.svg",
+              "name": "RSR Test Target",
+              "token": "Scene.lIii5ABhdQA36LKJ.Token.H4DngwjPk3nPbw5R"
+            }
+          ],
+          "effects": [],
+          "deltas": null,
+          "scaling": 0
+        },
+        "title": "RSR Test Sword - Strike",
+        "type": "usage",
+        "rolls": [],
+        "whisper": [],
+        "blind": false,
+        "_id": "QwhqYZAEAPMW3MSm",
+        "style": 0,
+        "author": "4XBrfKCar9QsQrEM",
+        "timestamp": 1789344315888,
+        "flavor": "",
+        "content": "",
+        "sound": null,
+        "emote": false,
+        "_stats": {
+          "coreVersion": "14.367",
+          "systemId": "dnd5e",
+          "systemVersion": "6.0.1",
+          "createdTime": 1789344315889,
+          "modifiedTime": 1789344315889,
+          "lastModifiedBy": "4XBrfKCar9QsQrEM",
+          "compendiumSource": null,
+          "duplicateSource": null,
+          "exportSource": null
+        }
+      },
+      "rolls": [],
+      "html": "<li class=\"chat-message message flexcol dnd5e2 compact\" data-message-id=\"QwhqYZAEAPMW3MSm\" data-display-challenge=\"\">\n    <header class=\"message-header flexrow\">\n        <h4 class=\"message-sender\" data-actor-uuid=\"Actor.bmj6pkmqkx2VSmqn\">RSR Test Attacker</h4>\n        <span class=\"message-metadata\">\n            <time class=\"message-timestamp\">5m ago</time>\n            <a aria-label=\"Delete\" class=\"message-delete\" data-action=\"deleteMessage\">\n                <i class=\"fa-solid fa-trash fa-fw\" inert=\"\"></i>\n            </a>\n        <a aria-label=\"Additional Controls\" class=\"chat-control\" data-context-menu=\"\"><i class=\"fas fa-ellipsis-vertical fa-fw\"></i></a></span>\n\n\n    </header>\n    <div class=\"message-content\"><div class=\"chat-card\">\n\n    <section class=\"card-header no-description\">\n        <div class=\"item-icon\" data-action=\"showDocument\" data-uuid=\"Actor.bmj6pkmqkx2VSmqn.Item.t8tmyTyukcln1Y5a\">\n            <img class=\"gold-icon\" src=\"systems/dnd5e/icons/svg/items/weapon.svg\" alt=\"RSR Test Sword\">\n        </div>\n        <div class=\"activity-icon\"><dnd5e-icon draggable=\"false\" src=\"systems/dnd5e/icons/svg/activity/attack.svg\" aria-label=\"Strike\" class=\"gold-icon\"></dnd5e-icon></div>\n        <div class=\"name-stacked\">\n            <span class=\"title\">RSR Test Sword</span>\n            <span class=\"subtitle\">Strike</span>\n        </div>\n    </section>\n\n\n\n\n    <section class=\"icon-row\">\n    <i class=\"fa-fw fa-solid fa-tag\" aria-label=\"Item properties\"></i>\n    <ul class=\"pills unlist\">\n        <li class=\"pill transparent \">\n            <span class=\"label\">Weapon</span>\n        </li>\n        <li class=\"pill transparent \">\n            <span class=\"label\">Simple</span>\n        </li>\n        <li class=\"pill transparent \">\n            <span class=\"label\">Melee</span>\n        </li>\n        <li class=\"pill transparent \">\n            <span class=\"label\">Action</span>\n        </li>\n        <li class=\"pill transparent \">\n            <span class=\"label\">Proficient</span>\n        </li>\n    </ul>\n</section>\n\n\n    <section class=\"icon-row\">\n    <i class=\"fa-solid fa-fw fa-circle-play\" aria-label=\"Item actions\"></i>\n    <ul class=\"unlist\">\n    <li>\n        <button type=\"button\" class=\"icon\" data-tooltip=\"\" aria-label=\"Attack\" data-action=\"rollAttack\" data-index=\"0\">\n            <i class=\"fa-solid fa-sword\"></i>\n        </button>\n    </li>\n    <li>\n        <button type=\"button\" class=\"icon\" data-tooltip=\"\" aria-label=\"Damage\" data-action=\"rollDamage\" data-index=\"1\">\n            <i class=\"fa-solid fa-burst\"></i>\n        </button>\n    </li>\n    </ul>\n</section>\n</div>\n\n\n</div>\n</li>"
+    },
+    {
+      "source": {
+        "sound": "sounds/dice.wav",
+        "flavor": "RSR Test Sword - Damage Roll",
+        "speaker": {
+          "scene": "lIii5ABhdQA36LKJ",
+          "actor": "bmj6pkmqkx2VSmqn",
+          "token": null,
+          "alias": "RSR Test Attacker"
+        },
+        "system": {
+          "activity": {
+            "id": "xpRtRu1hSogTgcZT",
+            "img": "systems/dnd5e/icons/svg/activity/attack.svg",
+            "name": "Strike",
+            "type": "attack",
+            "uuid": "Actor.bmj6pkmqkx2VSmqn.Item.t8tmyTyukcln1Y5a.Activity.xpRtRu1hSogTgcZT"
+          },
+          "item": {
+            "compendiumSource": null,
+            "id": "t8tmyTyukcln1Y5a",
+            "img": "systems/dnd5e/icons/svg/items/weapon.svg",
+            "name": "RSR Test Sword",
+            "type": "weapon",
+            "uuid": "Actor.bmj6pkmqkx2VSmqn.Item.t8tmyTyukcln1Y5a"
+          },
+          "targets": [
+            {
+              "actor": "Actor.KJM8iZPg9w1Ig9Rv",
+              "ac": 10,
+              "img": "icons/svg/mystery-man.svg",
+              "name": "RSR Test Target",
+              "token": "Scene.lIii5ABhdQA36LKJ.Token.H4DngwjPk3nPbw5R"
+            }
+          ],
+          "origin": "QwhqYZAEAPMW3MSm",
+          "onSave": null
+        },
+        "type": "damage",
+        "rolls": [
+          "{\"class\":\"DamageRoll\",\"options\":{\"type\":\"slashing\",\"types\":[\"slashing\"],\"properties\":[],\"isCritical\":false,\"critical\":{\"multiplyNumeric\":false,\"powerfulCritical\":false},\"preprocessed\":true,\"configured\":true,\"rollType\":\"damage\",\"originatingMessage\":\"QwhqYZAEAPMW3MSm\"},\"dice\":[],\"formula\":\"1d8 + 3\",\"terms\":[{\"class\":\"BasicDie\",\"options\":{\"flavor\":null},\"evaluated\":true,\"number\":1,\"faces\":8,\"modifiers\":[],\"results\":[{\"result\":7,\"active\":true}]},{\"class\":\"OperatorTerm\",\"options\":{},\"evaluated\":true,\"operator\":\"+\"},{\"class\":\"NumericTerm\",\"options\":{\"flavor\":null},\"evaluated\":true,\"number\":3}],\"total\":10,\"evaluated\":true}"
+        ],
+        "_id": "65TjPiCJrHKpZdz6",
+        "style": 0,
+        "author": "4XBrfKCar9QsQrEM",
+        "timestamp": 1789344315943,
+        "content": "",
+        "whisper": [],
+        "blind": false,
+        "emote": false,
+        "flags": {
+          "core": {
+            "canPopout": true
+          }
+        },
+        "_stats": {
+          "coreVersion": "14.367",
+          "systemId": "dnd5e",
+          "systemVersion": "6.0.1",
+          "createdTime": 1789344315944,
+          "modifiedTime": 1789344315944,
+          "lastModifiedBy": "4XBrfKCar9QsQrEM",
+          "compendiumSource": null,
+          "duplicateSource": null,
+          "exportSource": null
+        }
+      },
+      "rolls": [
+        {
+          "class": "DamageRoll",
+          "options": {
+            "type": "slashing",
+            "types": [
+              "slashing"
+            ],
+            "properties": [],
+            "isCritical": false,
+            "critical": {
+              "multiplyNumeric": false,
+              "powerfulCritical": false
+            },
+            "preprocessed": true,
+            "configured": true,
+            "rollType": "damage",
+            "originatingMessage": "QwhqYZAEAPMW3MSm"
+          },
+          "dice": [],
+          "formula": "1d8 + 3",
+          "terms": [
+            {
+              "class": "BasicDie",
+              "options": {
+                "flavor": null
+              },
+              "evaluated": true,
+              "number": 1,
+              "faces": 8,
+              "modifiers": [],
+              "results": [
+                {
+                  "result": 7,
+                  "active": true
+                }
+              ]
+            },
+            {
+              "class": "OperatorTerm",
+              "options": {},
+              "evaluated": true,
+              "operator": "+"
+            },
+            {
+              "class": "NumericTerm",
+              "options": {
+                "flavor": null
+              },
+              "evaluated": true,
+              "number": 3
+            }
+          ],
+          "total": 10,
+          "evaluated": true
+        }
+      ],
+      "html": "<li class=\"chat-message message flexcol dnd5e2 compact\" data-message-id=\"65TjPiCJrHKpZdz6\">\n    <header class=\"message-header flexrow\">\n        <h4 class=\"message-sender\" data-actor-uuid=\"Actor.bmj6pkmqkx2VSmqn\">RSR Test Attacker</h4>\n        <span class=\"message-metadata\">\n            <time class=\"message-timestamp\">5m ago</time>\n            <a aria-label=\"Delete\" class=\"message-delete\" data-action=\"deleteMessage\">\n                <i class=\"fa-solid fa-trash fa-fw\" inert=\"\"></i>\n            </a>\n        <a aria-label=\"Additional Controls\" class=\"chat-control\" data-context-menu=\"\"><i class=\"fas fa-ellipsis-vertical fa-fw\"></i></a></span>\n\n\n        \n    </header>\n    <div class=\"message-content\"><div class=\"chat-card\">\n\n    <section class=\"card-header no-description\">\n    <div class=\"item-icon\" data-action=\"showDocument\" data-uuid=\"Actor.bmj6pkmqkx2VSmqn.Item.t8tmyTyukcln1Y5a\">\n        <img class=\"gold-icon\" src=\"systems/dnd5e/icons/svg/items/weapon.svg\" alt=\"RSR Test Sword\">\n    </div>\n    <div class=\"activity-icon\"><dnd5e-icon draggable=\"false\" src=\"systems/dnd5e/icons/svg/activity/attack.svg\" aria-label=\"Strike\" class=\"gold-icon\"></dnd5e-icon></div>\n    <div class=\"name-stacked\">\n        <span class=\"title\">RSR Test Sword</span>\n        <span class=\"subtitle\">Strike • Damage Roll</span>\n    </div>\n</section>\n\n\n    <section class=\"icon-row\">\n    <i class=\"fa-fw fa-solid fa-tag\" aria-label=\"Item properties\"></i>\n    <ul class=\"pills unlist\">\n        <li class=\"pill transparent \">\n            <span class=\"label\">Weapon</span>\n        </li>\n    </ul>\n</section>\n</div>\n\n<section class=\"icon-row\">\n    <i class=\"fa-fw fa-solid fa-dice\" aria-label=\"Die roll\"></i>\n    <button type=\"button\" class=\"dice-roll\" popovertarget=\"\">\n        <span class=\"result\">\n            <strong class=\"total\">10</strong>\n        </span>\n    </button>\n    <div class=\"roll-breakdown\" popover=\"\"><div class=\"dice-tooltip-collapser\">\n    <div class=\"dice-tooltip\">\n        <section class=\"tooltip-part\">\n            <div class=\"dice\">\n                <ol class=\"dice-rolls\">\n                    <li class=\"roll basicdie d8\">7</li>\n                    <li class=\"constant\"><span class=\"sign\">+</span>3</li>\n                </ol>\n                <div class=\"total\">\n                    <img src=\"systems/dnd5e/icons/svg/damage/slashing.svg\" alt=\"Slashing\">\n                    <span class=\"label\">Slashing</span>\n                    <span class=\"value\">10</span>\n                </div>\n            </div>\n        </section>\n    </div>\n</div>\n</div>\n</section>\n\n<damage-application class=\"\"></damage-application>\n</div>\n</li>"
+    }
+  ],
+  "pairs": [
+    {
+      "formula": "1d8+3",
+      "base": {
+        "class": "DamageRoll",
+        "options": {
+          "preprocessed": true,
+          "configured": true
+        },
+        "dice": [],
+        "formula": "1d8 + 3",
+        "terms": [
+          {
+            "class": "BasicDie",
+            "options": {
+              "flavor": null
+            },
+            "evaluated": true,
+            "number": 1,
+            "faces": 8,
+            "modifiers": [],
+            "results": [
+              {
+                "result": 7,
+                "active": true
+              }
+            ]
+          },
+          {
+            "class": "OperatorTerm",
+            "options": {},
+            "evaluated": true,
+            "operator": "+"
+          },
+          {
+            "class": "NumericTerm",
+            "options": {
+              "flavor": null
+            },
+            "evaluated": true,
+            "number": 3
+          }
+        ],
+        "total": 10,
+        "evaluated": true
+      },
+      "critical": {
+        "class": "DamageRoll",
+        "options": {
+          "isCritical": true,
+          "preprocessed": true,
+          "configured": true
+        },
+        "dice": [],
+        "formula": "2d8 + 3",
+        "terms": [
+          {
+            "class": "BasicDie",
+            "options": {
+              "flavor": null,
+              "critical": true
+            },
+            "evaluated": true,
+            "number": 2,
+            "faces": 8,
+            "modifiers": [],
+            "results": [
+              {
+                "result": 6,
+                "active": true
+              },
+              {
+                "result": 1,
+                "active": true
+              }
+            ]
+          },
+          {
+            "class": "OperatorTerm",
+            "options": {},
+            "evaluated": true,
+            "operator": "+"
+          },
+          {
+            "class": "NumericTerm",
+            "options": {
+              "flavor": null,
+              "critical": true
+            },
+            "evaluated": true,
+            "number": 3
+          }
+        ],
+        "total": 10,
+        "evaluated": true
+      }
+    },
+    {
+      "formula": "2d6kh1+3",
+      "base": {
+        "class": "DamageRoll",
+        "options": {
+          "preprocessed": true,
+          "configured": true
+        },
+        "dice": [],
+        "formula": "2d6kh1 + 3",
+        "terms": [
+          {
+            "class": "BasicDie",
+            "options": {
+              "flavor": null
+            },
+            "evaluated": true,
+            "number": 2,
+            "faces": 6,
+            "modifiers": [
+              "kh1"
+            ],
+            "results": [
+              {
+                "result": 1,
+                "active": false,
+                "discarded": true
+              },
+              {
+                "result": 2,
+                "active": true
+              }
+            ]
+          },
+          {
+            "class": "OperatorTerm",
+            "options": {},
+            "evaluated": true,
+            "operator": "+"
+          },
+          {
+            "class": "NumericTerm",
+            "options": {
+              "flavor": null
+            },
+            "evaluated": true,
+            "number": 3
+          }
+        ],
+        "total": 5,
+        "evaluated": true
+      },
+      "critical": {
+        "class": "DamageRoll",
+        "options": {
+          "isCritical": true,
+          "preprocessed": true,
+          "configured": true
+        },
+        "dice": [],
+        "formula": "2d6kh1 + 2d6kh1 + 3",
+        "terms": [
+          {
+            "class": "BasicDie",
+            "options": {
+              "flavor": null,
+              "critical": true
+            },
+            "evaluated": true,
+            "number": 2,
+            "faces": 6,
+            "modifiers": [
+              "kh1"
+            ],
+            "results": [
+              {
+                "result": 5,
+                "active": true
+              },
+              {
+                "result": 2,
+                "active": false,
+                "discarded": true
+              }
+            ]
+          },
+          {
+            "class": "OperatorTerm",
+            "options": {},
+            "evaluated": true,
+            "operator": "+"
+          },
+          {
+            "class": "BasicDie",
+            "options": {
+              "flavor": null,
+              "critical": true
+            },
+            "evaluated": true,
+            "number": 2,
+            "faces": 6,
+            "modifiers": [
+              "kh1"
+            ],
+            "results": [
+              {
+                "result": 2,
+                "active": false,
+                "discarded": true
+              },
+              {
+                "result": 3,
+                "active": true
+              }
+            ]
+          },
+          {
+            "class": "OperatorTerm",
+            "options": {},
+            "evaluated": true,
+            "operator": "+"
+          },
+          {
+            "class": "NumericTerm",
+            "options": {
+              "flavor": null,
+              "critical": true
+            },
+            "evaluated": true,
+            "number": 3
+          }
+        ],
+        "total": 11,
+        "evaluated": true
+      }
+    },
+    {
+      "formula": "(1d6+2)*2",
+      "error": "The BasicRoll has already been evaluated and is now immutable"
+    },
+    {
+      "formula": "1d8-1d4",
+      "base": {
+        "class": "DamageRoll",
+        "options": {
+          "preprocessed": true,
+          "configured": true
+        },
+        "dice": [],
+        "formula": "1d8 - 1d4",
+        "terms": [
+          {
+            "class": "BasicDie",
+            "options": {
+              "flavor": null
+            },
+            "evaluated": true,
+            "number": 1,
+            "faces": 8,
+            "modifiers": [],
+            "results": [
+              {
+                "result": 7,
+                "active": true
+              }
+            ]
+          },
+          {
+            "class": "OperatorTerm",
+            "options": {},
+            "evaluated": true,
+            "operator": "-"
+          },
+          {
+            "class": "BasicDie",
+            "options": {
+              "flavor": null
+            },
+            "evaluated": true,
+            "number": 1,
+            "faces": 4,
+            "modifiers": [],
+            "results": [
+              {
+                "result": 2,
+                "active": true
+              }
+            ]
+          }
+        ],
+        "total": 5,
+        "evaluated": true
+      },
+      "critical": {
+        "class": "DamageRoll",
+        "options": {
+          "isCritical": true,
+          "preprocessed": true,
+          "configured": true
+        },
+        "dice": [],
+        "formula": "2d8 - 2d4",
+        "terms": [
+          {
+            "class": "BasicDie",
+            "options": {
+              "flavor": null,
+              "critical": true
+            },
+            "evaluated": true,
+            "number": 2,
+            "faces": 8,
+            "modifiers": [],
+            "results": [
+              {
+                "result": 5,
+                "active": true
+              },
+              {
+                "result": 3,
+                "active": true
+              }
+            ]
+          },
+          {
+            "class": "OperatorTerm",
+            "options": {},
+            "evaluated": true,
+            "operator": "-"
+          },
+          {
+            "class": "BasicDie",
+            "options": {
+              "flavor": null,
+              "critical": true
+            },
+            "evaluated": true,
+            "number": 2,
+            "faces": 4,
+            "modifiers": [],
+            "results": [
+              {
+                "result": 3,
+                "active": true
+              },
+              {
+                "result": 3,
+                "active": true
+              }
+            ]
+          }
+        ],
+        "total": 2,
+        "evaluated": true
+      }
+    }
+  ]
+}

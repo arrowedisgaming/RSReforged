@@ -8,6 +8,12 @@ import { LogUtility } from "./log.js";
 import { KEYBIND_VERSATILE_TWO_HANDED, ROLL_TYPE, RollUtility } from "./roll.js";
 import { SETTING_NAMES, SettingsUtility, HIDE_NPC_ROLL_MODES } from "./settings.js";
 
+import { usesNativeWorkflow, getOriginId } from "./dnd5e-compat.js";
+import { NATIVE_ACTIVITY_TYPES, runNativeUsage, seedNativeAlternates } from "./native-workflow.js";
+import { renderNativeMessage, refreshNativeOrigin, reconcileNativeSources } from "./native-render.js";
+
+const localCreationToken = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+
 export const HOOKS_CORE = { INIT: "init", READY: "ready" }
 
 export const HOOKS_DND5E = {
@@ -19,8 +25,7 @@ export const HOOKS_DND5E = {
     POST_ROLL_CONFIGURATION: "dnd5e.postRollConfiguration",
     PRE_ROLL_DAMAGE: "dnd5e.preRollDamage",
     PRE_USE_ACTIVITY: "dnd5e.preUseActivity",
-    // POST_USE_ACTIVITY removed: in dnd5e 5.3.0 we use usageConfig.subsequentActions = false
-    // in PRE_USE_ACTIVITY instead of returning false from POST_USE_ACTIVITY to block auto-rolls.
+    POST_USE_ACTIVITY: "dnd5e.postUseActivity",
     ACTIVITY_CONSUMPTION: "dnd5e.activityConsumption",
     DISPLAY_CARD: "dnd5e.displayCard",
     RENDER_CHAT_MESSAGE: "dnd5e.renderChatMessage",
@@ -119,13 +124,22 @@ export class HooksUtility {
         // subsequentActions alone so dnd5e's _triggerSubsequentActions can fire the
         // follow-up rolls after the usage dialog closes.
         Hooks.on(HOOKS_DND5E.PRE_USE_ACTIVITY, (activity, usageConfig, dialogConfig, messageConfig) => {
+            if (usesNativeWorkflow() && (!NATIVE_ACTIVITY_TYPES.has(activity.type) || messageConfig.create === false)) return true;
             if (
                 SettingsUtility.getSettingValue(SETTING_NAMES.QUICK_ACTIVITY_ENABLED)
                 && !SettingsUtility.getSettingValue(SETTING_NAMES.QUICK_VANILLA_ENABLED)
             ) {
                 RollUtility.processActivity(activity, usageConfig, dialogConfig, messageConfig);
+                if (usesNativeWorkflow() && messageConfig.data.flags[MODULE_SHORT].quickRoll) {
+                    messageConfig.data.flags[MODULE_SHORT].workflowVersion = 2;
+                }
             }
             return true;
+        });
+
+        Hooks.on(HOOKS_DND5E.POST_USE_ACTIVITY, (activity, usageConfig, results) => {
+            if (usesNativeWorkflow()) runNativeUsage(activity, usageConfig, results)
+                .catch(error => LogUtility.logError(`Native quick roll failed: ${error.message}`));
         });
 
         Hooks.on(HOOKS_DND5E.PRE_ROLL_ATTACK, (config, dialog, message) => {
@@ -225,8 +239,18 @@ export class HooksUtility {
     static registerChatHooks() {
         LogUtility.log("Registering chat hooks");
 
+        Hooks.on("createChatMessage", (message, options = {}, userId) => {
+            if (userId !== game.user.id || options.rsreforgedInitiator !== localCreationToken) return;
+            if (usesNativeWorkflow()) seedNativeAlternates(message)
+                .catch(error => LogUtility.logError(`Additional d20 preparation failed: ${error.message}`));
+        });
+
         Hooks.on("preCreateChatMessage", (message, data, options, userId) => {
             if (userId !== game.user.id) return;
+            if (usesNativeWorkflow()) {
+                options.rsreforgedInitiator = localCreationToken;
+                return;
+            }
 
             // Forward-compat hygiene: dnd5e 5.3's D20Roll constructs its d20 term using
             // Foundry's legacy `Die` class, while Foundry V14 canonicalises on `BasicDie`
@@ -290,6 +314,7 @@ export class HooksUtility {
         });
 
         Hooks.on("renderChatMessageHTML", (message, html) => {
+            if (usesNativeWorkflow() && !isLegacyCard(message)) return;
             const $html = html instanceof HTMLElement ? $(html) : html;
             // Self-heal before suppressing: if a previous render pass failed before
             // dnd5e.renderChatMessage could restore the suppressed roll flag (e.g.
@@ -310,11 +335,26 @@ export class HooksUtility {
             }
         });
 
+        // Native registry updates do not refresh origins after a rolls-only edit.
+        Hooks.on("updateChatMessage", (message, changes) => {
+            if (usesNativeWorkflow() && ("rolls" in changes || "flags" in changes || "whisper" in changes || "blind" in changes)) refreshNativeOrigin(message);
+        });
+        Hooks.on("deleteChatMessage", message => {
+            if (usesNativeWorkflow()) {
+                if (getOriginId(message)) refreshNativeOrigin(message);
+                setTimeout(reconcileNativeSources, 0);
+            }
+        });
+
         // dnd5e 5.3.0: For usage (activity) messages, ChatMessage5e.renderHTML() calls
         // system.getHTML() after the renderChatMessageHTML hook, which completely replaces
         // .message-content innerHTML. RSR's injection for activity cards must therefore
         // happen here, after system.getHTML() has finished rewriting the DOM.
         Hooks.on(HOOKS_DND5E.RENDER_CHAT_MESSAGE, (message, html) => {
+            if (usesNativeWorkflow() && !isLegacyCard(message)) {
+                renderNativeMessage(message, html).catch(error => LogUtility.logError(`Native card rendering failed: ${error.message}`));
+                return;
+            }
             ChatUtility.restoreDnd5eEnrichedRollFlavor(message);
             ChatUtility.processUsageChatMessage(message, html);
         });
@@ -341,4 +381,9 @@ async function _migrateHideNpcRollSetting() {
     // deliberately sets the new mode back to "none" would have it silently forced
     // back to "attacks" on every subsequent reload.
     await game.settings.set(MODULE_NAME, SETTING_NAMES.HIDE_FINAL_RESULT_ENABLED, false);
+}
+
+function isLegacyCard(message) {
+    return message.flags?.[MODULE_SHORT]?.workflowVersion !== 2
+        && (Array.isArray(message.flags?.[MODULE_SHORT]?.rolls) || ['roll', 'dnd5e.roll'].includes(message.type));
 }

@@ -31,12 +31,14 @@ export class BonusManager {
         const hasAttackSection = $html.find('.rsr-section-attack').length > 0;
         const hasDamageSection = $html.find('.rsr-section-damage').length > 0;
 
-        const isDnd5eRoll = !!message.flags.dnd5e?.roll?.type;
-        const isInitiative = message.flags.core?.initiativeRoll || 
+        const messageType = ChatUtility.getMessageType(message);
+        const isInitiative = message.flags?.core?.initiativeRoll ||
+                             messageType === "initiative" ||
                              (message.flavor && message.flavor.includes("Initiative")) ||
                              $html.find('.dice-flavor').text().includes("Initiative");
 
-        if (!hasAttackSection && !hasDamageSection && !isDnd5eRoll && !isInitiative) return false;
+        const validTypes = ["skill", "tool", "ability", "save", "death", "concentration", "initiative"];
+        if (!hasAttackSection && !hasDamageSection && !validTypes.includes(messageType) && !isInitiative) return false;
 
         let injected = false;
 
@@ -52,9 +54,7 @@ export class BonusManager {
 
         let rollType = null;
         if (isInitiative) rollType = "initiative";
-        else if (isDnd5eRoll) rollType = message.flags.dnd5e.roll.type;
-
-        const validTypes = ["skill", "tool", "ability", "save", "death", "concentration", "initiative"];
+        else rollType = messageType;
 
         if (rollType && validTypes.includes(rollType)) {
             const label = rollType === "ability" ? "check" : rollType;
@@ -93,7 +93,7 @@ export class BonusManager {
         });
     }
 
-    static async openBonusDialog(message, type) {
+    static async openBonusDialog(message, type, rollIndex) {
         // Use ChatUtility.getActorFromMessage for consistent, null-safe actor resolution
         // that correctly handles unlinked token actors (same fix as was applied in chat.js).
         const actor = ChatUtility.getActorFromMessage(message);
@@ -128,7 +128,7 @@ export class BonusManager {
                 if (bonusDef) {
                     // Carry the resolved damage type (from a random/choice bonus) into apply.
                     if (result.damageType) bonusDef = { ...bonusDef, damageType: result.damageType };
-                    await this.applyBonus(message, type, bonusDef, actor);
+                    await this.applyBonus(message, type, bonusDef, actor, rollIndex);
                 }
             }
         }).render(true);
@@ -235,7 +235,7 @@ export class BonusManager {
         return { rawFormula, resolvedFormula, isOnce, consumeTarget, damageMode, damageTypeOptions };
     }
 
-    static async applyBonus(message, type, bonusDef, actor) {
+    static async applyBonus(message, type, bonusDef, actor, rollIndex) {
         try {
             if (bonusDef.consumeTarget) {
                 let itemToConsume = null;
@@ -268,6 +268,7 @@ export class BonusManager {
             let targetRollIndex = currentRolls.findIndex(r =>
                 type === "damage" ? r instanceof CONFIG.Dice.DamageRoll : r instanceof CONFIG.Dice.D20Roll
             );
+            if (Number.isInteger(rollIndex)) targetRollIndex = rollIndex;
             if (targetRollIndex === -1) targetRollIndex = currentRolls.length > 0 ? 0 : -1;
             if (targetRollIndex === -1) return ui.notifications.error("No roll found.");
 
@@ -302,6 +303,7 @@ export class BonusManager {
 
             const newRoll = TargetRollClass.fromTerms(newTerms);
             newRoll.options = foundry.utils.deepClone(originalRoll.options);
+            delete newRoll.options.rsreforgedCriticalBase;
             newRoll._total = originalRoll.total + bonusRoll.total;
             newRoll._evaluated = true; 
 

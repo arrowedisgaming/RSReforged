@@ -1,0 +1,672 @@
+{
+  "scenario": "rsr-native-6-0-1",
+  "provenance": {
+    "foundry": "14.367",
+    "system": "6.0.1",
+    "upstreamCommit": "14037023a87372688bbb59be99f55fcd3a83318d",
+    "capturedAt": "2026-09-14T00:45:09.059Z",
+    "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/149.0.7827.55 Safari/537.36",
+    "modules": [
+      {
+        "id": "rsreforged",
+        "version": "4.13.4"
+      }
+    ]
+  },
+  "settings": {
+    "chatCardSummary": true,
+    "damageApplyMode": "rsr",
+    "criticalDamageModifiers": false,
+    "criticalDamageMaxDice": false
+  },
+  "source": {
+    "sound": "sounds/dice.wav",
+    "flavor": "RSR Test Sword - Damage Roll",
+    "speaker": {
+      "scene": "lIii5ABhdQA36LKJ",
+      "actor": "bmj6pkmqkx2VSmqn",
+      "token": null,
+      "alias": "RSR Test Attacker"
+    },
+    "system": {
+      "activity": {
+        "id": "xpRtRu1hSogTgcZT",
+        "img": "systems/dnd5e/icons/svg/activity/attack.svg",
+        "name": "Strike",
+        "type": "attack",
+        "uuid": "Actor.bmj6pkmqkx2VSmqn.Item.t8tmyTyukcln1Y5a.Activity.xpRtRu1hSogTgcZT"
+      },
+      "item": {
+        "compendiumSource": null,
+        "id": "t8tmyTyukcln1Y5a",
+        "img": "systems/dnd5e/icons/svg/items/weapon.svg",
+        "name": "RSR Test Sword",
+        "type": "weapon",
+        "uuid": "Actor.bmj6pkmqkx2VSmqn.Item.t8tmyTyukcln1Y5a"
+      },
+      "targets": [
+        {
+          "actor": "Actor.KJM8iZPg9w1Ig9Rv",
+          "ac": 10,
+          "img": "icons/svg/mystery-man.svg",
+          "name": "RSR Test Target",
+          "token": "Scene.lIii5ABhdQA36LKJ.Token.H4DngwjPk3nPbw5R"
+        }
+      ],
+      "origin": "Rmv2fQKtih4O2LhV",
+      "onSave": null
+    },
+    "type": "damage",
+    "whisper": [],
+    "blind": false,
+    "flags": {
+      "rsreforged": {
+        "workflowVersion": 2,
+        "parentId": "Rmv2fQKtih4O2LhV",
+        "quickRoll": true,
+        "processed": true
+      },
+      "core": {
+        "canPopout": true
+      }
+    },
+    "rolls": [
+      "{\"class\":\"DamageRoll\",\"options\":{\"type\":\"slashing\",\"types\":[\"slashing\"],\"properties\":[],\"isCritical\":true,\"critical\":{\"multiplyNumeric\":false,\"powerfulCritical\":false},\"rollType\":\"damage\",\"originatingMessage\":\"Rmv2fQKtih4O2LhV\",\"preprocessed\":true,\"configured\":true,\"rsreforgedCriticalBase\":{\"class\":\"DamageRoll\",\"options\":{\"type\":\"slashing\",\"types\":[\"slashing\"],\"properties\":[],\"isCritical\":false,\"critical\":{\"multiplyNumeric\":false,\"powerfulCritical\":false},\"preprocessed\":true,\"configured\":true,\"rollType\":\"damage\",\"originatingMessage\":\"Rmv2fQKtih4O2LhV\"},\"dice\":[],\"formula\":\"1d8 + 3\",\"terms\":[{\"class\":\"BasicDie\",\"options\":{\"flavor\":null},\"evaluated\":true,\"number\":1,\"faces\":8,\"modifiers\":[],\"results\":[{\"result\":4,\"active\":true}]},{\"class\":\"OperatorTerm\",\"options\":{},\"evaluated\":true,\"operator\":\"+\"},{\"class\":\"NumericTerm\",\"options\":{\"flavor\":null},\"evaluated\":true,\"number\":3}],\"total\":7,\"evaluated\":true}},\"dice\":[],\"formula\":\"2d8 + 3\",\"terms\":[{\"class\":\"BasicDie\",\"options\":{\"flavor\":null,\"critical\":true},\"evaluated\":true,\"number\":2,\"faces\":8,\"modifiers\":[],\"results\":[{\"result\":4,\"active\":true},{\"result\":4,\"active\":true}]},{\"class\":\"OperatorTerm\",\"options\":{},\"evaluated\":true,\"operator\":\"+\"},{\"class\":\"NumericTerm\",\"options\":{\"flavor\":null,\"critical\":true},\"evaluated\":true,\"number\":3}],\"total\":11,\"evaluated\":true}"
+    ],
+    "_id": "NWHn6x6BemgGGxCt",
+    "style": 0,
+    "author": "4XBrfKCar9QsQrEM",
+    "timestamp": 1789345351408,
+    "content": "",
+    "emote": false,
+    "_stats": {
+      "coreVersion": "14.367",
+      "systemId": "dnd5e",
+      "systemVersion": "6.0.1",
+      "createdTime": 1789345351408,
+      "modifiedTime": 1789345709841,
+      "lastModifiedBy": "4XBrfKCar9QsQrEM",
+      "compendiumSource": null,
+      "duplicateSource": null,
+      "exportSource": null
+    }
+  },
+  "rolls": [
+    {
+      "class": "DamageRoll",
+      "options": {
+        "type": "slashing",
+        "types": [
+          "slashing"
+        ],
+        "properties": [],
+        "isCritical": true,
+        "critical": {
+          "multiplyNumeric": false,
+          "powerfulCritical": false
+        },
+        "rollType": "damage",
+        "originatingMessage": "Rmv2fQKtih4O2LhV",
+        "preprocessed": true,
+        "configured": true,
+        "rsreforgedCriticalBase": {
+          "class": "DamageRoll",
+          "options": {
+            "type": "slashing",
+            "types": [
+              "slashing"
+            ],
+            "properties": [],
+            "isCritical": false,
+            "critical": {
+              "multiplyNumeric": false,
+              "powerfulCritical": false
+            },
+            "preprocessed": true,
+            "configured": true,
+            "rollType": "damage",
+            "originatingMessage": "Rmv2fQKtih4O2LhV"
+          },
+          "dice": [],
+          "formula": "1d8 + 3",
+          "terms": [
+            {
+              "class": "BasicDie",
+              "options": {
+                "flavor": null
+              },
+              "evaluated": true,
+              "number": 1,
+              "faces": 8,
+              "modifiers": [],
+              "results": [
+                {
+                  "result": 4,
+                  "active": true
+                }
+              ]
+            },
+            {
+              "class": "OperatorTerm",
+              "options": {},
+              "evaluated": true,
+              "operator": "+"
+            },
+            {
+              "class": "NumericTerm",
+              "options": {
+                "flavor": null
+              },
+              "evaluated": true,
+              "number": 3
+            }
+          ],
+          "total": 7,
+          "evaluated": true
+        }
+      },
+      "dice": [],
+      "formula": "2d8 + 3",
+      "terms": [
+        {
+          "class": "BasicDie",
+          "options": {
+            "flavor": null,
+            "critical": true
+          },
+          "evaluated": true,
+          "number": 2,
+          "faces": 8,
+          "modifiers": [],
+          "results": [
+            {
+              "result": 4,
+              "active": true
+            },
+            {
+              "result": 4,
+              "active": true
+            }
+          ]
+        },
+        {
+          "class": "OperatorTerm",
+          "options": {},
+          "evaluated": true,
+          "operator": "+"
+        },
+        {
+          "class": "NumericTerm",
+          "options": {
+            "flavor": null,
+            "critical": true
+          },
+          "evaluated": true,
+          "number": 3
+        }
+      ],
+      "total": 11,
+      "evaluated": true
+    }
+  ],
+  "html": "<li class=\"chat-message message flexcol dnd5e2 compact\" data-message-id=\"NWHn6x6BemgGGxCt\">\n    <header class=\"message-header flexrow\">\n        <h4 class=\"message-sender\" data-actor-uuid=\"Actor.bmj6pkmqkx2VSmqn\">RSR Test Attacker</h4>\n        <span class=\"message-metadata\">\n            <time class=\"message-timestamp\">22m ago</time>\n            <a aria-label=\"Delete\" class=\"message-delete\" data-action=\"deleteMessage\">\n                <i class=\"fa-solid fa-trash fa-fw\" inert=\"\"></i>\n            </a>\n        <a aria-label=\"Additional Controls\" class=\"chat-control\" data-context-menu=\"\"><i class=\"fas fa-ellipsis-vertical fa-fw\"></i></a></span>\n\n\n        \n    </header>\n    <div class=\"message-content\"><div class=\"rsr-native-parts\"><section class=\"dice-roll\" data-rsr-roll-index=\"0\"><button type=\"button\" class=\"rsr-native-total\">Slashing: 11</button><div hidden=\"\"><div class=\"dice-tooltip-collapser\">\n    <div class=\"dice-tooltip\">\n        <section class=\"tooltip-part\">\n            <div class=\"dice\">\n                <ol class=\"dice-rolls\">\n                    <li class=\"roll basicdie d8\">4</li>\n                    <li class=\"roll basicdie d8\">4</li>\n                </ol>\n                <div class=\"total\">\n                    <span class=\"label\"></span>\n                    <span class=\"value\">8</span>\n                </div>\n            </div>\n        </section>\n        <section class=\"tooltip-part constant\">\n            <div class=\"dice\">\n                <ol class=\"dice-rolls\"></ol>\n                <div class=\"total\">\n                    <span class=\"value\"><span class=\"sign\">+</span>3</span>\n                </div>\n            </div>\n        </section>\n    </div>\n</div>\n</div><select aria-label=\"Damage type\"><option value=\"acid\">Acid</option><option value=\"bludgeoning\">Bludgeoning</option><option value=\"cold\">Cold</option><option value=\"fire\">Fire</option><option value=\"force\">Force</option><option value=\"lightning\">Lightning</option><option value=\"necrotic\">Necrotic</option><option value=\"piercing\">Piercing</option><option value=\"poison\">Poison</option><option value=\"psychic\">Psychic</option><option value=\"radiant\">Radiant</option><option value=\"slashing\">Slashing</option><option value=\"thunder\">Thunder</option><option value=\"healing\">Hit Points</option><option value=\"temphp\">Temporary Hit Points</option><option value=\"maximum\">Maximum Hit Points</option></select><div class=\"rsr-native-controls\"><button type=\"button\">Add Bonus</button><button type=\"button\">Normal Damage</button></div><div class=\"rsr-native-controls rsr-native-apply\"><button type=\"button\" data-action=\"rsr-apply-damage\">Apply</button><button type=\"button\" data-action=\"rsr-apply-damage\">Half</button><button type=\"button\" data-action=\"rsr-apply-damage\">Quarter</button><button type=\"button\" data-action=\"rsr-apply-damage\">Double</button><button type=\"button\" data-action=\"rsr-apply-damage\">Heal</button><button type=\"button\">Temp HP</button></div></section></div><div class=\"chat-card\">\n\n    <section class=\"card-header no-description\">\n    <div class=\"item-icon\" data-action=\"showDocument\" data-uuid=\"Actor.bmj6pkmqkx2VSmqn.Item.t8tmyTyukcln1Y5a\">\n        <img class=\"gold-icon\" src=\"systems/dnd5e/icons/svg/items/weapon.svg\" alt=\"RSR Test Sword\">\n    </div>\n    <div class=\"activity-icon\"><dnd5e-icon draggable=\"false\" src=\"systems/dnd5e/icons/svg/activity/attack.svg\" aria-label=\"Strike\" class=\"gold-icon\"></dnd5e-icon></div>\n    <div class=\"name-stacked\">\n        <span class=\"title\">RSR Test Sword</span>\n        <span class=\"subtitle\">Strike • Damage Roll</span>\n    </div>\n</section>\n\n\n    <section class=\"icon-row\">\n    <i class=\"fa-fw fa-solid fa-tag\" aria-label=\"Item properties\"></i>\n    <ul class=\"pills unlist\">\n        <li class=\"pill transparent critical\">\n            <span class=\"label\">Critical</span>\n        </li>\n        <li class=\"pill transparent \">\n            <span class=\"label\">Weapon</span>\n        </li>\n    </ul>\n</section>\n</div>\n\n\n\n\n</div>\n</li>",
+  "damageRolls": [
+    {
+      "input": {
+        "formula": "1d8 + 3",
+        "data": {},
+        "options": {
+          "type": "slashing"
+        }
+      },
+      "base": {
+        "formula": "1d8 + 3",
+        "options": {
+          "type": "slashing",
+          "preprocessed": true,
+          "configured": true
+        },
+        "outcome": {
+          "class": "DamageRoll",
+          "options": {
+            "type": "slashing",
+            "preprocessed": true,
+            "configured": true
+          },
+          "dice": [],
+          "formula": "1d8 + 3",
+          "terms": [
+            {
+              "class": "BasicDie",
+              "options": {
+                "flavor": null
+              },
+              "evaluated": true,
+              "number": 1,
+              "faces": 8,
+              "modifiers": [],
+              "results": [
+                {
+                  "result": 3,
+                  "active": true
+                }
+              ]
+            },
+            {
+              "class": "OperatorTerm",
+              "options": {},
+              "evaluated": true,
+              "operator": "+"
+            },
+            {
+              "class": "NumericTerm",
+              "options": {
+                "flavor": null
+              },
+              "evaluated": true,
+              "number": 3
+            }
+          ],
+          "total": 6,
+          "evaluated": true
+        }
+      },
+      "critical": {
+        "formula": "2d8 + 3",
+        "options": {
+          "type": "slashing",
+          "isCritical": true,
+          "critical": {
+            "multiplyNumeric": false,
+            "powerfulCritical": false
+          },
+          "preprocessed": true,
+          "configured": true
+        },
+        "outcome": {
+          "class": "DamageRoll",
+          "options": {
+            "type": "slashing",
+            "isCritical": true,
+            "critical": {
+              "multiplyNumeric": false,
+              "powerfulCritical": false
+            },
+            "preprocessed": true,
+            "configured": true
+          },
+          "dice": [],
+          "formula": "2d8 + 3",
+          "terms": [
+            {
+              "class": "BasicDie",
+              "options": {
+                "flavor": null,
+                "critical": true
+              },
+              "evaluated": true,
+              "number": 2,
+              "faces": 8,
+              "modifiers": [],
+              "results": [
+                {
+                  "result": 8,
+                  "active": true
+                },
+                {
+                  "result": 4,
+                  "active": true
+                }
+              ]
+            },
+            {
+              "class": "OperatorTerm",
+              "options": {},
+              "evaluated": true,
+              "operator": "+"
+            },
+            {
+              "class": "NumericTerm",
+              "options": {
+                "flavor": null,
+                "critical": true
+              },
+              "evaluated": true,
+              "number": 3
+            }
+          ],
+          "total": 15,
+          "evaluated": true
+        }
+      }
+    },
+    {
+      "input": {
+        "formula": "2d6kh1 + 3",
+        "data": {},
+        "options": {
+          "type": "slashing"
+        }
+      },
+      "base": {
+        "formula": "2d6kh1 + 3",
+        "options": {
+          "type": "slashing",
+          "preprocessed": true,
+          "configured": true
+        },
+        "outcome": {
+          "class": "DamageRoll",
+          "options": {
+            "type": "slashing",
+            "preprocessed": true,
+            "configured": true
+          },
+          "dice": [],
+          "formula": "2d6kh1 + 3",
+          "terms": [
+            {
+              "class": "BasicDie",
+              "options": {
+                "flavor": null
+              },
+              "evaluated": true,
+              "number": 2,
+              "faces": 6,
+              "modifiers": [
+                "kh1"
+              ],
+              "results": [
+                {
+                  "result": 6,
+                  "active": true
+                },
+                {
+                  "result": 4,
+                  "active": false,
+                  "discarded": true
+                }
+              ]
+            },
+            {
+              "class": "OperatorTerm",
+              "options": {},
+              "evaluated": true,
+              "operator": "+"
+            },
+            {
+              "class": "NumericTerm",
+              "options": {
+                "flavor": null
+              },
+              "evaluated": true,
+              "number": 3
+            }
+          ],
+          "total": 9,
+          "evaluated": true
+        }
+      },
+      "critical": {
+        "formula": "2d6kh1 + 2d6kh1 + 3",
+        "options": {
+          "type": "slashing",
+          "isCritical": true,
+          "critical": {
+            "multiplyNumeric": false,
+            "powerfulCritical": false
+          },
+          "preprocessed": true,
+          "configured": true
+        },
+        "outcome": {
+          "class": "DamageRoll",
+          "options": {
+            "type": "slashing",
+            "isCritical": true,
+            "critical": {
+              "multiplyNumeric": false,
+              "powerfulCritical": false
+            },
+            "preprocessed": true,
+            "configured": true
+          },
+          "dice": [],
+          "formula": "2d6kh1 + 2d6kh1 + 3",
+          "terms": [
+            {
+              "class": "BasicDie",
+              "options": {
+                "flavor": null,
+                "critical": true
+              },
+              "evaluated": true,
+              "number": 2,
+              "faces": 6,
+              "modifiers": [
+                "kh1"
+              ],
+              "results": [
+                {
+                  "result": 4,
+                  "active": false,
+                  "discarded": true
+                },
+                {
+                  "result": 5,
+                  "active": true
+                }
+              ]
+            },
+            {
+              "class": "OperatorTerm",
+              "options": {},
+              "evaluated": true,
+              "operator": "+"
+            },
+            {
+              "class": "BasicDie",
+              "options": {
+                "flavor": null,
+                "critical": true
+              },
+              "evaluated": true,
+              "number": 2,
+              "faces": 6,
+              "modifiers": [
+                "kh1"
+              ],
+              "results": [
+                {
+                  "result": 1,
+                  "active": false,
+                  "discarded": true
+                },
+                {
+                  "result": 2,
+                  "active": true
+                }
+              ]
+            },
+            {
+              "class": "OperatorTerm",
+              "options": {},
+              "evaluated": true,
+              "operator": "+"
+            },
+            {
+              "class": "NumericTerm",
+              "options": {
+                "flavor": null,
+                "critical": true
+              },
+              "evaluated": true,
+              "number": 3
+            }
+          ],
+          "total": 10,
+          "evaluated": true
+        }
+      }
+    },
+    {
+      "input": {
+        "formula": "(1d6 + 2) * 2",
+        "data": {},
+        "options": {
+          "type": "fire"
+        }
+      },
+      "error": "The BasicRoll has already been evaluated and is now immutable"
+    },
+    {
+      "input": {
+        "formula": "1d8 - 1d4",
+        "data": {},
+        "options": {
+          "type": "slashing"
+        }
+      },
+      "base": {
+        "formula": "1d8 - 1d4",
+        "options": {
+          "type": "slashing",
+          "preprocessed": true,
+          "configured": true
+        },
+        "outcome": {
+          "class": "DamageRoll",
+          "options": {
+            "type": "slashing",
+            "preprocessed": true,
+            "configured": true
+          },
+          "dice": [],
+          "formula": "1d8 - 1d4",
+          "terms": [
+            {
+              "class": "BasicDie",
+              "options": {
+                "flavor": null
+              },
+              "evaluated": true,
+              "number": 1,
+              "faces": 8,
+              "modifiers": [],
+              "results": [
+                {
+                  "result": 3,
+                  "active": true
+                }
+              ]
+            },
+            {
+              "class": "OperatorTerm",
+              "options": {},
+              "evaluated": true,
+              "operator": "-"
+            },
+            {
+              "class": "BasicDie",
+              "options": {
+                "flavor": null
+              },
+              "evaluated": true,
+              "number": 1,
+              "faces": 4,
+              "modifiers": [],
+              "results": [
+                {
+                  "result": 1,
+                  "active": true
+                }
+              ]
+            }
+          ],
+          "total": 2,
+          "evaluated": true
+        }
+      },
+      "critical": {
+        "formula": "2d8 - 2d4",
+        "options": {
+          "type": "slashing",
+          "isCritical": true,
+          "critical": {
+            "multiplyNumeric": false,
+            "powerfulCritical": false
+          },
+          "preprocessed": true,
+          "configured": true
+        },
+        "outcome": {
+          "class": "DamageRoll",
+          "options": {
+            "type": "slashing",
+            "isCritical": true,
+            "critical": {
+              "multiplyNumeric": false,
+              "powerfulCritical": false
+            },
+            "preprocessed": true,
+            "configured": true
+          },
+          "dice": [],
+          "formula": "2d8 - 2d4",
+          "terms": [
+            {
+              "class": "BasicDie",
+              "options": {
+                "flavor": null,
+                "critical": true
+              },
+              "evaluated": true,
+              "number": 2,
+              "faces": 8,
+              "modifiers": [],
+              "results": [
+                {
+                  "result": 8,
+                  "active": true
+                },
+                {
+                  "result": 3,
+                  "active": true
+                }
+              ]
+            },
+            {
+              "class": "OperatorTerm",
+              "options": {},
+              "evaluated": true,
+              "operator": "-"
+            },
+            {
+              "class": "BasicDie",
+              "options": {
+                "flavor": null,
+                "critical": true
+              },
+              "evaluated": true,
+              "number": 2,
+              "faces": 4,
+              "modifiers": [],
+              "results": [
+                {
+                  "result": 2,
+                  "active": true
+                },
+                {
+                  "result": 3,
+                  "active": true
+                }
+              ]
+            }
+          ],
+          "total": 6,
+          "evaluated": true
+        }
+      }
+    }
+  ]
+}

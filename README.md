@@ -2,6 +2,8 @@
 
 > Quality-of-life roll automation for Foundry VTT's D&D 5e system.
 
+This branch includes an unreleased dnd5e 6 compatibility implementation. See the [local testing guide](docs/testing/dnd5e-6-local-testing.md) for setup, verified checks, and remaining release gates.
+
 ![Latest Release](https://img.shields.io/badge/dynamic/json.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Farrowedisgaming%2FRSReforged%2Fmaster%2Fmodule.json&label=Latest%20Release&prefix=v&query=$.version&colorB=blue&style=for-the-badge)
 ![Foundry Versions](https://img.shields.io/endpoint?url=https%3A%2F%2Ffoundryshields.com%2Fversion%3Fstyle%3Dfor-the-badge%26url%3Dhttps%3A%2F%2Fraw.githubusercontent.com%2Farrowedisgaming%2FRSReforged%2Fmaster%2Fmodule.json&color=ff601e&label=Foundry)
 ![dnd5e](https://img.shields.io/badge/dnd5e-5.3%2B-red?style=for-the-badge)

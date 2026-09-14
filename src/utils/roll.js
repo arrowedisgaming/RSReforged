@@ -1,4 +1,5 @@
 import { MODULE_NAME, MODULE_SHORT, ROLL_TYPE } from "../module/const.js";
+import { usesNativeWorkflow } from "./dnd5e-compat.js";
 import { CoreUtility } from "./core.js";
 import { SETTING_NAMES, SettingsUtility } from "./settings.js";
 
@@ -34,6 +35,10 @@ export const CRIT_TYPE = {
  */
 export class RollUtility {
     static processRoll(config, dialog, message) {
+        message.data ??= {};
+        message.data.flags ??= {};
+        message.data.flags[MODULE_SHORT] ??= {};
+
         if (message.data.flags[MODULE_SHORT]?.processed) return;
 
         const keys = _readSkipDialogKeys(config.event);
@@ -41,20 +46,32 @@ export class RollUtility {
 
         dialog.configure = vanillaWorkflow || keys.normal || (config.vanilla ?? false);
 
+        if (usesNativeWorkflow()) {
+            for (const roll of config.rolls ?? []) {
+                roll.options ??= {};
+                if (keys.advantage) roll.options.advantage = true;
+                if (keys.disadvantage) roll.options.disadvantage = true;
+            }
+        }
+
         if (config.isConcentration) {
             config.flavor = `${CoreUtility.localize("DND5E.ToolPromptTitle", { tool: CoreUtility.localize("DND5E.Concentration") })}`;
         }
 
-        message.data.flags[MODULE_SHORT] = { 
+        Object.assign(message.data.flags[MODULE_SHORT], {
             quickRoll: vanillaWorkflow || !dialog.configure,
             advantage: keys.advantage,
             disadvantage: keys.disadvantage,
             isConcentration: config.isConcentration,
             processed: true
-        };
+        });
     }
 
     static processActivity(activity, usageConfig, dialogConfig, messageConfig) {
+        messageConfig.data ??= {};
+        messageConfig.data.flags ??= {};
+        messageConfig.data.flags[MODULE_SHORT] ??= {};
+
         const keys = _readSkipDialogKeys(usageConfig.event);
 
         const fastForward = !(keys.normal || (usageConfig.vanilla ?? false))
@@ -128,7 +145,7 @@ export class RollUtility {
             flagSeed.versatile = versatileHeld;
         }
 
-        messageConfig.data.flags[MODULE_SHORT] = flagSeed;
+        Object.assign(messageConfig.data.flags[MODULE_SHORT], flagSeed);
 
         // Only suppress dnd5e's follow-up rolls when RSR will fire them itself
         // on the quick-roll path. On a slow roll, leave subsequentActions alone
@@ -166,11 +183,15 @@ export class RollUtility {
         if (!(roll.hasAdvantage || roll.hasDisadvantage)) {
             const forcedDiceCount = roll.options.elvenAccuracy ? 3 : 2;
             const d20BaseTerm = roll.terms.find(d => d.faces === 20);
-            const d20Additional = await new Roll(`${forcedDiceCount - d20BaseTerm.number}d20${d20BaseTerm.modifiers.join('')}`).evaluate();
+            const saved = roll.options.rsreforgedAlternates;
+            const d20Additional = saved ? { dice: [{ results: foundry.utils.deepClone(saved) }] }
+                : await new Roll(`${forcedDiceCount - d20BaseTerm.number}d20${d20BaseTerm.modifiers.join('')}`).evaluate();
 
-            await CoreUtility.tryRollDice3D(d20Additional);
+            if (!saved) await CoreUtility.tryRollDice3D(d20Additional);
+            delete roll.options.rsreforgedAlternates;
 
-            const d20Forced = new foundry.dice.terms.Die({
+            const d20Forced = new d20BaseTerm.constructor({
+                ...d20BaseTerm.toJSON(),
                 number: forcedDiceCount,
                 faces: 20,
                 results: [...d20BaseTerm.results, ...d20Additional.dice[0].results],
@@ -216,6 +237,7 @@ export class RollUtility {
             ? CONFIG.Dice.D20Roll.ADV_MODE.ADVANTAGE 
             : CONFIG.Dice.D20Roll.ADV_MODE.DISADVANTAGE;
 
+        if (d20BaseTerm.options) d20BaseTerm.options.advantageMode = upgradedRoll.options.advantageMode;
         RollUtility.resetRollGetters(upgradedRoll);
         return upgradedRoll;
     }

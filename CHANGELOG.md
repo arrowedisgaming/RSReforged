@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Local-test implementation for dnd5e 6 typed chat messages, preserving the existing 5.3 path. Quick activities create real native child rolls after consumption finalization; combined cards and save summaries route controls to those sources.
+- Native roll persistence for bonuses, rerolls, damage types, and retroactive advantage/critical damage. Damage application follows native aggregation and save outcomes, with selectable RSR or native controls.
+- Synthetic native fixtures, regression coverage, and a [local testing guide](docs/testing/dnd5e-6-local-testing.md). Live checks used Foundry 14.367 and dnd5e 6.0.1; broader version/integration certification remains pending. No manifest verification bump or release is included.
+
 ## [4.13.4] — 2026-07-27
 
 ### Fixed

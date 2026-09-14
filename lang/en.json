@@ -1,5 +1,5 @@
 {
-    "rsreforged": {        
+    "rsreforged": {
         "settings": {
             "enableVanillaQuickRoll.name": "Use Vanilla Rolls with RSReforged Styling",
             "enableVanillaQuickRoll.hint": "Master switch for the quick-roll behavior. When enabled, RSReforged keeps dnd5e's normal roll dialogs and vanilla workflow (including automatic attack and damage rolls for item activities) and only adds RSReforged styling on top — the four 'Enable Quick Roll' options below are ignored. When disabled, RSReforged takes over enabled quick rolls and rolls attack, damage, healing, and formulas on the quick-roll card.",
@@ -147,6 +147,21 @@
             "damageType": "Damage type:",
             "randomType": "Random type: {types}",
             "fixedType": "{type} damage"
+        },
+        "native": {
+            "Advantage": "Advantage",
+            "Disadvantage": "Disadvantage",
+            "Add Bonus": "Add Bonus",
+            "Roll Damage": "Roll Damage",
+            "Damage type": "Damage type",
+            "Apply": "Apply",
+            "Half": "Half",
+            "Double": "Double",
+            "Heal": "Heal",
+            "Temp HP": "Temp HP",
+            "Critical": "Critical",
+            "Normal Damage": "Normal Damage",
+            "Quarter": "Quarter"
         }
     }
 }
