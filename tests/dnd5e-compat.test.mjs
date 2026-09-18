@@ -142,6 +142,27 @@ describe("modern configuration and classification consumers", () => {
         expect(message.data.flags[MODULE_SHORT]).toMatchObject({ quickRoll: true, processed: true });
     });
 
+    it("stamps held advantage and disadvantage keys onto native roll configurations", () => {
+        game.system = { version: "6.0.1" };
+        CONFIG.ChatMessage.dataModels = Object.fromEntries(
+            ["attack", "damage", "healing", "check", "save", "generic"].map((type) => [type, {}]));
+        game.keybindings.register("dnd5e", "skipDialogAdvantage", { editable: [{ key: "AltLeft", modifiers: [] }] });
+        game.keybindings.register("dnd5e", "skipDialogDisadvantage", { editable: [{ key: "ControlLeft", modifiers: [] }] });
+
+        const advantage = { rolls: [{}, { options: { kept: true } }], event: { altKey: true } };
+        RollUtility.processRoll(advantage, {}, { data: { type: "check", system: {} } });
+        expect(advantage.rolls[0].options).toEqual({ advantage: true });
+        expect(advantage.rolls[1].options).toEqual({ kept: true, advantage: true });
+
+        const disadvantage = { rolls: [{}], event: { ctrlKey: true } };
+        RollUtility.processRoll(disadvantage, {}, { data: { type: "check", system: {} } });
+        expect(disadvantage.rolls[0].options).toEqual({ disadvantage: true });
+
+        const plain = { rolls: [{}], event: {} };
+        RollUtility.processRoll(plain, {}, { data: { type: "check", system: {} } });
+        expect(plain.rolls[0].options).toEqual({});
+    });
+
     it("merges roll state into existing module flags and preserves foreign flags", () => {
         const message = {
             data: {

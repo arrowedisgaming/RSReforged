@@ -1,43 +1,162 @@
-import {beforeEach,it,expect,vi} from 'vitest';
-import {setupFoundryEnv} from './helpers/foundry-env.mjs';
+import { beforeEach, it, expect, vi } from "vitest";
+import { setupFoundryEnv } from "./helpers/foundry-env.mjs";
+
 let renderer;
-beforeEach(async()=>{vi.resetModules();await setupFoundryEnv({settings:{damageApplyMode:"dnd5e"}});renderer=await import('../src/utils/native-render.js');});
-it('moves rendered native children without replacing their identity or deleting documents',async()=>{
- const node=document.createElement('li');node.className='chat-message';node.dataset.messageId='child';node.innerHTML='<header class="message-header"></header><div class="message-content"><damage-application></damage-application></div>';
- const control=node.querySelector('damage-application');
- const child={id:'child',type:'damage',visible:true,isContentVisible:true,rolls:[],renderHTML:async()=>node,flags:{},delete:vi.fn()};
- const parent={id:'parent',type:'usage',isContentVisible:true,flags:{rsreforged:{workflowVersion:2,quickRoll:true}},getAssociatedRolls:()=>[child]};
- const html=document.createElement('li');html.innerHTML='<div class="message-content">Native usage buttons</div>';
- await renderer.renderNativeMessage(parent,html);
- expect(html.querySelector('[data-rsr-message-id="child"] damage-application')).toBe(control);
- expect(control.closest('[data-message-id]').dataset.messageId).toBe('child');
- expect(child.delete).not.toHaveBeenCalled();
+
+beforeEach(async () => {
+    vi.resetModules();
+    await setupFoundryEnv();
+    renderer = await import("../src/utils/native-render.js");
 });
-it('keeps private children and save responses out of public combined cards',async()=>{
- const hidden={id:'hidden',type:'damage',visible:true,isContentVisible:false,renderHTML:vi.fn()};
- const save={id:'save',type:'save',visible:true,isContentVisible:true,renderHTML:vi.fn()};
- const parent={id:'p',type:'usage',isContentVisible:true,flags:{rsreforged:{workflowVersion:2,quickRoll:true}},getAssociatedRolls:()=>[hidden,save]};
- const html=document.createElement('li');html.innerHTML='<div class="message-content"></div>';
- await renderer.renderNativeMessage(parent,html);
- expect(hidden.renderHTML).not.toHaveBeenCalled();expect(save.renderHTML).not.toHaveBeenCalled();
+
+function nativeChild(id, type, innerHTML) {
+    const node = document.createElement("li");
+    node.className = "chat-message message";
+    node.dataset.messageId = id;
+    node.innerHTML = `<header class="message-header">${id}</header><div class="message-content">${innerHTML}</div>`;
+    return { node, message: { id, type, visible: true, isContentVisible: true, rolls: [], flags: {}, renderHTML: async () => node, delete: vi.fn() } };
+}
+
+function usageParent(children, { flags = { rsreforged: { workflowVersion: 2, quickRoll: true } } } = {}) {
+    return { id: "parent", type: "usage", isContentVisible: true, flags, getAssociatedRolls: () => children };
+}
+
+function usageHtml() {
+    const html = document.createElement("li");
+    html.className = "chat-message message";
+    html.dataset.messageId = "parent";
+    html.innerHTML = '<div class="message-content"><div class="chat-card"><button data-action="rollDamage">Damage</button></div></div>';
+    return html;
+}
+
+it("folds native children into the usage card, keeping their identity and markup untouched", async () => {
+    const attack = nativeChild("attack", "attack", '<button class="dice-roll"><span class="total">17</span></button><div class="roll-breakdown" popover>d20</div>');
+    const damage = nativeChild("damage", "damage", '<button class="dice-roll"><span class="total">9</span></button><damage-application></damage-application>');
+    const tray = damage.node.querySelector("damage-application");
+    const html = usageHtml();
+
+    await renderer.renderNativeMessage(usageParent([attack.message, damage.message]), html);
+
+    const combined = html.querySelector(".message-content > .rsr-native-combined");
+    expect([...combined.children].map((node) => node.dataset.messageId)).toEqual(["attack", "damage"]);
+    expect(combined.querySelector('[data-message-id="damage"] damage-application')).toBe(tray);
+    expect(tray.closest("[data-message-id]").dataset.messageId).toBe("damage");
+    expect(combined.querySelectorAll("button").length).toBe(2);
+    expect(combined.querySelector("select")).toBeNull();
+    expect(combined.querySelector(".rsr-native-controls")).toBeNull();
+    expect(html.querySelector('[data-action="rollDamage"]')).not.toBeNull();
+    expect(attack.message.delete).not.toHaveBeenCalled();
 });
-it('decorates saving-throw summaries with the real source ID', async () => {
- const source = { id:'save', type:'save', isContentVisible:true, rolls:[], flags:{} };
- game.messages.set('save', source);
- const html = document.createElement('li');
- html.innerHTML = '<div class="message-content"><div class="card-summary" data-message-id="save"><section class="icon-row"><button class="dice-roll"></button><div class="roll-breakdown"></div></section></div></div>';
- await renderer.renderNativeMessage({type:'usage',isContentVisible:true,flags:{}},html);
- expect(html.querySelector('.card-summary').dataset.rsrMessageId).toBe('save');
- expect(html.querySelector('.roll-breakdown').dataset.rsrRollIndex).toBe('0');
+
+it("replaces a previous fold-in instead of stacking a second one", async () => {
+    const attack = nativeChild("attack", "attack", '<button class="dice-roll"></button>');
+    const parent = usageParent([attack.message]);
+    const html = usageHtml();
+
+    await renderer.renderNativeMessage(parent, html);
+    await renderer.renderNativeMessage(parent, html);
+
+    expect(html.querySelectorAll(".rsr-native-combined")).toHaveLength(1);
 });
-it('masks native totals and breakdowns while retaining the configured natural d20', async () => {
- await setupFoundryEnv({settings:{hideNpcRollMode:'attacks',hideNpcRollStyle:'total',enableD20Icons:true}});
- game.user.isGM=false;
- const message = {type:'attack',isContentVisible:true,rolls:[],getAssociatedActor:()=>({isOwner:false})};
- const html=document.createElement('li');
- html.innerHTML='<div class="message-content"><button class="dice-roll"><span class="result"><strong class="total">22</strong></span><span class="d20die"><span class="roll">17</span></span></button><div class="roll-breakdown">Hidden modifier</div></div>';
- await renderer.renderNativeMessage(message,html);
- expect(html.querySelector('.result .total').textContent).toBe('?');
- expect(html.querySelector('.d20die .roll').textContent).toBe('17');
- expect(html.querySelector('.roll-breakdown')).toBeNull();
+
+it("keeps private children and save responses out of the combined card", async () => {
+    const hidden = { id: "hidden", type: "damage", visible: true, isContentVisible: false, renderHTML: vi.fn() };
+    const save = { id: "save", type: "save", visible: true, isContentVisible: true, renderHTML: vi.fn() };
+    const html = usageHtml();
+
+    await renderer.renderNativeMessage(usageParent([hidden, save]), html);
+
+    expect(hidden.renderHTML).not.toHaveBeenCalled();
+    expect(save.renderHTML).not.toHaveBeenCalled();
+});
+
+it("leaves usage cards that RSR did not manage and non-usage messages untouched", async () => {
+    const child = nativeChild("attack", "attack", '<button class="dice-roll"></button>');
+    const legacy = usageHtml();
+    await renderer.renderNativeMessage(usageParent([child.message], { flags: {} }), legacy);
+    expect(legacy.querySelector(".rsr-native-combined")).toBeNull();
+
+    const before = child.node.outerHTML;
+    await renderer.renderNativeMessage(child.message, child.node);
+    expect(child.node.outerHTML).toBe(before);
+});
+
+it("keeps the combined block hidden until Dice So Nice finishes the child's throw", async () => {
+    const attack = nativeChild("attack", "attack", '<button class="dice-roll"></button>');
+    attack.message._dice3danimating = true;
+    let finish;
+    game.dice3d = {
+        isEnabled: () => true,
+        waitFor3DAnimationByMessageID: vi.fn((id) => new Promise((resolve) => { finish = () => resolve(id); }))
+    };
+    const html = usageHtml();
+
+    const rendering = renderer.renderNativeMessage(usageParent([attack.message]), html);
+    await Promise.resolve();
+    await Promise.resolve();
+    const combined = html.querySelector(".rsr-native-combined");
+    expect(combined).not.toBeNull();
+    expect(combined.hidden).toBe(true);
+    expect(game.dice3d.waitFor3DAnimationByMessageID).toHaveBeenCalledWith("attack");
+
+    finish();
+    await rendering;
+    expect(combined.hidden).toBe(false);
+});
+
+it("reveals the combined block even if Dice So Nice never reports the throw complete", async () => {
+    vi.useFakeTimers();
+    try {
+        const attack = nativeChild("attack", "attack", '<button class="dice-roll"></button>');
+        attack.message._dice3danimating = true;
+        // A backgrounded tab or a Dice So Nice error: the completion hook never fires.
+        game.dice3d = { isEnabled: () => true, waitFor3DAnimationByMessageID: () => new Promise(() => {}) };
+        const html = usageHtml();
+
+        const rendering = renderer.renderNativeMessage(usageParent([attack.message]), html);
+        await vi.advanceTimersByTimeAsync(60_000);
+        await rendering;
+
+        expect(html.querySelector(".rsr-native-combined").hidden).toBe(false);
+    } finally {
+        vi.useRealTimers();
+    }
+});
+
+it("hides an original child card only while a fold-in represents it", () => {
+    const original = document.createElement("li");
+    original.className = "message";
+    original.dataset.messageId = "attack";
+    original.innerHTML = '<div class="message-content"><button class="dice-roll"></button></div>';
+    document.body.append(original);
+    const folded = document.createElement("li");
+    folded.className = "message rsr-native-source";
+    folded.dataset.messageId = "attack";
+    folded.dataset.rsrMessageId = "attack";
+    document.body.append(folded);
+    ui.chat.updateMessage = vi.fn();
+    game.messages.set("attack", { id: "attack" });
+
+    renderer.reconcileNativeSources();
+    expect(original.classList.contains("rsr-native-combined-original")).toBe(true);
+    expect(original.querySelector(".message-content").childNodes).toHaveLength(0);
+
+    folded.remove();
+    renderer.reconcileNativeSources();
+    expect(original.classList.contains("rsr-native-combined-original")).toBe(false);
+    expect(ui.chat.updateMessage).toHaveBeenCalledWith(game.messages.get("attack"));
+});
+
+it("re-renders a managed parent once for roll-only child updates", async () => {
+    const parent = { id: "parent", flags: { rsreforged: { workflowVersion: 2 } } };
+    game.messages.set("parent", parent);
+    ui.chat.updateMessage = vi.fn();
+    const child = { id: "child", system: { origin: parent } };
+
+    renderer.refreshNativeOrigin(child);
+    renderer.refreshNativeOrigin(child);
+    await Promise.resolve();
+
+    expect(ui.chat.updateMessage).toHaveBeenCalledTimes(1);
+    expect(ui.chat.updateMessage).toHaveBeenCalledWith(parent);
 });

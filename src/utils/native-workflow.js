@@ -1,9 +1,10 @@
 import { MODULE_SHORT } from '../module/const.js';
 import { ActivityUtility } from './activity.js';
 import { SettingsUtility, SETTING_NAMES } from './settings.js';
-import { CoreUtility } from './core.js';
 
 const pending = new Map();
+const ammunitionSnapshots = new WeakMap();
+
 export const NATIVE_ACTIVITY_TYPES = new Set(['attack', 'damage', 'heal', 'save', 'check', 'utility']);
 
 export function getNativeRollSources(parent) {
@@ -23,34 +24,109 @@ export function getUsageActivity(parent, activity = parent.getAssociatedActivity
     return resolved;
 }
 
-function messageConfig(parent, source = parent) {
-    return { create: true, rollMode: false, data: { whisper: [...(parent.whisper ?? [])], blind: parent.blind ?? false, system: { origin: parent.id, targets: foundry.utils.deepClone(source.system?.targets ?? parent.system?.targets ?? []) }, flags: {
-        [MODULE_SHORT]: { workflowVersion: 2, parentId: parent.id, quickRoll: true, processed: true }
-    } } };
+/**
+ * dnd5e fires `dnd5e.rollAttack` with the pending ammunition update before it deletes
+ * the final auto-destroyed unit. Because the workflow rolls with `create:false`, the
+ * registry lookup dnd5e uses to stash that unit's snapshot on the attack message cannot
+ * succeed, so the snapshot is recorded here and written into the attack data instead.
+ */
+export function recordAmmunitionSnapshot(activity, ammoUpdate, snapshot = () => activity?.actor?.items?.get(ammoUpdate.id)?.toObject()) {
+    if (!activity || !ammoUpdate?.destroy) return;
+    const data = snapshot();
+    if (data) ammunitionSnapshots.set(activity, data);
 }
 
-export function getNativeDamageConfig(parent, attack) {
-    const options = attack?.options ?? {};
-    const child = attack?.parent ?? getNativeRollSources(parent).filter(m => m.type === 'attack').at(-1);
-    const config = { ability: options.ability ?? child?.system?.ability, isCritical: attack?.isCritical ?? child?.rolls?.[0]?.isCritical ?? false };
-    const ammunition = child?.system?.ammunitionItem;
+function takeAmmunitionSnapshot(activity) {
+    const data = ammunitionSnapshots.get(activity);
+    ammunitionSnapshots.delete(activity);
+    return data;
+}
+
+const messageCaptures = new Map();
+let captureSequence = 0;
+
+/**
+ * dnd5e never mutates the message configuration a caller passes to a roll method: it
+ * merges it into its own object, and BasicRoll.buildPost assigns the fully prepared
+ * message source (type, speaker, rolls, system) to `data` on THAT object. With
+ * `create:false` the prepared source is therefore unreachable from the caller's side.
+ * `dnd5e.postRollConfiguration` receives dnd5e's internal object, so the reference is
+ * kept here, correlated by a token the seed carries in its module flags, and its `data`
+ * is read once the roll method resolves.
+ */
+export function captureNativeMessageConfig(message) {
+    const id = message?.data?.flags?.[MODULE_SHORT]?.nativeCaptureId;
+    if (id && messageCaptures.has(id)) messageCaptures.set(id, message);
+}
+
+/** Read and release the prepared message source for a seed; throws if dnd5e never prepared one. */
+function takePreparedData(seed) {
+    const id = seed.data.flags[MODULE_SHORT].nativeCaptureId;
+    const captured = messageCaptures.get(id);
+    messageCaptures.delete(id);
+    const data = captured?.data;
+    if (!data?.type || !data.rolls?.length) {
+        throw new Error("dnd5e did not provide a prepared roll message; nothing was created.");
+    }
+    delete data.flags?.[MODULE_SHORT]?.nativeCaptureId;
+    return data;
+}
+
+function releaseCapture(seed) {
+    messageCaptures.delete(seed.data.flags[MODULE_SHORT].nativeCaptureId);
+}
+
+function messageConfig(parent, seeds) {
+    const nativeCaptureId = `native-${++captureSequence}`;
+    messageCaptures.set(nativeCaptureId, null);
+    const seed = {
+        create: false,
+        rollMode: false,
+        data: {
+            whisper: [...(parent.whisper ?? [])],
+            blind: parent.blind ?? false,
+            system: { origin: parent.id, targets: foundry.utils.deepClone(parent.system?.targets ?? []) },
+            flags: { [MODULE_SHORT]: { workflowVersion: 2, parentId: parent.id, quickRoll: true, processed: true, nativeCaptureId } }
+        }
+    };
+    seeds.push(seed);
+    return seed;
+}
+
+function resolveAmmunition(actor, id, snapshot) {
+    if (!id) return undefined;
+    const live = actor?.items?.get?.(id);
+    if (live) return live;
+    if (snapshot?._id === id && globalThis.Item?.implementation) return new Item.implementation(snapshot, { parent: actor });
+    return undefined;
+}
+
+function damageConfig(parent, attack, snapshot) {
+    if (!attack) return {};
+    const options = attack.options ?? {};
+    const config = { isCritical: attack.isCritical === true };
+    if (options.ability) config.ability = options.ability;
+    if (options.attackMode) config.attackMode = options.attackMode;
+    const ammunition = resolveAmmunition(parent.getAssociatedActor?.(), options.ammunition, snapshot);
     if (ammunition) config.ammunition = ammunition;
-    const mode = options.attackMode ?? child?.system?.mode ?? parent.flags?.[MODULE_SHORT]?.attackMode;
-    if (mode) config.attackMode = mode;
     return config;
-}
-
-export async function runNativeDamage(parent, activity, attack) {
-    activity ??= getUsageActivity(parent);
-    if (!activity?.rollDamage || (!parent.isAuthor && !game.user.isGM && !parent.getAssociatedActor?.()?.isOwner)) return [];
-    const config = getNativeDamageConfig(parent, attack);
-    if (activity.getDamageConfig && !activity.getDamageConfig(config).rolls?.length) return [];
-    const source = getNativeRollSources(parent).filter(message => message.type === 'attack').at(-1) ?? parent;
-    return extractRolls(await activity.rollDamage(config, { configure: false }, messageConfig(parent, source)));
 }
 
 function extractRolls(result) {
     return ActivityUtility._extractRolls(result);
+}
+
+async function setState(parent, workflowState, extra = {}) {
+    await parent.update({ [`flags.${MODULE_SHORT}.workflowState`]: workflowState, ...extra });
+}
+
+/** Create every prepared native message in one batch so Dice So Nice animates them together. */
+async function createBatch(datas) {
+    if (!datas.length) return [];
+    // Explicit null, not delete: Foundry's ChatMessage#_preCreate restores the dice
+    // sound on any roll message whose data has no `sound` key at all.
+    datas.forEach((data, index) => { if (index > 0) data.sound = null; });
+    return ChatMessage.implementation.createDocuments(datas);
 }
 
 /** Called only after native usage finalization, never while rendering a document. */
@@ -61,12 +137,17 @@ export function runNativeUsage(activity, usageConfig, results) {
         || flags?.workflowVersion !== 2 || !flags.quickRoll) return Promise.resolve();
     if (pending.has(parent.id)) return pending.get(parent.id);
     if (flags.workflowState) return Promise.resolve(); // Never replay partially consumed work after reload.
+
     const execution = Promise.resolve().then(async () => {
-        await parent.update({ [`flags.${MODULE_SHORT}.workflowState`]: 'running' });
-        let produced = false;
+        await setState(parent, 'running');
+        // Prepared-but-uncreated message data. Anything here has already consumed its
+        // resources, so it is created even when a later step fails.
+        const prepared = [];
+        const seeds = [];
         try {
             const resolved = getUsageActivity(parent, activity);
-            let attacks = [];
+            let attack = null;
+            let snapshot;
             if (resolved.type === 'attack') {
                 const ammunition = ActivityUtility._resolveQuickRollAmmunition(resolved, parent);
                 const targets = parent.system?.targets;
@@ -77,61 +158,62 @@ export function runNativeUsage(activity, usageConfig, results) {
                     ...(ammunition !== undefined ? { ammunition } : {}),
                     ...(flags.attackMode ? { attackMode: flags.attackMode } : {})
                 };
-                attacks = extractRolls(await resolved.rollAttack(config, { configure: false }, messageConfig(parent)));
+                const attackMessage = messageConfig(parent, seeds);
+                const attacks = extractRolls(await resolved.rollAttack(config, { configure: false }, attackMessage));
+                snapshot = takeAmmunitionSnapshot(resolved);
                 if (!attacks.length) {
-                    await parent.update({ [`flags.${MODULE_SHORT}.workflowState`]: 'cancelled' });
+                    releaseCapture(attackMessage);
+                    await setState(parent, 'cancelled');
                     return;
                 }
+                attack = attacks[0];
+                const attackData = takePreparedData(attackMessage);
+                if (snapshot) {
+                    attackData.system ??= {};
+                    const deltas = attackData.system.deltas ?? {};
+                    attackData.system.deltas = { ...deltas, deleted: [...(deltas.deleted ?? []), snapshot] };
+                }
+                prepared.push(attackData);
             }
-            produced = attacks.length > 0;
+
             const manual = SettingsUtility.getSettingValue(SETTING_NAMES.MANUAL_DAMAGE_MODE);
             const deferDamage = resolved.type !== 'heal' && (manual === 2 || (manual === 1 && resolved.type === 'attack'));
-            if (!deferDamage && resolved.rollDamage && resolved.getDamageConfig?.(getNativeDamageConfig(parent, attacks[0])).rolls?.length) {
-                const damage = await runNativeDamage(parent, resolved, attacks[0]);
+            const config = damageConfig(parent, attack, snapshot);
+            if (!deferDamage && resolved.rollDamage && resolved.getDamageConfig?.(config).rolls?.length) {
+                const damageMessage = messageConfig(parent, seeds);
+                const damage = extractRolls(await resolved.rollDamage(config, { configure: false }, damageMessage));
                 if (!damage.length) {
-                    await parent.update({ [`flags.${MODULE_SHORT}.workflowState`]: produced ? 'partial' : 'cancelled' });
+                    releaseCapture(damageMessage);
+                    await createBatch(prepared);
+                    await setState(parent, prepared.length ? 'partial' : 'cancelled');
                     return;
                 }
-                produced = true;
+                prepared.push(takePreparedData(damageMessage));
             }
+
             if (resolved.type === 'utility' && resolved.rollFormula && resolved.roll?.formula) {
-                const formula = extractRolls(await resolved.rollFormula({}, { configure: false }, messageConfig(parent)));
+                const formulaMessage = messageConfig(parent, seeds);
+                const formula = extractRolls(await resolved.rollFormula({}, { configure: false }, formulaMessage));
                 if (!formula.length) {
-                    await parent.update({ [`flags.${MODULE_SHORT}.workflowState`]: produced ? 'partial' : 'cancelled' });
+                    releaseCapture(formulaMessage);
+                    await createBatch(prepared);
+                    await setState(parent, prepared.length ? 'partial' : 'cancelled');
                     return;
                 }
-                produced = true;
+                prepared.push(takePreparedData(formulaMessage));
             }
-            await parent.update({ [`flags.${MODULE_SHORT}.workflowState`]: 'complete', [`flags.${MODULE_SHORT}.processed`]: true });
+
+            await createBatch(prepared);
+            await setState(parent, 'complete', { [`flags.${MODULE_SHORT}.processed`]: true });
         } catch (error) {
-            await parent.update({ [`flags.${MODULE_SHORT}.workflowState`]: produced || getNativeRollSources(parent).length ? 'partial' : 'failed' });
+            const created = await createBatch(prepared).catch(() => []);
+            await setState(parent, created.length || getNativeRollSources(parent).length ? 'partial' : 'failed');
             throw error;
+        } finally {
+            // A roll that threw never reached takePreparedData; drop its token.
+            seeds.forEach(releaseCapture);
         }
     }).finally(() => pending.delete(parent.id));
     pending.set(parent.id, execution);
     return execution;
-}
-
-export async function updateNativeRolls(message, rolls) {
-    if (!message || (!message.isAuthor && !game.user.isGM)) return;
-    await message.update({ rolls: CoreUtility.serializeRolls(rolls) });
-}
-
-const preparingAlternates = new Set();
-/** Optional extra d20s are prepared once at document creation, never at render. */
-export async function seedNativeAlternates(message) {
-    if (!message.isAuthor || !message.flags?.[MODULE_SHORT]?.quickRoll
-        || !SettingsUtility.getSettingValue(SETTING_NAMES.ALWAYS_ROLL_MULTIROLL)
-        || preparingAlternates.has(message.id)) return;
-    const roll = message.rolls?.[0];
-    const die = roll?.dice?.find(d => d.faces === 20);
-    if (!(roll instanceof CONFIG.Dice.D20Roll) || !die || die.number !== 1 || roll.hasAdvantage || roll.hasDisadvantage || roll.options.rsreforgedAlternates) return;
-    preparingAlternates.add(message.id);
-    try {
-        const count = roll.options.elvenAccuracy ? 2 : 1;
-        const extra = await new Roll(`${count}d20${die.modifiers.join('')}`).evaluate();
-        const rolls = message.rolls.map(r => Roll.fromData(foundry.utils.deepClone(r.toJSON())));
-        rolls[0].options.rsreforgedAlternates = extra.dice[0].results;
-        await updateNativeRolls(message, rolls);
-    } finally { preparingAlternates.delete(message.id); }
 }

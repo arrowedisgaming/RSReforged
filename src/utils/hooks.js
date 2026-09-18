@@ -9,10 +9,8 @@ import { KEYBIND_VERSATILE_TWO_HANDED, ROLL_TYPE, RollUtility } from "./roll.js"
 import { SETTING_NAMES, SettingsUtility, HIDE_NPC_ROLL_MODES } from "./settings.js";
 
 import { usesNativeWorkflow, getOriginId } from "./dnd5e-compat.js";
-import { NATIVE_ACTIVITY_TYPES, runNativeUsage, seedNativeAlternates } from "./native-workflow.js";
+import { NATIVE_ACTIVITY_TYPES, runNativeUsage, recordAmmunitionSnapshot, captureNativeMessageConfig } from "./native-workflow.js";
 import { renderNativeMessage, refreshNativeOrigin, reconcileNativeSources } from "./native-render.js";
-
-const localCreationToken = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
 export const HOOKS_CORE = { INIT: "init", READY: "ready" }
 
@@ -26,6 +24,7 @@ export const HOOKS_DND5E = {
     PRE_ROLL_DAMAGE: "dnd5e.preRollDamage",
     PRE_USE_ACTIVITY: "dnd5e.preUseActivity",
     POST_USE_ACTIVITY: "dnd5e.postUseActivity",
+    ROLL_ATTACK: "dnd5e.rollAttack",
     ACTIVITY_CONSUMPTION: "dnd5e.activityConsumption",
     DISPLAY_CARD: "dnd5e.displayCard",
     RENDER_CHAT_MESSAGE: "dnd5e.renderChatMessage",
@@ -142,6 +141,13 @@ export class HooksUtility {
                 .catch(error => LogUtility.logError(`Native quick roll failed: ${error.message}`));
         });
 
+        // dnd5e 6: fires with the pending ammunition update before the final
+        // auto-destroyed unit is deleted. The native workflow rolls with create:false,
+        // so the snapshot dnd5e would stash on the attack message is recorded here.
+        Hooks.on(HOOKS_DND5E.ROLL_ATTACK, (rolls, { subject, ammoUpdate } = {}) => {
+            if (usesNativeWorkflow()) recordAmmunitionSnapshot(subject, ammoUpdate);
+        });
+
         Hooks.on(HOOKS_DND5E.PRE_ROLL_ATTACK, (config, dialog, message) => {
             if (
                 !SettingsUtility.getSettingValue(SETTING_NAMES.QUICK_ACTIVITY_ENABLED)
@@ -176,6 +182,9 @@ export class HooksUtility {
         // false — dnd5e treats that as a veto and cancels the roll.
         Hooks.on(HOOKS_DND5E.POST_ROLL_CONFIGURATION, (rolls, config, dialog, message) => {
             ActivityUtility.captureRollMessageConfig(message);
+            // dnd5e 6: `message` is dnd5e's own object, the only place the prepared
+            // message source lands when the native workflow rolls with create:false.
+            captureNativeMessageConfig(message);
         });
 
         Hooks.on(HOOKS_DND5E.PRE_ROLL_DAMAGE, (config, dialog, message) => {
@@ -239,18 +248,11 @@ export class HooksUtility {
     static registerChatHooks() {
         LogUtility.log("Registering chat hooks");
 
-        Hooks.on("createChatMessage", (message, options = {}, userId) => {
-            if (userId !== game.user.id || options.rsreforgedInitiator !== localCreationToken) return;
-            if (usesNativeWorkflow()) seedNativeAlternates(message)
-                .catch(error => LogUtility.logError(`Additional d20 preparation failed: ${error.message}`));
-        });
-
         Hooks.on("preCreateChatMessage", (message, data, options, userId) => {
             if (userId !== game.user.id) return;
-            if (usesNativeWorkflow()) {
-                options.rsreforgedInitiator = localCreationToken;
-                return;
-            }
+            // dnd5e 6: native typed messages are created as dnd5e prepared them; the
+            // legacy Die rewrite and usage flagging below belong to the 5.3 workflow.
+            if (usesNativeWorkflow()) return;
 
             // Forward-compat hygiene: dnd5e 5.3's D20Roll constructs its d20 term using
             // Foundry's legacy `Die` class, while Foundry V14 canonicalises on `BasicDie`

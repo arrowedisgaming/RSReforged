@@ -147,21 +147,6 @@
             "damageType": "Damage type:",
             "randomType": "Random type: {types}",
             "fixedType": "{type} damage"
-        },
-        "native": {
-            "Advantage": "Advantage",
-            "Disadvantage": "Disadvantage",
-            "Add Bonus": "Add Bonus",
-            "Roll Damage": "Roll Damage",
-            "Damage type": "Damage type",
-            "Apply": "Apply",
-            "Half": "Half",
-            "Double": "Double",
-            "Heal": "Heal",
-            "Temp HP": "Temp HP",
-            "Critical": "Critical",
-            "Normal Damage": "Normal Damage",
-            "Quarter": "Quarter"
         }
     }
 }

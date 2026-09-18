@@ -240,6 +240,22 @@ export async function setupFoundryEnv(options = {}) {
             return foundry.utils.deepClone(this._source);
         }
 
+        // Foundry resolves the configured document class through `implementation`;
+        // the test double is its own implementation.
+        static get implementation() {
+            return TestChatMessage;
+        }
+
+        // Batch creation double: one call, documents created in the given order.
+        // Tests inspect the created documents (registered in game.messages) and the
+        // spy's call list to assert batching.
+        static async createDocuments(dataArray = [], options = {}) {
+            TestChatMessage.createDocumentCalls.push({ dataArray: foundry.utils.deepClone(dataArray), options });
+            return dataArray.map((data) => new TestChatMessage(foundry.utils.deepClone(data)));
+        }
+
+        static createDocumentCalls = [];
+
         async renderHTML() {
             const rollHtml = this.rolls.map((roll) => renderRollHtml(roll)).join("");
             // dnd5e 5.3.1+ injects a native damage-application tray into any message

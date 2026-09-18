@@ -125,21 +125,6 @@
             "damageType": "Type de dégâts :",
             "randomType": "Type aléatoire : {types}",
             "fixedType": "Dégâts de {type}"
-        },
-        "native": {
-            "Advantage": "Avantage",
-            "Disadvantage": "Désavantage",
-            "Add Bonus": "Ajouter un bonus",
-            "Roll Damage": "Lancer les dégâts",
-            "Damage type": "Type de dégâts",
-            "Apply": "Appliquer",
-            "Half": "Moitié",
-            "Double": "Double",
-            "Heal": "Soigner",
-            "Temp HP": "PV temporaires",
-            "Critical": "Critique",
-            "Normal Damage": "Dégâts normaux",
-            "Quarter": "Quart"
         }
     }
 }

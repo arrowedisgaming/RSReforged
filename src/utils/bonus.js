@@ -93,7 +93,7 @@ export class BonusManager {
         });
     }
 
-    static async openBonusDialog(message, type, rollIndex) {
+    static async openBonusDialog(message, type) {
         // Use ChatUtility.getActorFromMessage for consistent, null-safe actor resolution
         // that correctly handles unlinked token actors (same fix as was applied in chat.js).
         const actor = ChatUtility.getActorFromMessage(message);
@@ -128,7 +128,7 @@ export class BonusManager {
                 if (bonusDef) {
                     // Carry the resolved damage type (from a random/choice bonus) into apply.
                     if (result.damageType) bonusDef = { ...bonusDef, damageType: result.damageType };
-                    await this.applyBonus(message, type, bonusDef, actor, rollIndex);
+                    await this.applyBonus(message, type, bonusDef, actor);
                 }
             }
         }).render(true);
@@ -235,7 +235,7 @@ export class BonusManager {
         return { rawFormula, resolvedFormula, isOnce, consumeTarget, damageMode, damageTypeOptions };
     }
 
-    static async applyBonus(message, type, bonusDef, actor, rollIndex) {
+    static async applyBonus(message, type, bonusDef, actor) {
         try {
             if (bonusDef.consumeTarget) {
                 let itemToConsume = null;
@@ -268,7 +268,6 @@ export class BonusManager {
             let targetRollIndex = currentRolls.findIndex(r =>
                 type === "damage" ? r instanceof CONFIG.Dice.DamageRoll : r instanceof CONFIG.Dice.D20Roll
             );
-            if (Number.isInteger(rollIndex)) targetRollIndex = rollIndex;
             if (targetRollIndex === -1) targetRollIndex = currentRolls.length > 0 ? 0 : -1;
             if (targetRollIndex === -1) return ui.notifications.error("No roll found.");
 
@@ -303,7 +302,6 @@ export class BonusManager {
 
             const newRoll = TargetRollClass.fromTerms(newTerms);
             newRoll.options = foundry.utils.deepClone(originalRoll.options);
-            delete newRoll.options.rsreforgedCriticalBase;
             newRoll._total = originalRoll.total + bonusRoll.total;
             newRoll._evaluated = true; 
 

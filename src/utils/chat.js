@@ -4,7 +4,7 @@ import { TEMPLATE } from "../module/templates.js";
 import { ActivityUtility } from "./activity.js";
 import { CoreUtility } from "./core.js";
 import { DialogUtility } from "./dialog.js";
-import { getRollType, usesNativeWorkflow } from "./dnd5e-compat.js";
+import { getRollType } from "./dnd5e-compat.js";
 import { LogUtility } from "./log.js";
 import { RenderUtility } from "./render.js";
 import { ROLL_STATE, ROLL_TYPE, RollUtility } from "./roll.js";
@@ -201,15 +201,6 @@ export class ChatUtility {
 
     static async updateChatMessage(message, update = {}, context = {}) {
         if (message instanceof ChatMessage) {
-            if (usesNativeWorkflow() && NATIVE_ROLL_MESSAGE_TYPES.has(message.type)) {
-                const cached = update.flags?.[MODULE_SHORT]?.rolls;
-                if (cached) {
-                    update.rolls ??= cached;
-                    update.flags = foundry.utils.deepClone(update.flags);
-                    delete update.flags[MODULE_SHORT].rolls;
-                    update.flags[MODULE_SHORT]['-=rolls'] = null;
-                }
-            }
             if (update.rolls && Array.isArray(update.rolls)) {
                 update.rolls = CoreUtility.serializeRolls(update.rolls);
             }

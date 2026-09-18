@@ -183,15 +183,11 @@ export class RollUtility {
         if (!(roll.hasAdvantage || roll.hasDisadvantage)) {
             const forcedDiceCount = roll.options.elvenAccuracy ? 3 : 2;
             const d20BaseTerm = roll.terms.find(d => d.faces === 20);
-            const saved = roll.options.rsreforgedAlternates;
-            const d20Additional = saved ? { dice: [{ results: foundry.utils.deepClone(saved) }] }
-                : await new Roll(`${forcedDiceCount - d20BaseTerm.number}d20${d20BaseTerm.modifiers.join('')}`).evaluate();
+            const d20Additional = await new Roll(`${forcedDiceCount - d20BaseTerm.number}d20${d20BaseTerm.modifiers.join('')}`).evaluate();
 
-            if (!saved) await CoreUtility.tryRollDice3D(d20Additional);
-            delete roll.options.rsreforgedAlternates;
+            await CoreUtility.tryRollDice3D(d20Additional);
 
-            const d20Forced = new d20BaseTerm.constructor({
-                ...d20BaseTerm.toJSON(),
+            const d20Forced = new foundry.dice.terms.Die({
                 number: forcedDiceCount,
                 faces: 20,
                 results: [...d20BaseTerm.results, ...d20Additional.dice[0].results],
@@ -237,7 +233,6 @@ export class RollUtility {
             ? CONFIG.Dice.D20Roll.ADV_MODE.ADVANTAGE 
             : CONFIG.Dice.D20Roll.ADV_MODE.DISADVANTAGE;
 
-        if (d20BaseTerm.options) d20BaseTerm.options.advantageMode = upgradedRoll.options.advantageMode;
         RollUtility.resetRollGetters(upgradedRoll);
         return upgradedRoll;
     }

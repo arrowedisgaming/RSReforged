@@ -3,6 +3,7 @@ import { ChatUtility } from "./chat.js";
 import { CoreUtility } from "./core.js";
 import { LogUtility } from "./log.js";
 import { SETTING_NAMES, SettingsUtility } from "./settings.js";
+import { usesNativeWorkflow } from "./dnd5e-compat.js";
 
 /**
  * Utility class to handle rerolling and fudging individual dice on the canvas.
@@ -11,10 +12,14 @@ export class RerollManager {
     static registerGlobalListener() {
         // FIX: Broadened the selector from '.roll.die' to '.roll' to catch 5e damage dice templates
         $(document).on("mousedown", ".dice-tooltip .dice-rolls .roll", (event) => {
+            // dnd5e 6 keeps these classes inside its roll breakdown, so this listener
+            // still matches there. Rerolls persist through the legacy flag cache, which
+            // native cards never read, so stay out until native rerolls are restored.
+            if (usesNativeWorkflow()) return;
             if (!SettingsUtility.getSettingValue(SETTING_NAMES.REROLL_EVERYONE)) return;
             
             const dieElement = $(event.currentTarget);
-            const messageElement = dieElement.closest("[data-rsr-message-id], .chat-message");
+            const messageElement = dieElement.closest(".chat-message");
             const messageId = messageElement.data("messageId");
             const message = game.messages.get(messageId);
 
@@ -62,7 +67,6 @@ export class RerollManager {
         targetTerm.results[resultIndex].result = newResult.result;
         this._recalculateModifiers(targetTerm);
         targetRoll._total = targetRoll._evaluateTotal();
-        delete targetRoll.options.rsreforgedCriticalBase;
 
         _persistRolls(message, rolls);
 
@@ -148,7 +152,6 @@ export class RerollManager {
         targetTerm.results[resultIndex].result = newVal;
         this._recalculateModifiers(targetTerm);
         targetRoll._total = targetRoll._evaluateTotal();
-        delete targetRoll.options.rsreforgedCriticalBase;
 
         _persistRolls(message, rolls);
     }
@@ -170,8 +173,7 @@ export class RerollManager {
 
         const diceRoll = dieElement.closest(".dice-roll");
         const allDiceRolls = dieElement.closest(".message-content").find(".dice-roll");
-        const sourceIndex = dieElement.closest("[data-rsr-roll-index]").attr("data-rsr-roll-index");
-        const rollIndex = sourceIndex === undefined ? Math.max(0, allDiceRolls.index(diceRoll)) : Number(sourceIndex);
+        const rollIndex = Math.max(0, allDiceRolls.index(diceRoll));
 
         const resultIndex = dieElement.index();
 
