@@ -7,11 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.0] — 2026-09-18
+
+RSReforged's version number now tracks the dnd5e system: **RSReforged 6.x is for dnd5e 6.x.** dnd5e 6.0 replaced the chat-message model RSReforged was built on, so this is a deliberately small base release. RSReforged's own card controls return one feature at a time in later 6.x releases. Refs [#40](https://github.com/arrowedisgaming/RSReforged/issues/40).
+
+### Changed
+
+- **BREAKING: requires dnd5e 6.0 or newer**, and therefore Foundry VTT 14.367 or newer, which dnd5e 6 itself requires. If you are staying on dnd5e 5.3.x, stay on RSReforged 4.13.4 and do not accept this update. Foundry offers it with only a compatibility warning. Install 4.13.4 from `https://github.com/arrowedisgaming/RSReforged/releases/download/release-4.13.4/module.json`, or lock the module in *Add-on Modules*.
+
 ### Added
 
-- Local-test implementation for dnd5e 6 typed chat messages, preserving the existing 5.3 path. Quick activities create real native child rolls after consumption finalization; combined cards and save summaries route controls to those sources.
-- Native roll persistence for bonuses, rerolls, damage types, and retroactive advantage/critical damage. Damage application follows native aggregation and save outcomes, with selectable RSR or native controls.
-- Synthetic native fixtures, regression coverage, and a [local testing guide](docs/testing/dnd5e-6-local-testing.md). Live checks used Foundry 14.367 and dnd5e 6.0.1; broader version/integration certification remains pending. No manifest verification bump or release is included.
+- **Quick rolls on dnd5e 6.** One click rolls the attack and the damage together through dnd5e's own roll methods, after the activity's consumption is finalized. The resulting native messages are created in one batch, so Dice So Nice animates them as a single throw. They are folded into the usage card, their standalone cards are hidden, and the combined card reveals when the dice land. Everything inside the card is dnd5e's own markup, including its damage tray, so the result matches vanilla dnd5e with fewer clicks.
+- Healing and utility-formula activities quick-roll the same way. **Roll Damage Manually** rolls the attack alone and leaves dnd5e's own Damage button to roll the damage into the same card.
+- Quick rolls for ability checks, saving throws, skills, and tools skip the dnd5e dialog on dnd5e 6, including the *Advantage* and *Disadvantage* modifier keys.
+- The equipped-ammunition preference and the Versatile two-handed keybinding carry over. When the final unit of auto-destroying ammunition is fired, its snapshot is kept on the attack message so the damage roll still includes it.
+
+### Fixed
+
+- RSReforged's roll hooks no longer throw on dnd5e 6, where roll message configurations arrive without a `flags` object. That exception let dnd5e fall through to its default dialog and left chat cards half-rendered, as reported in [#40](https://github.com/arrowedisgaming/RSReforged/issues/40).
+
+### Not active yet on dnd5e 6
+
+These settings stay in *Module Settings* and keep their saved values, but have no effect in 6.0.0:
+
+- **Hide NPC Roll Results** and **Hidden Roll Style**. **NPC rolls are not masked by RSReforged in 6.0.0.** Use dnd5e's own *Attack Result Visibility* and *Challenge Visibility* options until this returns.
+- **Damage Apply UI**, **Always Show RSReforged Apply Buttons**, **RSReforged Apply Button Targets**. dnd5e's damage tray is always used.
+- **Enable Overlay Buttons**, **Confirm Retroactive Advantage**, **Confirm Retroactive Crits**.
+- **Always Roll Multiple Dice**.
+- **Show D20 Rolls for Quick Rolls**. dnd5e shows its own natural-d20 badge regardless.
+- **Enable Interactive Dice (Master Switch)**, **Allow Players to Reroll Their Own Dice**, **Allow GM Dice Fudging**, **Reroll Sound & Dice So Nice**, **Log Rerolls to Chat**.
+- **Use Vanilla Rolls with RSReforged Styling** still works as the master off switch, but adds no styling.
+
+Also not active yet: adding a bonus after the roll (including pre-defined bonuses on Active Effects), changing a damage type on the card, per-damage-type apply buttons, and the `rsreforged.*` Integration API hooks, which do not fire on dnd5e 6 cards in 6.0.0.
 
 ## [4.13.4] — 2026-07-27
 
@@ -334,7 +361,12 @@ The first RSReforged release. Forked from [MangoFVTT/fvtt-ready-set-roll-5e@v3.5
 - **MangoFVTT** — author and maintainer of upstream Ready Set Roll for D&D5e (the direct ancestor of this fork).
 - **RedReign** — author of the original [Better Rolls for 5e](https://github.com/RedReign/FoundryVTT-BetterRolls5e), which RSR is a rewrite of.
 
-[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.0...HEAD
+[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.0...HEAD
+[6.0.0]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.4...release-6.0.0
+[4.13.4]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.3...release-4.13.4
+[4.13.3]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.2...release-4.13.3
+[4.13.2]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.1...release-4.13.2
+[4.13.1]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.0...release-4.13.1
 [4.13.0]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.12.0...release-4.13.0
 [4.12.0]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.11.5...release-4.12.0
 [4.11.5]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.11.4...release-4.11.5

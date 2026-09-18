@@ -4,9 +4,9 @@ Branch: `codex/dnd5e-6-compatibility`
 
 Starting commit: `c3ba388`
 
-Installed test environment: Foundry **14.367**, dnd5e **6.0.1**
+Installed test environment: Foundry **14.367**, dnd5e **6.0.1**, Dice So Nice **6.2.9**
 
-Status: local test candidate, not a published or fully certified release.
+Status: release candidate for **RSReforged 6.0.0**, which requires dnd5e 6.0 or newer. RSReforged 4.13.4 remains the release for dnd5e 5.3.x.
 
 ## Use your Foundry installation
 
@@ -23,55 +23,84 @@ All implementation changes are local. The existing `.gitignore` edit is preserve
 
 To compare with the previous code, close/reload Foundry around switching back to your previous branch. Avoid switching while a workflow is running. The implementation commit can be revisited without losing the testing branch.
 
-## What changed
+## Scope: the base case
 
-- dnd5e 6 gets real native attack, damage, healing, and formula messages linked to a usage card. The 5.3 workflow remains separate.
-- Follow-up quick rolls start after usage finalization. Rendering and reloading do not trigger resource consumption or replay partially completed work.
-- Consumed resources, scaling, ammunition, attack ability/mode, target snapshots, and message privacy travel with the workflow.
-- Combined cards retain native child identity. Save/check summaries and editable dice resolve to their own source messages.
-- Advantage, bonuses, damage-type changes, rerolls, and critical promotion update native rolls. Damage uses either the native tray or RSR buttons according to settings.
-- Critical promotion retains the original dice and rolls only additions. Its original snapshot survives serialization for safe downgrade. Later edits invalidate downgrade rather than silently discarding those edits.
+The first implementation (`e4d7df1`) shipped the full feature set from the plan. After live
+feedback on 2026-09-17 it was cut back to a base case so the core behaviour can be verified
+on its own. RSReforged's own controls return later, one at a time, following the deferred
+list kept alongside the plan documents.
+
+What the base case does on dnd5e 6:
+
+- A quick activity use suppresses dnd5e's follow-up rolls, then, after usage finalization,
+  rolls the attack and damage through dnd5e's own `rollAttack` and `rollDamage` on the
+  consumed/scaled activity clone dnd5e itself would use.
+- Both rolls are prepared with `create: false` and the resulting native messages are created
+  in **one batch**. Dice So Nice merges throws queued in the same tick, so attack and damage
+  animate as a single throw and both cards stay hidden until the dice land.
+- The native attack, damage, healing, and formula children are folded into the usage card by
+  moving their live rendered nodes, tagged with their real message IDs. The standalone child
+  cards are hidden while the fold-in represents them. The combined block reveals when Dice So
+  Nice reports the throw complete.
+- Everything inside the card is dnd5e's own markup: its roll button and breakdown popover,
+  target rows, damage tray, and usage buttons. RSReforged only hides each child's duplicated
+  speaker line and item title.
+- If the final unit of auto-destroying ammunition is consumed, the deleted item snapshot dnd5e
+  would have stored on the attack message is captured from the `dnd5e.rollAttack` hook and
+  written into the attack data, so the damage roll and later lookups still resolve it.
+- Manual damage mode defers damage; dnd5e's own Damage button on the card rolls it and the
+  result folds in through its origin.
+- The clickable-dice reroll listener is switched off on dnd5e 6. dnd5e 6 kept core's
+  `.dice-tooltip .dice-rolls .roll` classes inside its breakdown, so the listener still
+  matched there and would have logged rerolls that never changed the card.
+- The 5.3 code path is still in the source but is no longer supported or tested by this
+  release. Foundry only warns on an unmet system requirement, so a 5.3 world that accepts the
+  update falls back to that path.
+
+What the base case does **not** do on dnd5e 6 (deferred on purpose): apply-damage buttons,
+damage type icons or cycling, retroactive advantage/disadvantage, critical promotion, add
+bonus, rerolls and fudge on folded dice, hidden NPC rolls, aggregate totals, extra d20
+seeding, and save/check summary decoration.
 
 ## Verified locally
 
-The live checks used a **disposable data directory**, copied dnd5e installation, and synthetic actors/items. Your campaign data was not changed.
+Automated: **343 tests across 24 files** pass (`npm test`). Coverage includes compatibility
+classification, safe flag initialization, batched native creation with origin and privacy
+forwarding, the ammunition snapshot, manual damage mode, cancellation and partial states,
+target snapshots including null AC, the fold-in leaving native markup untouched, hidden
+originals, the Dice So Nice reveal wait, and the roll-only parent refresh. The full existing
+5.3-oriented suite remains included.
+
+Live checks from the full implementation (`e4d7df1`, disposable data directory, synthetic
+actors) that still apply to the base case because the mechanism is unchanged:
 
 | Check | Observed result |
 |---|---|
 | Quick weapon use | One usage, one native attack, one native damage child; workflow completed |
 | Target identity | Actor and token UUIDs retained separately on attack and damage |
-| Retroactive advantage | Original d20 retained; native `D20Die` class retained; attack updated from 11 to 18 |
-| Bonus | Native attack increased from 18 to 20; no authoritative flag-roll cache |
 | Native damage component | Correct child ID; one connected component; Apply changed HP 100 → 93 for 7 damage |
-| Component reconnection | Initial separate experiment applied 10 damage once, then half damage once after moving the component again |
-| RSR damage | Half of 11 damage changed HP 100 → 95 using native actor calculation |
-| Critical persistence | Original d8 result 4 retained; total 7 → 11; serialized downgrade returned 7 |
-| Always Roll Multiple Dice | Primary 17 + 3 stayed 20; saved extra d20 15 was reused for retroactive advantage |
-| Save summary | Summary stamped with saving-throw child ID and its own advantage/bonus controls |
-| Damage UI setting | RSR controls present and native component absent in RSR mode; native component exercised separately |
-| Privacy | GM/blind/self children matched parent whisper/blind fields; separate player session showed no private GM parent cards or child results |
-| Reload | Message count stayed 20; completed workflow and edited totals remained unchanged |
-| Narrow chat | Card visually inspected at 292px width; no nested roll buttons |
+| Component reconnection | Applied 10 damage once, then half damage once after moving the component again |
+| Privacy | GM/blind/self children matched parent whisper/blind fields; a separate player session showed no private GM parent cards or child results |
+| Reload | Message count stayed 20; completed workflow remained unchanged |
 
-Automated regression coverage includes compatibility classification, safe flags, workflow cancellation/partial failures, target snapshots including null AC, native privacy forwarding, source routing, damage aggregation/save multipliers, and critical structures. The full existing 5.3-oriented test suite remains included. Final automated run: **348 tests passed across 25 files**. Syntax checks passed. Diff whitespace was checked with `core.whitespace=cr-at-eol` to retain the existing CRLF style in two files without unrelated formatting changes.
+Live checks of the base case itself (2026-09-18, Foundry 14.367, dnd5e 6.0.1, Dice So Nice 6.2.9):
 
-Raw synthetic observations are in `tests/fixtures/dnd5e-6/`. The newer `rsr-native-6.0.1.json` includes timestamp, browser, active modules, settings, source document, serialized rolls, and native critical sample outcomes. The older native-only fixture is retained unchanged.
+| Check | Observed result |
+|---|---|
+| Quick weapon attack | One Dice So Nice throw; one combined card with attack and damage |
+| Parity with vanilla | The combined card shows the same content as dnd5e with RSReforged disabled, reached in fewer clicks |
 
-## Priorities for your testing
+## Live checks pending for the base case
 
-1. Normal attack; Shift/dialog path; advantage/disadvantage shortcuts; manual damage modes; damage-only/healing/formula activities.
-2. Both damage UI modes, multiple damage types, changing a type, adding a bonus, and rerolling a die in the second damage part.
-3. Save activity with multiple targets; successful half/no-damage saves; same actor represented by two tokens; target changes while rolling.
-4. Final ammunition consumption, versatile weapons, upcasting, scaled healing, and features using `@consumed.hd`.
-5. Public/GM/blind/self rolls as GM and player, NPC hiding styles, old chat history, deleting a parent/child, chat pagination and popouts.
-6. Your normal cover, mastery, and Dice So Nice combinations. Midi-QOL remains outside the supported workflow combination.
+Run these on the 6.0.1 world before treating the base case as done:
 
-## Remaining release gates and known limits
-
-- The full live version matrix (5.3.0/5.3.3/6.0.0/6.0.1), complex resources, third-party integrations, and every activity type have **not** been certified. Automated tests are not a replacement for those checks.
-- The native renderer keeps individual damage parts available for editing beneath optional aggregate totals. “Always Roll Multiple Dice” stores supplementary d20 outcomes separately so the native normal-roll total remains authoritative; retroactive advantage consumes those saved outcomes.
-- Naturally critical native rolls have no saved noncritical result, so they do not offer downgrade. Unsupported critical expressions fail without changing the original roll. `(1d6 + 2) * 2` also triggered an immutable-roll error in the native system with RSReforged disabled; the fixture records that upstream behavior.
-- A workflow left `running`, `partial`, `cancelled`, or `failed` is never automatically replayed. Inspect its existing children and use the card's manual/native actions as appropriate.
-- Native post-use hooks are not awaited by the system. A later module's post-use veto cannot undo quick-roll work already dispatched; integration coordination still requires live verification.
-
-Report the activity/item, roll mode, module combination, expected result, observed result, and console error when something differs. Do not attach campaign exports to the synthetic fixture directory.
+1. Quick-roll a weapon attack with Dice So Nice enabled: **one** throw containing the d20 and
+   the damage dice, and the combined card reveals after the dice land.
+2. Quick-roll with Dice So Nice disabled: attack and damage appear together, one dice sound.
+3. The combined card shows dnd5e's attack button, breakdown popover, target row, and damage
+   tray; Apply on the tray changes HP once.
+4. Manual damage mode: attack only, then dnd5e's Damage button rolls damage and it folds in.
+5. Fire the last unit of an auto-destroying ammunition stack: the attack still shows the
+   ammunition and the damage roll includes its bonus.
+6. A second client sees the same single combined card and no stray standalone child cards.
+7. A 5.3 world still behaves as before.

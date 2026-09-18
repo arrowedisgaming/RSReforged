@@ -37,9 +37,56 @@
 <p>RSReforged removes clicks from D&amp;D 5e rolls in Foundry VTT.</p>
 <ul>
 <li><strong>One-click rolls.</strong> Skill checks, saves, attacks, and damage go to chat without the usual dnd5e dialog.</li>
-<li><strong>Damage split by type.</strong> If an attack deals fire and cold, apply each to different tokens.</li>
-<li><strong>Edit rolls after they land.</strong> Turn a flat roll into advantage, promote a hit to a crit, or add a Bless die you forgot.</li>
+<li><strong>Damage split by type.</strong> If an attack deals fire and cold, apply each to different tokens. <em>Returning in a later 6.x release.</em></li>
+<li><strong>Edit rolls after they land.</strong> Turn a flat roll into advantage, promote a hit to a crit, or add a Bless die you forgot. <em>Returning in a later 6.x release.</em></li>
 </ul>
+<h2>Status on dnd5e 6</h2>
+<p>RSReforged&#39;s version number now tracks the dnd5e system: <strong>RSReforged 6.x is for dnd5e 6.x.</strong></p>
+<p>dnd5e 6.0 replaced the chat-message model RSReforged was built on, so 6.0.0 is a deliberately small base release. It does one thing well: <strong>one click rolls the attack and the damage together</strong>, as a single Dice So Nice throw, into one chat card. Everything inside that card is dnd5e&#39;s own markup, including its damage tray, so it looks and behaves exactly like vanilla dnd5e with fewer clicks. RSReforged&#39;s own card controls are coming back one feature at a time in later 6.x releases.</p>
+<h3>Working in 6.0.0</h3>
+<ul>
+<li><strong>Enable Quick Roll for Activities</strong> — one click rolls attack and damage (or healing, or a utility formula) into a single combined card, as one Dice So Nice throw.</li>
+<li><strong>Enable Quick Roll for Abilities / Skills / Tool Checks</strong> — skips the dnd5e roll dialog. Hold the <em>Advantage</em> or <em>Disadvantage</em> modifier to roll in that mode; hold <em>Skip Dialog</em> (Shift by default) to get the normal dialog for one roll.</li>
+<li><strong>Use Vanilla Rolls with RSReforged Styling</strong> — works as the master off switch for quick rolls. It adds no styling in 6.0.0.</li>
+<li><strong>Roll Damage Manually</strong> — the attack rolls alone; dnd5e&#39;s own Damage button on the card rolls the damage, and the result joins the same card.</li>
+<li><strong>Aggregate Damage Fields</strong> — applied through dnd5e&#39;s own damage display.</li>
+<li><strong>Equipped-ammunition preference</strong> and the <strong>Versatile two-handed keybinding</strong> (V by default).</li>
+</ul>
+<h3>Not active yet in 6.0.0</h3>
+<p>These settings are still listed in <em>Module Settings</em> and keep their saved values, but they have <strong>no effect on dnd5e 6 yet</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>What happens instead in 6.0.0</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Hide NPC Roll Results</strong>, <strong>Hidden Roll Style</strong></td>
+<td><strong>NPC rolls are not masked by RSReforged.</strong> If you rely on this, use dnd5e&#39;s own <em>Attack Result Visibility</em> and <em>Challenge Visibility</em> options (dnd5e system settings, <em>Visibility</em>) until it returns.</td>
+</tr>
+<tr>
+<td><strong>Damage Apply UI</strong>, <strong>Always Show RSReforged Apply Buttons</strong>, <strong>RSReforged Apply Button Targets</strong></td>
+<td>dnd5e&#39;s damage tray is always used.</td>
+</tr>
+<tr>
+<td><strong>Enable Overlay Buttons</strong>, <strong>Confirm Retroactive Advantage</strong>, <strong>Confirm Retroactive Crits</strong></td>
+<td>No retroactive advantage, disadvantage, or critical on the card.</td>
+</tr>
+<tr>
+<td><strong>Always Roll Multiple Dice</strong></td>
+<td>Only the dice the roll needs are rolled.</td>
+</tr>
+<tr>
+<td><strong>Show D20 Rolls for Quick Rolls</strong></td>
+<td>dnd5e shows its own natural-d20 badge regardless.</td>
+</tr>
+<tr>
+<td><strong>Enable Interactive Dice (Master Switch)</strong>, <strong>Allow Players to Reroll Their Own Dice</strong>, <strong>Allow GM Dice Fudging</strong>, <strong>Reroll Sound &amp; Dice So Nice</strong>, <strong>Log Rerolls to Chat</strong></td>
+<td>Clicking a die in the breakdown does nothing.</td>
+</tr>
+</tbody></table>
+<p>Features without a setting that are also not active yet: <strong>Add a bonus after the roll</strong> (including pre-defined bonuses on Active Effects), <strong>changing a damage type on the card</strong>, <strong>per-damage-type apply buttons</strong>, and the <strong><code>rsreforged.*</code> Integration API hooks</strong>, which do not fire on dnd5e 6 cards in 6.0.0.</p>
 <h2>Compatibility</h2>
 <table>
 <thead>
@@ -51,16 +98,41 @@
 </thead>
 <tbody><tr>
 <td>Foundry VTT</td>
-<td><strong>14</strong></td>
+<td><strong>14.367</strong></td>
 <td>14.539</td>
 </tr>
 <tr>
 <td>dnd5e system</td>
-<td><strong>5.3.0</strong></td>
-<td>5.3.0</td>
+<td><strong>6.0.0</strong></td>
+<td>6.0.1</td>
 </tr>
 </tbody></table>
-<p><strong>RSReforged does not work on Foundry v13</strong> or <strong>dnd5e 5.0–5.2</strong>. If you&#39;re on those versions, stay on <a href="https://github.com/MangoFVTT/fvtt-ready-set-roll-5e/releases/tag/release-3.5.0">upstream RSR v3.5.0</a> until you upgrade.</p>
+<p><strong>RSReforged 6.x requires dnd5e 6.0 or newer.</strong> Pick the version that matches your system:</p>
+<table>
+<thead>
+<tr>
+<th>Your dnd5e version</th>
+<th>Use</th>
+<th>Manifest URL</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>6.0 and newer</strong></td>
+<td>RSReforged 6.x (latest)</td>
+<td><code>https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/module.json</code></td>
+</tr>
+<tr>
+<td><strong>5.3.x</strong></td>
+<td>RSReforged 4.13.4 (full feature set, no further updates)</td>
+<td><code>https://github.com/arrowedisgaming/RSReforged/releases/download/release-4.13.4/module.json</code></td>
+</tr>
+<tr>
+<td><strong>5.0–5.2</strong>, or Foundry v13</td>
+<td><a href="https://github.com/MangoFVTT/fvtt-ready-set-roll-5e/releases/tag/release-3.5.0">upstream RSR v3.5.0</a></td>
+<td>—</td>
+</tr>
+</tbody></table>
+<p>If you are staying on dnd5e 5.3.x, <strong>do not update RSReforged past 4.13.4</strong>. Foundry will offer 6.0.0 as an update and only shows a compatibility warning; it does not stop you. RSReforged 6.x is not tested or supported on dnd5e 5.3. Lock the module in <em>Add-on Modules</em> (the padlock icon), or reinstall from the 4.13.4 manifest URL above.</p>
 <p>RSReforged also conflicts with other modules that overhaul the dnd5e roll pipeline, most notably <a href="https://gitlab.com/tposney/midi-qol">Midi-QOL</a>. They will fight each other in unpredictable ways. Pick one.</p>
 <p>Modules that <strong>decorate</strong> chat cards (rather than rewriting the roll pipeline) — Automated Conditions 5e, Automated Weapon Masteries 5e, and similar — can coexist with RSReforged by listening to the <a href="https://github.com/arrowedisgaming/RSReforged#integration-api-for-module-authors">Integration API</a> hooks instead of Foundry&#39;s <code>renderChatMessageHTML</code>. Upstream support depends on those modules adopting the hooks.</p>
 <h2>Install</h2>
@@ -69,6 +141,9 @@
 </code></pre>
 <p>Click <em>Install</em>. Foundry downloads the latest release and adds RSReforged to your module list.</p>
 <h2>Features</h2>
+<blockquote>
+<p>On dnd5e 6, only <strong>Quick rolls</strong> is active in 6.0.0. The other features below describe RSReforged 4.13.4 on dnd5e 5.3 and return in later 6.x releases. See <a href="#status-on-dnd5e-6">Status on dnd5e 6</a>.</p>
+</blockquote>
 <h3>Quick rolls</h3>
 <p>Skill checks, ability checks, saving throws, tool checks, and item activities all roll straight to chat without the standard dnd5e dialog. Each category can be toggled independently in the module settings, or disable everything in one place with the <em>Use Vanilla Rolls with RSReforged Styling</em> master switch at the top — when that&#39;s on, dnd5e&#39;s normal roll dialogs are used everywhere and the per-category toggles are ignored. Hold the dnd5e <em>Skip Dialog</em> modifier (Shift by default) to invert RSReforged&#39;s quick-roll default and use the normal dnd5e dialog for one roll.</p>
 <p>For weapons with the Ammunition property, quick rolls prefer the first available equipped ammunition item. When no ammunition is equipped, RSReforged reuses the last usable ammunition used for that weapon&#39;s attack, then falls back to the first available option. Hold the <strong>Skip Dialog</strong> modifier (Shift by default) to choose a different ammunition type for one attack; dnd5e records it as the last-used option.</p>
@@ -97,7 +172,7 @@
 <li><strong>Log Rerolls to Chat</strong> — post a public chat message announcing each reroll</li>
 </ul>
 <h2>Configuration</h2>
-<p>All settings live under <em>Configure Settings → Module Settings → RSReforged</em>. The ones worth knowing:</p>
+<p>All settings live under <em>Configure Settings → Module Settings → RSReforged</em>. Several have no effect on dnd5e 6 yet; see <a href="#status-on-dnd5e-6">Status on dnd5e 6</a> for the list. The ones worth knowing:</p>
 <ul>
 <li><strong>Quick Roll for {Skills, Abilities, Tools, Activities}</strong> — toggle each category independently</li>
 <li><strong>Always Roll Multiple Dice</strong> — show two d20s on every roll, not just advantage or disadvantage</li>
