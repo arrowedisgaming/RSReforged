@@ -95,7 +95,8 @@ async function _formulaSection(parent, child) {
         title: parent.flags?.[MODULE_SHORT]?.formulaName ?? CoreUtility.localize('DND5E.OtherFormula'),
         icon: '<i class="fas fa-dice"></i>'
     });
-    section.append(await _renderRoll(roll));
+    // A formula child can hold several rolls; its hidden original must not be their only view.
+    for (const each of child.rolls) section.append(await _renderRoll(each));
     return section;
 }
 
@@ -144,18 +145,21 @@ function _renderDamage(rolls) {
     const formula = parts.map(r => r.formula).join(aggregate ? '' : ' + ').replace(/^\s*\+\s*/, '');
     const total = parts.reduce((sum, r) => sum + Math.max(0, r.total), 0);
 
-    const breakdown = parts.map(roll => {
+    const breakdown = parts.map((roll, index) => {
         const { type, total, constant, dice, icon, method } = _simplifyDamageRoll(roll);
         const config = CONFIG.DND5E.damageTypes[type] ?? CONFIG.DND5E.healingTypes[type];
-        return `<section class="tooltip-part"><div class="dice">
-            ${icon ? `<span class="part-method" data-tooltip aria-label="${CoreUtility.localize(method)}">${icon}</span>` : ''}
+        // Tells a part's apply buttons which rolls it shows: one roll, or every roll
+        // of its type once the display has merged them.
+        const source = aggregate ? '' : ` data-rsr-roll-index="${index}"`;
+        return `<section class="tooltip-part" data-rsr-damage-type="${_escape(type ?? '')}"${source}><div class="dice">
+            ${icon ? `<span class="part-method" data-tooltip aria-label="${_escape(CoreUtility.localize(method))}">${icon}</span>` : ''}
             <ol class="dice-rolls">
                 ${dice.map(({ result, classes }) => `<li class="roll ${classes}">${result}</li>`).join('')}
                 ${constant ? `<li class="constant"><span class="sign">${constant < 0 ? '-' : '+'}</span>${Math.abs(constant)}</li>` : ''}
             </ol>
             <div class="total">
-                ${config ? `<img src="${config.icon}" alt="${config.label}">` : ''}
-                <span class="label">${config?.labelShort ?? config?.label ?? ''}</span>
+                ${config ? `<img src="${_escape(config.icon)}" alt="${_escape(config.label)}">` : ''}
+                <span class="label">${_escape(config?.labelShort ?? config?.label ?? '')}</span>
                 <span class="value">${total}</span>
             </div>
         </div></section>`;
@@ -169,6 +173,13 @@ function _renderDamage(rolls) {
     </div>`;
     root.querySelector('.dice-formula').textContent = formula;
     return root;
+}
+
+/** Damage types can be registered by other modules; dnd5e 6's own template escapes them. */
+function _escape(value) {
+    const text = document.createElement('span');
+    text.textContent = String(value);
+    return text.innerHTML.replaceAll('"', '&quot;');
 }
 
 /** dnd5e 5.3's `ChatMessage5e#_simplifyDamageRoll`, unchanged in behaviour. */

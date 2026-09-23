@@ -249,11 +249,8 @@ export class ChatUtility {
         await _injectApplyDamageButtons(message, html);
 
         const rsrApplyActions = '[data-action="rsr-apply-damage"], [data-action="rsr-apply-temp"]';
-        html.find('.rsr-damage-buttons').find(rsrApplyActions).click(async event => {
-            await _processApplyButtonEvent(message, event);
-        });
-        html.find('.rsr-damage-buttons-xl').find(rsrApplyActions).click(async event => {
-            await _processApplyTotalButtonEvent(message, event);
+        html.find('.rsr-damage-buttons, .rsr-damage-buttons-xl').find(rsrApplyActions).click(async event => {
+            await _processNativeApplyEvent(message, event);
         });
     }
 
@@ -1232,26 +1229,7 @@ async function _processApplyButtonEvent(message, event) {
 
     const damage = _getApplyDamage(message, dice, multiplier);
 
-    // These are invariant across targets — compute once instead of per-token. The
-    // multiplier MAGNITUDE is what applyDamage scales by; heal-vs-damage direction
-    // is carried by the damage type / the only:"healing" option, not the sign (the
-    // total-button path already passes the magnitude, so the two paths now match).
-    const applyAsTempHP = _shouldApplyAsTempHP(action, [damage]);
-    const tempHPValue = Math.floor(damage.value * Math.abs(multiplier));
-    const applyOptions = _getApplyDamageOptions(message, [damage], Math.abs(multiplier), multiplier < 0);
-
-    await Promise.all(Array.from(targets).map(async t => {
-        const target = t.actor;
-        return applyAsTempHP
-            ? await target.applyTempHP(tempHPValue)
-            : await target.applyDamage([ damage ], applyOptions);
-    }));
-
-    setTimeout(() => {
-        if (canvas.hud.token._displayState && canvas.hud.token._displayState !== 0) {
-            canvas.hud.token.render();
-        }
-    }, 50);
+    await _applyDamagesToTargets(message, action, multiplier, [ damage ], targets);
 }
 
 async function _processApplyTotalButtonEvent(message, event) {
@@ -1279,7 +1257,56 @@ async function _processApplyTotalButtonEvent(message, event) {
         damages.push(_getApplyDamage(message, $(el), multiplier, damageRolls));
     })
 
-    // Invariant across targets — compute once instead of per-token.
+    await _applyDamagesToTargets(message, action, multiplier, damages, targets);
+}
+
+/**
+ * dnd5e 6: apply from a native damage child's rolls rather than the rendered totals.
+ * Like dnd5e's own tray, rolls are grouped by type AND properties, so a magical and a
+ * nonmagical slashing part keep their own resistance handling. A per-part button
+ * applies the rolls its part shows: one roll, or every roll of the part's type when
+ * the display aggregates by type.
+ */
+async function _processNativeApplyEvent(message, event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const button = event.currentTarget;
+    const action = button.dataset.action;
+    const multiplier = Number(button.dataset.multiplier);
+
+    if (action !== "rsr-apply-damage" && action !== "rsr-apply-temp") return;
+
+    const targets = CoreUtility.getCurrentTargets();
+
+    if (targets.size === 0) return;
+
+    let rolls = _getDamageRolls(message);
+    const part = button.closest('.tooltip-part');
+    if (part?.dataset.rsrRollIndex !== undefined) {
+        rolls = [rolls[Number(part.dataset.rsrRollIndex)]].filter(Boolean);
+    } else if (part) {
+        rolls = rolls.filter(roll => (roll.options?.type ?? "") === part.dataset.rsrDamageType);
+    }
+
+    const damages = dnd5e.dice.aggregateDamageRolls(rolls, { respectProperties: true }).map(roll => {
+        const type = roll.options?.type;
+        return {
+            value: Math.max(0, roll.total),
+            // Same heart-button rule as _getApplyDamage.
+            type: (multiplier < 0 && type !== "temphp" && type !== "maximum") ? "healing" : type,
+            properties: new Set(roll.options?.properties ?? [])
+        };
+    });
+    if (!damages.length) return;
+
+    await _applyDamagesToTargets(message, action, multiplier, damages, targets);
+}
+
+async function _applyDamagesToTargets(message, action, multiplier, damages, targets) {
+    // These are invariant across targets — compute once instead of per-token. The
+    // multiplier MAGNITUDE is what applyDamage scales by; heal-vs-damage direction
+    // is carried by the damage type / the only:"healing" option, not the sign.
     const applyAsTempHP = _shouldApplyAsTempHP(action, damages);
     const tempHPValue = Math.floor(damages.reduce((accumulator, currentValue) => accumulator + currentValue.value, 0) * Math.abs(multiplier));
     const applyOptions = _getApplyDamageOptions(message, damages, Math.abs(multiplier), multiplier < 0);
@@ -1292,7 +1319,7 @@ async function _processApplyTotalButtonEvent(message, event) {
     }));
 
     setTimeout(() => {
-        if (canvas.hud.token._displayState && canvas.hud.token._displayState !== 0) {
+        if (canvas.hud?.token?._displayState && canvas.hud.token._displayState !== 0) {
             canvas.hud.token.render();
         }
     }, 50);

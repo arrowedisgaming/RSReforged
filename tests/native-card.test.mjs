@@ -129,3 +129,60 @@ it("renders the attack section with RSR's total inside core's roll markup, colla
     expect(section.querySelector(".rsr-subtitle").textContent).toContain("Arrow");
     expect(roll.options.displayChallenge).toBe(true);
 });
+
+it("escapes damage-type labels and icons that another module registered", async () => {
+    CONFIG.DND5E.damageTypes.cursed = { label: 'Cursed"', labelShort: '<img src=x onerror="alert(1)">', icon: 'x" onerror="alert(1)' };
+
+    const section = await card.renderRsrSection(parent, child("dmg", "damage", [damageRoll("cursed", 3, 6)]));
+
+    const total = section.querySelector(".tooltip-part .total");
+    expect(total.querySelector(".label").textContent).toBe('<img src=x onerror="alert(1)">');
+    expect(total.querySelectorAll("img")).toHaveLength(1);
+    expect(total.querySelector("img").getAttribute("onerror")).toBeNull();
+    expect(total.querySelector("img").getAttribute("src")).toBe('x" onerror="alert(1)');
+});
+
+it("renders every roll of a formula child, since its original card is hidden", async () => {
+    const { BasicRoll } = env.classes;
+    const rolls = ["1d4", "1d6"].map((formula) => {
+        const roll = new BasicRoll(formula);
+        roll.render = async () => `<div class="dice-roll"><div class="dice-result"><div class="dice-formula">${formula}</div><div class="dice-tooltip"></div><h4 class="dice-total">1</h4></div></div>`;
+        return roll;
+    });
+
+    const section = await card.renderRsrSection(parent, child("formula", "generic", rolls));
+
+    expect([...section.querySelectorAll(".dice-formula")].map((node) => node.textContent)).toEqual(["1d4", "1d6"]);
+});
+
+it("applies a native damage part with its own properties, like dnd5e's tray", async () => {
+    const actor = { applyDamage: vi.fn(async () => {}), applyTempHP: vi.fn(async () => {}) };
+    canvas.tokens.controlled = [{ actor }];
+    const magical = damageRoll("slashing", 7, 10, 3);
+    magical.options.properties = ["mgc"];
+    const mundane = damageRoll("slashing", 4, 6);
+    const aggregate = vi.fn((rolls) => rolls);
+    dnd5e.dice.aggregateDamageRolls = aggregate;
+
+    const section = await card.renderRsrSection(parent, child("dmg", "damage", [magical, mundane]));
+    document.body.append(section);
+
+    // The second part's own button applies only that roll, with no magical property.
+    section.querySelectorAll(".tooltip-part")[1].querySelector('[data-action="rsr-apply-damage"][data-multiplier="1"]').click();
+    await vi.waitFor(() => expect(actor.applyDamage).toHaveBeenCalledTimes(1));
+    expect(actor.applyDamage.mock.calls[0][0]).toEqual([{ value: 4, type: "slashing", properties: new Set() }]);
+
+    // The total button applies both, each keeping its properties.
+    section.querySelector('.rsr-damage-buttons-xl [data-action="rsr-apply-damage"][data-multiplier="1"]').click();
+    await vi.waitFor(() => expect(actor.applyDamage).toHaveBeenCalledTimes(2));
+    expect(actor.applyDamage.mock.calls[1][0]).toEqual([
+        { value: 10, type: "slashing", properties: new Set(["mgc"]) },
+        { value: 4, type: "slashing", properties: new Set() }
+    ]);
+    expect(aggregate).toHaveBeenLastCalledWith([magical, mundane], { respectProperties: true });
+
+    // The heart heals rather than damages.
+    section.querySelector('.rsr-damage-buttons-xl [data-action="rsr-apply-damage"][data-multiplier="-1"]').click();
+    await vi.waitFor(() => expect(actor.applyDamage).toHaveBeenCalledTimes(3));
+    expect(actor.applyDamage.mock.calls[2][0].map((damage) => damage.type)).toEqual(["healing", "healing"]);
+});
