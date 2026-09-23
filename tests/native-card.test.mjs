@@ -1,0 +1,131 @@
+import { beforeEach, it, expect, vi } from "vitest";
+import { setupFoundryEnv } from "./helpers/foundry-env.mjs";
+
+let env;
+let card;
+
+class NumericTerm {
+    constructor(number) {
+        this.number = number;
+    }
+
+    get total() {
+        return this.number;
+    }
+}
+
+class PoolTerm {}
+
+beforeEach(async () => {
+    vi.resetModules();
+    env = await setupFoundryEnv();
+    const { TestDie, D20Roll } = env.classes;
+    // dnd5e 5.3's damage breakdown walks real term classes and die tooltip data.
+    foundry.dice.terms.NumericTerm = NumericTerm;
+    foundry.dice.terms.DiceTerm = TestDie;
+    foundry.dice.terms.PoolTerm = PoolTerm;
+    TestDie.prototype.getTooltipData = function () {
+        return { rolls: this.results.map((r) => ({ result: r.result, classes: `d${this.faces}` })), icon: null, method: null };
+    };
+    // Foundry 14's core roll template, reduced to the structure the section reshapes.
+    D20Roll.prototype.render = async function () {
+        return `<div class="dice-roll" data-action="expandRoll"><div class="dice-result">
+            <div class="dice-formula">${this.formula}</div>
+            <div class="dice-tooltip"><div class="wrapper"><section class="tooltip-part">d20</section></div></div>
+            <h4 class="dice-total">${this.total}</h4></div></div>`;
+    };
+    CONFIG.DND5E.damageTypes.fire = { label: "Fire", labelShort: "Fire", icon: "systems/dnd5e/icons/svg/damage/fire.svg" };
+    CONFIG.DND5E.aggregateDamageDisplay = false;
+    game.settings.set("dnd5e", "attackRollVisibility", "all");
+    globalThis.dnd5e = { dice: { aggregateDamageRolls: (rolls) => rolls }, settings: {} };
+    card = await import("../src/utils/native-card.js");
+});
+
+function damageRoll(type, dieResult, faces, constant) {
+    const { DamageRoll, TestDie, OperatorTerm } = env.classes;
+    const roll = new DamageRoll(`1d${faces}${constant ? ` + ${constant}` : ""}`);
+    const die = new TestDie({ number: 1, faces, results: [{ result: dieResult, active: true }] });
+    roll.terms = constant ? [die, new OperatorTerm({ operator: "+" }), new NumericTerm(constant)] : [die];
+    roll.dice = [die];
+    roll.total = dieResult + (constant ?? 0);
+    roll.options.type = type;
+    return roll;
+}
+
+function child(id, type, rolls, system = {}) {
+    return { id, type, rolls, system, flags: {} };
+}
+
+const parent = { id: "parent", flags: { rsreforged: {} } };
+
+it("renders the 5.3 damage breakdown from a native damage child, one part per damage type", async () => {
+    const damage = child("dmg", "damage", [damageRoll("slashing", 7, 10, 3), damageRoll("fire", 6, 6)]);
+
+    const section = await card.renderRsrSection(parent, damage);
+
+    expect(section.dataset.messageId).toBe("dmg");
+    expect(section.querySelector(".rsr-section-damage")).not.toBeNull();
+    const parts = [...section.querySelectorAll(".rsr-damage .dice-tooltip .tooltip-part")];
+    expect(parts.map((part) => part.querySelector(".total .label").textContent)).toEqual(["Slashing", "Fire"]);
+    expect(parts.map((part) => part.querySelector(".total .value").textContent)).toEqual(["10", "6"]);
+    expect(parts[0].querySelector(".constant").textContent).toBe("+3");
+    expect(section.querySelector(".rsr-damage > .dice-total").textContent).toBe("16");
+    // The formula lives inside the collapsible breakdown, as on the 5.3 card.
+    expect(section.querySelector(".dice-tooltip-collapser .dice-tooltip > .dice-formula").textContent).toBe("1d10 + 3 + 1d6");
+});
+
+it("drops the leading plus that aggregated damage parts carry", async () => {
+    CONFIG.DND5E.aggregateDamageDisplay = true;
+    const roll = damageRoll("fire", 4, 6, 2);
+    roll.formula = " + 1d6 + 2";
+
+    const section = await card.renderRsrSection(parent, child("dmg", "damage", [roll]));
+
+    expect(section.querySelector(".dice-formula").textContent).toBe("1d6 + 2");
+});
+
+it("uses RSR's apply buttons by default and dnd5e's tray when that mode is chosen", async () => {
+    const rsr = await card.renderRsrSection(parent, child("dmg", "damage", [damageRoll("fire", 4, 6)]));
+    expect(rsr.querySelector(".rsr-damage-buttons-xl")).not.toBeNull();
+    expect(rsr.querySelector("damage-application")).toBeNull();
+
+    env.settings.damageApplyMode = "dnd5e";
+    game.user.isGM = false;
+    const player = await card.renderRsrSection(parent, child("dmg", "damage", [damageRoll("fire", 4, 6)]));
+    // dnd5e shows its tray to players only when its own setting allows it.
+    expect(player.querySelector("damage-application")).toBeNull();
+
+    game.user.isGM = true;
+    const native = await card.renderRsrSection(parent, child("dmg", "damage", [damageRoll("fire", 4, 6)]));
+    const tray = native.querySelector("damage-application");
+    expect(tray).not.toBeNull();
+    // The tray resolves its message from the nearest data-message-id: the damage child.
+    expect(tray.closest("[data-message-id]").dataset.messageId).toBe("dmg");
+    expect(native.querySelector(".rsr-damage-buttons, .rsr-damage-buttons-xl")).toBeNull();
+});
+
+it("titles healing children as healing and notes a damage child's save outcome", async () => {
+    const heal = await card.renderRsrSection(parent, child("heal", "healing", [damageRoll("healing", 5, 8, 2)]));
+    expect(heal.querySelector(".rsr-title").textContent).toContain("DND5E.HEAL.HealingButton");
+
+    const save = await card.renderRsrSection(parent, child("dmg", "damage", [damageRoll("fire", 8, 6)], { onSave: "half" }));
+    expect(save.querySelector(".supplement").textContent).toContain("half");
+});
+
+it("renders the attack section with RSR's total inside core's roll markup, collapsed by default", async () => {
+    const { D20Roll, TestDie } = env.classes;
+    const roll = new D20Roll("1d20 + 5");
+    roll.terms = [new TestDie({ number: 1, faces: 20, results: [{ result: 14, active: true }] })];
+    roll.dice = roll.terms;
+    roll.total = 19;
+
+    const section = await card.renderRsrSection(parent, child("atk", "attack", [roll], { ammunitionItem: { name: "Arrow" } }));
+
+    const dice = section.querySelector(".dice-roll");
+    expect(dice.dataset.action).toBeUndefined();
+    expect(section.querySelector(".rsr-multiroll")).not.toBeNull();
+    expect(section.querySelector(".dice-result > h4.dice-total")).toBeNull();
+    expect(section.querySelector(".dice-tooltip-collapser > .dice-tooltip > .dice-formula").textContent).toBe("1d20 + 5");
+    expect(section.querySelector(".rsr-subtitle").textContent).toContain("Arrow");
+    expect(roll.options.displayChallenge).toBe(true);
+});

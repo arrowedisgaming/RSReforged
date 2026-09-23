@@ -1,8 +1,10 @@
 import { MODULE_SHORT } from '../module/const.js';
 import { getOriginId } from './dnd5e-compat.js';
 import { getNativeRollSources } from './native-workflow.js';
+import { renderRsrSection } from './native-card.js';
 
 const combinedTypes = new Set(['attack', 'damage', 'healing', 'generic']);
+const sectionOrder = { attack: 0, damage: 1, healing: 1, generic: 2 };
 const refreshing = new Set();
 const renders = new WeakMap();
 /** Longest a folded card waits for Dice So Nice before revealing its results anyway. */
@@ -33,6 +35,28 @@ function activateTargets(html) {
     targets.forEach(target => observer.observe(target));
 }
 
+// The usage-card buttons whose roll an RSR section already shows, as on the 5.3 card.
+const representedActions = {
+    attack: ['rollAttack'],
+    damage: ['rollDamage'],
+    healing: ['rollDamage', 'rollHealing'],
+    generic: ['rollFormula']
+};
+
+function hideRepresentedButtons(content, sources) {
+    const actions = new Set(sources.flatMap(source => representedActions[source.type] ?? []));
+    for (const button of content.querySelectorAll(':scope > .chat-card button[data-action]')) {
+        if (actions.has(button.dataset.action)) (button.closest('li') ?? button).classList.add('rsr-native-hidden');
+    }
+    // Drop a button row left with nothing to show.
+    for (const row of content.querySelectorAll(':scope > .chat-card .icon-row')) {
+        const entries = row.querySelectorAll('li');
+        if (entries.length && [...entries].every(entry => entry.classList.contains('rsr-native-hidden'))) {
+            row.classList.add('rsr-native-hidden');
+        }
+    }
+}
+
 function animating(sources) {
     return !!game.dice3d?.isEnabled?.() && sources.some(source => source._dice3danimating);
 }
@@ -56,8 +80,10 @@ export async function renderNativeMessage(message, suppliedHtml) {
     const token = {};
     renders.set(html, token);
     content.querySelector(':scope > .rsr-native-combined')?.remove();
+    // dnd5e's registry returns children in no guaranteed order; the card reads top-down.
     const sources = getNativeRollSources(message).filter(child =>
-        combinedTypes.has(child.type) && child.visible !== false && child.isContentVisible);
+        combinedTypes.has(child.type) && child.visible !== false && child.isContentVisible)
+        .sort((a, b) => (sectionOrder[a.type] - sectionOrder[b.type]) || (a.timestamp - b.timestamp));
     if (!sources.length) {
         scheduleReconcile();
         return;
@@ -67,19 +93,26 @@ export async function renderNativeMessage(message, suppliedHtml) {
     combined.className = 'rsr-native-combined';
     // Results appear when the dice land, as they do on a plain native card.
     combined.hidden = animating(sources);
-    content.append(combined);
+    // RSR's sections sit where 5.3 put them: under the item card, above summaries.
+    const face = content.querySelector(':scope > .chat-card');
+    if (face) face.after(combined);
+    else content.append(combined);
 
     for (const child of sources) {
-        const rendered = await child.renderHTML();
+        const section = await renderRsrSection(message, child);
         if (renders.get(html) !== token) return;
-        const node = rendered instanceof HTMLElement ? rendered : rendered[0];
-        // Retain the native root with its components and listeners. The nearest
-        // data-message-id must always identify the real child document.
-        node.dataset.messageId = child.id;
-        node.dataset.rsrMessageId = child.id;
-        node.classList.add('rsr-native-source');
-        combined.append(node);
+        if (!section) continue;
+        // The section's data-message-id identifies the real child document, so
+        // native components and RSR controls inside it resolve that message.
+        section.classList.add('rsr-native-source');
+        combined.append(section);
     }
+    // The legacy 5.3 breakdown toggles on click, as dnd5e's own roll cards did.
+    combined.addEventListener('click', event => {
+        if (event.target.closest('button, a, input, damage-application, .rsr-overlay')) return;
+        event.target.closest('.dice-roll')?.classList.toggle('expanded');
+    });
+    hideRepresentedButtons(content, sources);
     activateTargets(combined);
     scheduleReconcile();
 
@@ -122,6 +155,7 @@ export function reconcileNativeSources() {
 }
 
 function scheduleReconcile() {
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(reconcileNativeSources);
+    // Background tabs pause animation frames; a hidden client must still hide originals.
+    if (typeof requestAnimationFrame === 'function' && document.visibilityState !== 'hidden') requestAnimationFrame(reconcileNativeSources);
     else setTimeout(reconcileNativeSources, 0);
 }

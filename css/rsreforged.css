@@ -336,14 +336,43 @@
     font-size: 0.9em;
 }
 
-/* dnd5e 6: real native source messages folded into their usage card. Their
-   contents are dnd5e's own markup; only the duplicated speaker line and item
-   title are hidden, and the original standalone cards while represented. */
-.rsr-native-combined { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+/* dnd5e 6: RSReforged sections rendered from the native roll messages folded
+   into their usage card. The standalone originals are hidden while represented. */
+.rsr-native-combined { display: flex; flex-direction: column; gap: 6px; }
 .rsr-native-combined[hidden] { display: none; }
-.rsr-native-combined > .rsr-native-source.chat-message {
-    list-style: none; margin: 0; padding: 6px; box-shadow: none; min-width: 0;
+.rsr-native-combined-original,
+.rsr-native-hidden { display: none !important; }
+
+/* The 5.3 card's section box: dnd5e 6 styles only the compact roll button, so the
+   legacy section and big total are restated here. */
+.rsr-card {
+    background: var(--dnd5e-background-card, var(--dnd5e-color-card));
+    border: var(--dnd5e-border-gold, 1px solid var(--dnd5e-color-gold));
+    border-radius: 5px;
+    padding: 6px 8px 8px;
 }
-.rsr-native-source > .message-header { display: none; }
-.rsr-native-source .card-header { display: none; }
-.rsr-native-combined-original { display: none !important; }
+.rsr-card > .card-header {
+    display: block;
+    padding: 0;
+    border: none;
+    background: none;
+}
+.rsr-card .rsr-title dnd5e-icon { width: 18px; height: 18px; }
+.rsr-card .dice-roll .dice-result .dice-total {
+    font-size: var(--font-size-28);
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.rsr-card .rsr-multiroll { gap: 4px; }
+.rsr-card .rsr-multiroll .dice-total { flex: 1; }
+/* dnd5e 6's compact roll rule draws gold rules beside any wrapped total. */
+.rsr-card .dice-total > .total::before,
+.rsr-card .dice-total > .total::after { display: none; }
+.rsr-card .dice-formula { text-align: center; margin-bottom: 4px; }
+.rsr-card .supplement { margin: 4px 0 0; }
+.rsr-card damage-application { margin-top: 6px; }
+/* The 5.3 supplement colours assumed a light card; follow dnd5e 6's theme tokens. */
+.rsr-card .rsr-supplement { color: var(--color-text-secondary); }
+.rsr-card .rsr-supplement > strong { color: var(--color-text-primary); }

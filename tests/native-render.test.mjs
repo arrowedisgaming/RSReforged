@@ -6,6 +6,16 @@ let renderer;
 beforeEach(async () => {
     vi.resetModules();
     await setupFoundryEnv();
+    // The section markup has its own tests; here each child becomes a stub section.
+    vi.doMock("../src/utils/native-card.js", () => ({
+        renderRsrSection: vi.fn(async (parent, child) => {
+            const section = document.createElement("div");
+            section.className = `rsr-card rsr-section-${child.type}`;
+            section.dataset.messageId = child.id;
+            section.dataset.rsrMessageId = child.id;
+            return section;
+        })
+    }));
     renderer = await import("../src/utils/native-render.js");
 });
 
@@ -25,27 +35,57 @@ function usageHtml() {
     const html = document.createElement("li");
     html.className = "chat-message message";
     html.dataset.messageId = "parent";
-    html.innerHTML = '<div class="message-content"><div class="chat-card"><button data-action="rollDamage">Damage</button></div></div>';
+    html.innerHTML = `<div class="message-content"><div class="chat-card"><section class="icon-row"><ul>
+        <li><button data-action="rollAttack">Attack</button></li>
+        <li><button data-action="rollDamage">Damage</button></li>
+    </ul></section></div><div class="card-summary"></div></div>`;
     return html;
 }
 
-it("folds native children into the usage card, keeping their identity and markup untouched", async () => {
-    const attack = nativeChild("attack", "attack", '<button class="dice-roll"><span class="total">17</span></button><div class="roll-breakdown" popover>d20</div>');
-    const damage = nativeChild("damage", "damage", '<button class="dice-roll"><span class="total">9</span></button><damage-application></damage-application>');
-    const tray = damage.node.querySelector("damage-application");
+it("renders one RSR section per child under the item card, attack first, each keeping its child's identity", async () => {
+    const attack = nativeChild("attack", "attack", "");
+    const damage = nativeChild("damage", "damage", "");
     const html = usageHtml();
 
-    await renderer.renderNativeMessage(usageParent([attack.message, damage.message]), html);
+    // dnd5e's registry does not guarantee creation order.
+    await renderer.renderNativeMessage(usageParent([damage.message, attack.message]), html);
 
     const combined = html.querySelector(".message-content > .rsr-native-combined");
+    expect(combined.previousElementSibling.classList.contains("chat-card")).toBe(true);
+    expect(combined.nextElementSibling.classList.contains("card-summary")).toBe(true);
     expect([...combined.children].map((node) => node.dataset.messageId)).toEqual(["attack", "damage"]);
-    expect(combined.querySelector('[data-message-id="damage"] damage-application')).toBe(tray);
-    expect(tray.closest("[data-message-id]").dataset.messageId).toBe("damage");
-    expect(combined.querySelectorAll("button").length).toBe(2);
-    expect(combined.querySelector("select")).toBeNull();
-    expect(combined.querySelector(".rsr-native-controls")).toBeNull();
-    expect(html.querySelector('[data-action="rollDamage"]')).not.toBeNull();
+    expect([...combined.children].every((node) => node.classList.contains("rsr-native-source"))).toBe(true);
     expect(attack.message.delete).not.toHaveBeenCalled();
+});
+
+it("hides the usage card's roll buttons once their rolls are shown, but only those", async () => {
+    const attack = nativeChild("attack", "attack", "");
+    const html = usageHtml();
+
+    await renderer.renderNativeMessage(usageParent([attack.message]), html);
+
+    const hidden = (action) => html.querySelector(`[data-action="${action}"]`).closest("li").classList.contains("rsr-native-hidden");
+    expect(hidden("rollAttack")).toBe(true);
+    expect(hidden("rollDamage")).toBe(false);
+    expect(html.querySelector(".icon-row").classList.contains("rsr-native-hidden")).toBe(false);
+
+    const both = usageHtml();
+    await renderer.renderNativeMessage(usageParent([attack.message, nativeChild("damage", "damage", "").message]), both);
+    expect(both.querySelector(".icon-row").classList.contains("rsr-native-hidden")).toBe(true);
+});
+
+it("toggles a section's breakdown on click, but not from its buttons", async () => {
+    const attack = nativeChild("attack", "attack", "");
+    const html = usageHtml();
+    await renderer.renderNativeMessage(usageParent([attack.message]), html);
+    const section = html.querySelector(".rsr-card");
+    section.innerHTML = '<div class="dice-roll"><h4 class="dice-total">12</h4><button class="apply">x</button></div>';
+    const roll = section.querySelector(".dice-roll");
+
+    section.querySelector(".dice-total").click();
+    expect(roll.classList.contains("expanded")).toBe(true);
+    section.querySelector(".apply").click();
+    expect(roll.classList.contains("expanded")).toBe(true);
 });
 
 it("replaces a previous fold-in instead of stacking a second one", async () => {
@@ -60,14 +100,15 @@ it("replaces a previous fold-in instead of stacking a second one", async () => {
 });
 
 it("keeps private children and save responses out of the combined card", async () => {
-    const hidden = { id: "hidden", type: "damage", visible: true, isContentVisible: false, renderHTML: vi.fn() };
-    const save = { id: "save", type: "save", visible: true, isContentVisible: true, renderHTML: vi.fn() };
+    const { renderRsrSection } = await import("../src/utils/native-card.js");
+    const hidden = { id: "hidden", type: "damage", visible: true, isContentVisible: false };
+    const save = { id: "save", type: "save", visible: true, isContentVisible: true };
     const html = usageHtml();
 
     await renderer.renderNativeMessage(usageParent([hidden, save]), html);
 
-    expect(hidden.renderHTML).not.toHaveBeenCalled();
-    expect(save.renderHTML).not.toHaveBeenCalled();
+    expect(renderRsrSection).not.toHaveBeenCalled();
+    expect(html.querySelector(".rsr-native-combined")).toBeNull();
 });
 
 it("leaves usage cards that RSR did not manage and non-usage messages untouched", async () => {

@@ -241,6 +241,22 @@ export class ChatUtility {
         }
     }
 
+    /**
+     * dnd5e 6: RSR's icon apply buttons on a damage section rendered from a native
+     * damage or healing child. `message` is that child, so applying reads its rolls.
+     */
+    static async injectNativeApplyButtons(message, html) {
+        await _injectApplyDamageButtons(message, html);
+
+        const rsrApplyActions = '[data-action="rsr-apply-damage"], [data-action="rsr-apply-temp"]';
+        html.find('.rsr-damage-buttons').find(rsrApplyActions).click(async event => {
+            await _processApplyButtonEvent(message, event);
+        });
+        html.find('.rsr-damage-buttons-xl').find(rsrApplyActions).click(async event => {
+            await _processApplyTotalButtonEvent(message, event);
+        });
+    }
+
     static getMessageType(message) {
         return getRollType(message);
     }
@@ -1322,6 +1338,7 @@ function _getApplyDamageOptions(message, damages, multiplier, healingIntent = fa
 
 function _isHealingApplyMessage(message) {
     return message.flags?.[MODULE_SHORT]?.isHealing === true
+        || message.type === "healing"
         || ChatUtility.getActivityType(message) === "heal"
         || message.flags?.dnd5e?.roll?.type === ROLL_TYPE.HEALING
         || message.system?.roll?.type === ROLL_TYPE.HEALING;
