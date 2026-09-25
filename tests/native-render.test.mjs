@@ -55,6 +55,8 @@ it("renders one RSR section per child under the item card, attack first, each ke
     expect(combined.nextElementSibling.classList.contains("card-summary")).toBe(true);
     expect([...combined.children].map((node) => node.dataset.messageId)).toEqual(["attack", "damage"]);
     expect([...combined.children].every((node) => node.classList.contains("rsr-native-source"))).toBe(true);
+    // Scopes the description and pill-row adjustments to RSR's cards.
+    expect(html.classList.contains("rsr-native-card")).toBe(true);
     expect(attack.message.delete).not.toHaveBeenCalled();
 });
 
@@ -116,6 +118,7 @@ it("leaves usage cards that RSR did not manage and non-usage messages untouched"
     const legacy = usageHtml();
     await renderer.renderNativeMessage(usageParent([child.message], { flags: {} }), legacy);
     expect(legacy.querySelector(".rsr-native-combined")).toBeNull();
+    expect(legacy.classList.contains("rsr-native-card")).toBe(false);
 
     const before = child.node.outerHTML;
     await renderer.renderNativeMessage(child.message, child.node);

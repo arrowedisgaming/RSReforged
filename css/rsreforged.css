@@ -376,3 +376,12 @@
 /* The 5.3 supplement colours assumed a light card; follow dnd5e 6's theme tokens. */
 .rsr-card .rsr-supplement { color: var(--color-text-secondary); }
 .rsr-card .rsr-supplement > strong { color: var(--color-text-primary); }
+
+/* dnd5e 6's compact card justifies the description, which stretches word gaps in a
+   narrow chat column, and pushes each row's pills to the far edge. RSR cards read
+   left to right, as the 4.x card did. */
+:is(.chat-log, .chat-popout) .message.compact.rsr-native-card .card-description { text-align: start; }
+:is(.chat-log, .chat-popout) .message.compact.rsr-native-card .icon-row > ul {
+    justify-content: start;
+    margin-inline-start: 0;
+}

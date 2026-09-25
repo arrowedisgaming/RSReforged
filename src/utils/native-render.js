@@ -74,6 +74,8 @@ export async function renderNativeMessage(message, suppliedHtml) {
         return;
     }
     if (message.flags?.[MODULE_SHORT]?.workflowVersion !== 2 || !message.isContentVisible) return;
+    // Scopes RSR's layout adjustments to the cards it manages.
+    html.classList.add('rsr-native-card');
     const content = html.querySelector('.message-content');
     if (!content) return;
 

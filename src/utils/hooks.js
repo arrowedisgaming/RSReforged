@@ -11,6 +11,7 @@ import { SETTING_NAMES, SettingsUtility, HIDE_NPC_ROLL_MODES } from "./settings.
 import { usesNativeWorkflow, getOriginId } from "./dnd5e-compat.js";
 import { NATIVE_ACTIVITY_TYPES, runNativeUsage, recordAmmunitionSnapshot, captureNativeMessageConfig } from "./native-workflow.js";
 import { renderNativeMessage, refreshNativeOrigin, reconcileNativeSources } from "./native-render.js";
+import { claimNativeThrow } from "./native-dice.js";
 
 export const HOOKS_CORE = { INIT: "init", READY: "ready" }
 
@@ -139,6 +140,11 @@ export class HooksUtility {
         Hooks.on(HOOKS_DND5E.POST_USE_ACTIVITY, (activity, usageConfig, results) => {
             if (usesNativeWorkflow()) runNativeUsage(activity, usageConfig, results)
                 .catch(error => LogUtility.logError(`Native quick roll failed: ${error.message}`));
+        });
+
+        // dnd5e 6: throw a quick roll's attack and damage dice together.
+        Hooks.on("diceSoNiceMessagePreProcess", (messageId, interception) => {
+            if (usesNativeWorkflow()) claimNativeThrow(messageId, interception);
         });
 
         // dnd5e 6: fires with the pending ammunition update before the final
