@@ -57,13 +57,21 @@ function hideRepresentedButtons(content, sources) {
     }
 }
 
-function animating(sources) {
-    return !!game.dice3d?.isEnabled?.() && sources.some(source => source._dice3danimating);
+/**
+ * What each source's dice are still doing: RSR's pooled throw (native-dice.js) for
+ * workflow rolls, or Dice So Nice's own animation for rolls it animated itself, such
+ * as dnd5e's Damage button in manual damage mode.
+ */
+function pendingThrows(sources) {
+    if (!game.dice3d?.isEnabled?.() || game.settings.get('dice-so-nice', 'immediatelyDisplayChatMessages')) return [];
+    return sources.map(source => source._rsrNativeThrow
+        ?? (source._dice3danimating ? game.dice3d.waitFor3DAnimationByMessageID(source.id) : null))
+        .filter(Boolean);
 }
 
 /**
- * Runs after dnd5e finishes all native rendering. Folds the usage card's native
- * children into it by moving their live rendered nodes; their markup is dnd5e's own.
+ * Runs after dnd5e finishes all native rendering. Renders RSR's sections for the usage
+ * card's native children into it; the children's own cards are hidden while represented.
  */
 export async function renderNativeMessage(message, suppliedHtml) {
     const html = suppliedHtml instanceof HTMLElement ? suppliedHtml : suppliedHtml?.[0];
@@ -94,7 +102,8 @@ export async function renderNativeMessage(message, suppliedHtml) {
     const combined = document.createElement('div');
     combined.className = 'rsr-native-combined';
     // Results appear when the dice land, as they do on a plain native card.
-    combined.hidden = animating(sources);
+    const throws = pendingThrows(sources);
+    combined.hidden = throws.length > 0;
     // RSR's sections sit where 5.3 put them: under the item card, above summaries.
     const face = content.querySelector(':scope > .chat-card');
     if (face) face.after(combined);
@@ -119,12 +128,10 @@ export async function renderNativeMessage(message, suppliedHtml) {
     scheduleReconcile();
 
     if (combined.hidden) {
-        // Bounded: Dice So Nice resolves this wait only from its roll-complete hook, and
-        // its own safety timeout never fires that hook. A backgrounded tab or an
-        // animation error must not leave the results hidden.
-        const landed = Promise.all(sources
-            .filter(source => source._dice3danimating)
-            .map(source => game.dice3d.waitFor3DAnimationByMessageID(source.id)));
+        // Bounded: a backgrounded tab can hold a throw indefinitely, and Dice So Nice's
+        // own safety timeout never fires its roll-complete hook. Neither may leave the
+        // results hidden.
+        const landed = Promise.all(throws);
         let timer;
         const giveUp = new Promise(resolve => { timer = setTimeout(resolve, DICE_REVEAL_TIMEOUT_MS); });
         await Promise.race([landed, giveUp]).catch(() => {});

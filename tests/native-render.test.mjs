@@ -204,3 +204,21 @@ it("re-renders a managed parent once for roll-only child updates", async () => {
     expect(ui.chat.updateMessage).toHaveBeenCalledTimes(1);
     expect(ui.chat.updateMessage).toHaveBeenCalledWith(parent);
 });
+
+it("keeps the combined block hidden until RSR's pooled throw lands", async () => {
+    const attack = nativeChild("attack", "attack", "");
+    let land;
+    attack.message._rsrNativeThrow = new Promise((resolve) => { land = resolve; });
+    game.dice3d = { isEnabled: () => true, waitFor3DAnimationByMessageID: vi.fn() };
+    const html = usageHtml();
+
+    const rendering = renderer.renderNativeMessage(usageParent([attack.message]), html);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(html.querySelector(".rsr-native-combined").hidden).toBe(true);
+    expect(game.dice3d.waitFor3DAnimationByMessageID).not.toHaveBeenCalled();
+
+    land();
+    await rendering;
+    expect(html.querySelector(".rsr-native-combined").hidden).toBe(false);
+});
