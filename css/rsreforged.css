@@ -385,3 +385,7 @@
     justify-content: start;
     margin-inline-start: 0;
 }
+
+/* The 4.x retroactive overlays sit over a section's total and show on hover. */
+.rsr-card .rsr-overlay { display: none; }
+.rsr-card:hover .rsr-overlay { display: flex; }

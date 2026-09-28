@@ -187,7 +187,10 @@ export class RollUtility {
 
             await CoreUtility.tryRollDice3D(d20Additional);
 
-            const d20Forced = new foundry.dice.terms.Die({
+            // Keep the term's own class and options: dnd5e 6's D20Roll finds its d20
+            // through D20Die, which a plain Die would not satisfy.
+            const d20Forced = new d20BaseTerm.constructor({
+                ...(d20BaseTerm.toJSON?.() ?? {}),
                 number: forcedDiceCount,
                 faces: 20,
                 results: [...d20BaseTerm.results, ...d20Additional.dice[0].results],
@@ -232,6 +235,8 @@ export class RollUtility {
         upgradedRoll.options.advantageMode = targetState === ROLL_STATE.ADV 
             ? CONFIG.Dice.D20Roll.ADV_MODE.ADVANTAGE 
             : CONFIG.Dice.D20Roll.ADV_MODE.DISADVANTAGE;
+        // dnd5e 6 reads the mode from the d20 term as well as from the roll.
+        if (d20BaseTerm.options) d20BaseTerm.options.advantageMode = upgradedRoll.options.advantageMode;
 
         RollUtility.resetRollGetters(upgradedRoll);
         return upgradedRoll;

@@ -596,11 +596,11 @@ function renderTemplate(template, data = {}) {
     }
 
     if (template.endsWith("rsr-overlay-multiroll.html")) {
-        return `<div class="rsr-overlay-multiroll"><div></div></div>`;
+        return `<div class="rsr-overlay rsr-overlay-multiroll"><div data-action="rsr-retro" data-state="kl"></div><div data-action="rsr-retro" data-state="kh"></div></div>`;
     }
 
     if (template.endsWith("rsr-overlay-crit.html")) {
-        return `<div class="rsr-overlay-crit"><div></div></div>`;
+        return `<div class="rsr-overlay rsr-overlay-crit"><div data-action="rsr-retro"></div></div>`;
     }
 
     return "";

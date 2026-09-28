@@ -2,8 +2,11 @@ import { MODULE_SHORT, ROLL_TYPE } from '../module/const.js';
 import { TEMPLATE } from '../module/templates.js';
 import { ChatUtility } from './chat.js';
 import { CoreUtility } from './core.js';
+import { DialogUtility } from './dialog.js';
+import { setNativeCritical } from './native-critical.js';
 import { RenderUtility } from './render.js';
-import { SettingsUtility } from './settings.js';
+import { ROLL_STATE, RollUtility } from './roll.js';
+import { SETTING_NAMES, SettingsUtility } from './settings.js';
 
 /**
  * dnd5e 6: RSReforged's own card sections, rendered from the native roll messages
@@ -38,6 +41,7 @@ async function _attackSection(parent, child) {
         subtitle: ammo ? `${CoreUtility.localize('DND5E.CONSUMABLE.Type.Ammunition.Label')} - ${ammo}` : undefined
     });
     section.append(rollHTML);
+    await _addAdvantageOverlay(section, child, roll);
     return section;
 }
 
@@ -65,6 +69,7 @@ async function _damageSection(parent, child) {
     const rollHTML = _renderDamage(rolls);
     rollHTML.querySelector('.dice-result').classList.add('rsr-damage');
     section.append(rollHTML);
+    if (!healing && !critical) await _addCriticalOverlay(section, child);
 
     const onSave = child.system?.onSave;
     if (onSave) {
@@ -98,6 +103,96 @@ async function _formulaSection(parent, child) {
     // A formula child can hold several rolls; its hidden original must not be their only view.
     for (const each of child.rolls) section.append(await _renderRoll(each));
     return section;
+}
+
+/**
+ * The 4.x hover overlays. Each edit rewrites the child document's own rolls; its update
+ * refreshes the usage card, which rebuilds these sections from the new rolls.
+ */
+function _canEdit(child) {
+    return SettingsUtility.getSettingValue(SETTING_NAMES.OVERLAY_BUTTONS_ENABLED)
+        && (game.user.isGM || child.isAuthor === true);
+}
+
+async function _addAdvantageOverlay(section, child, roll) {
+    if (!_canEdit(child) || roll.hasAdvantage || roll.hasDisadvantage) return;
+    const total = section.querySelector('.rsr-multiroll .dice-total');
+    if (!total) return;
+    total.append(_fragment(await RenderUtility.render(TEMPLATE.OVERLAY_MULTIROLL, {})));
+    _onOverlayClick(total.querySelectorAll('.rsr-overlay-multiroll [data-action="rsr-retro"]'), async (event, button) => {
+        const state = button.dataset.state;
+        const target = CoreUtility.localize(state === ROLL_STATE.ADV ? 'DND5E.Advantage' : 'DND5E.Disadvantage');
+        if (!await _confirm(SETTING_NAMES.CONFIRM_RETRO_ADV, CoreUtility.localize(`${MODULE_SHORT}.chat.prompts.retroAdv`, { target }), event)) return;
+        const rolls = _cloneRolls(child);
+        const index = rolls.findIndex(r => r instanceof CONFIG.Dice.D20Roll);
+        if (index < 0) return;
+        // Rolls and shows only the extra d20, keeping the original result.
+        rolls[index] = await RollUtility.upgradeRoll(rolls[index], state);
+        await child.update({ rolls: CoreUtility.serializeRolls(rolls) });
+    });
+}
+
+async function _addCriticalOverlay(section, child) {
+    if (!_canEdit(child) || child.type !== 'damage') return;
+    const total = section.querySelector('.rsr-damage > .dice-total');
+    if (!total) return;
+    total.append(_fragment(await RenderUtility.render(TEMPLATE.OVERLAY_CRIT, {})));
+    _onOverlayClick(total.querySelectorAll('.rsr-overlay-crit [data-action="rsr-retro"]'), async event => {
+        if (!await _confirm(SETTING_NAMES.CONFIRM_RETRO_CRIT, CoreUtility.localize(`${MODULE_SHORT}.chat.prompts.retroCrit`), event)) return;
+        const rolls = _cloneRolls(child);
+        const promoted = [];
+        for (const [index, roll] of rolls.entries()) {
+            if (!(roll instanceof CONFIG.Dice.DamageRoll)) continue;
+            // dnd5e builds the critical expression; the original dice keep their results.
+            rolls[index] = await setNativeCritical(roll, true);
+            promoted.push(rolls[index]);
+        }
+        if (!promoted.length) return;
+        await _showDice(child, promoted);
+        await child.update({ rolls: CoreUtility.serializeRolls(rolls) });
+    });
+}
+
+function _onOverlayClick(buttons, handler) {
+    let busy = false;
+    for (const button of buttons) {
+        button.addEventListener('click', async event => {
+            event.preventDefault();
+            event.stopPropagation();
+            // One edit at a time: a second click would upgrade the already-upgraded roll.
+            if (busy) return;
+            busy = true;
+            try {
+                await handler(event, button);
+            } catch (error) {
+                console.error('RSReforged | roll edit failed', error);
+                ui.notifications?.error(error.message);
+            } finally {
+                busy = false;
+            }
+        });
+    }
+}
+
+async function _confirm(setting, prompt, event) {
+    if (!SettingsUtility.getSettingValue(setting)) return true;
+    return DialogUtility.getConfirmDialog(prompt, {
+        width: 100,
+        top: event ? event.clientY - 50 : null,
+        left: window.innerWidth - 510
+    });
+}
+
+function _cloneRolls(child) {
+    return child.rolls.map(roll => Roll.fromData(foundry.utils.deepClone(roll.toJSON())));
+}
+
+/** Throw promoted dice for everyone the child message is visible to. */
+function _showDice(child, rolls) {
+    if (!game.dice3d?.isEnabled?.()) return;
+    const whisper = child.whisper?.length ? child.whisper : null;
+    return Promise.all(rolls.map(roll =>
+        game.dice3d.showForRoll(roll, game.user, true, whisper, child.blind ?? false, child.id, child.speaker)));
 }
 
 async function _section(child, header) {

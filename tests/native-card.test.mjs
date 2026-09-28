@@ -38,6 +38,16 @@ beforeEach(async () => {
     CONFIG.DND5E.aggregateDamageDisplay = false;
     game.settings.set("dnd5e", "attackRollVisibility", "all");
     globalThis.dnd5e = { dice: { aggregateDamageRolls: (rolls) => rolls }, settings: {} };
+    // The critical mapper has its own suite against real dnd5e 6 captures.
+    vi.doMock("../src/utils/native-critical.js", () => ({
+        setNativeCritical: vi.fn(async (roll) => { roll.options.isCritical = true; return roll; })
+    }));
+    // The real multiroll template: one .dice-total per d20 entry.
+    const renderTemplate = foundry.applications.handlebars.renderTemplate;
+    const base = renderTemplate.getMockImplementation();
+    renderTemplate.mockImplementation(async (template, data) => template.endsWith("rsr-multiroll.html")
+        ? `<div class="rsr-multiroll" data-key="${data.key}">${data.entries.map((entry) => `<h4 class="dice-total">${entry.total}</h4>`).join("")}</div>`
+        : base(template, data));
     card = await import("../src/utils/native-card.js");
 });
 
@@ -185,4 +195,84 @@ it("applies a native damage part with its own properties, like dnd5e's tray", as
     section.querySelector('.rsr-damage-buttons-xl [data-action="rsr-apply-damage"][data-multiplier="-1"]').click();
     await vi.waitFor(() => expect(actor.applyDamage).toHaveBeenCalledTimes(3));
     expect(actor.applyDamage.mock.calls[2][0].map((damage) => damage.type)).toEqual(["healing", "healing"]);
+});
+
+function attackRoll() {
+    const { D20Roll, TestDie } = env.classes;
+    const roll = new D20Roll("1d20 + 5");
+    roll.terms = [new TestDie({ number: 1, faces: 20, results: [{ result: 14, active: true }] })];
+    roll.dice = roll.terms;
+    roll.total = 19;
+    return roll;
+}
+
+function editable(message, { isAuthor = true } = {}) {
+    return Object.assign(message, { isAuthor, whisper: [], blind: false, speaker: { actor: "a1" }, update: vi.fn(async () => {}) });
+}
+
+it("offers retroactive advantage and disadvantage on an attack, persisting the upgraded roll to the attack message", async () => {
+    env.settings.enableOverlayButtons = true;
+    const { RollUtility } = await import("../src/utils/roll.js");
+    const upgrade = vi.spyOn(RollUtility, "upgradeRoll").mockImplementation(async (roll, state) => {
+        roll.options.advantageMode = state === "kh" ? 1 : -1;
+        return roll;
+    });
+    const attack = editable(child("atk", "attack", [attackRoll()]));
+
+    const section = await card.renderRsrSection(parent, attack);
+    const overlay = section.querySelector(".rsr-multiroll .dice-total .rsr-overlay-multiroll");
+    expect(overlay).not.toBeNull();
+
+    overlay.querySelector('[data-state="kh"]').click();
+    await vi.waitFor(() => expect(attack.update).toHaveBeenCalledTimes(1));
+
+    expect(upgrade).toHaveBeenCalledWith(expect.anything(), "kh");
+    // The edit is written to the attack message itself, never to the usage card.
+    const { rolls } = attack.update.mock.calls[0][0];
+    expect(rolls[0].options.advantageMode).toBe(1);
+    // The original roll object is left alone until the update lands.
+    expect(attack.rolls[0].options.advantageMode).toBeUndefined();
+});
+
+it("offers no advantage overlay once the attack has advantage, to other players, or with overlays off", async () => {
+    env.settings.enableOverlayButtons = true;
+    const upgraded = attackRoll();
+    Object.defineProperty(upgraded, "hasAdvantage", { value: true });
+    expect((await card.renderRsrSection(parent, editable(child("a", "attack", [upgraded])))).querySelector(".rsr-overlay")).toBeNull();
+
+    game.user.isGM = false;
+    const other = editable(child("b", "attack", [attackRoll()]), { isAuthor: false });
+    expect((await card.renderRsrSection(parent, other)).querySelector(".rsr-overlay")).toBeNull();
+
+    game.user.isGM = true;
+    env.settings.enableOverlayButtons = false;
+    expect((await card.renderRsrSection(parent, editable(child("c", "attack", [attackRoll()])))).querySelector(".rsr-overlay")).toBeNull();
+});
+
+it("promotes damage to a critical, throws the dice for the message's audience, and persists to the damage message", async () => {
+    env.settings.enableOverlayButtons = true;
+    const { setNativeCritical } = await import("../src/utils/native-critical.js");
+    game.dice3d = { isEnabled: () => true, showForRoll: vi.fn(async () => true) };
+    const damage = editable(child("dmg", "damage", [damageRoll("slashing", 7, 10, 3), damageRoll("fire", 6, 6)]));
+    damage.whisper = ["gm-id"];
+
+    const section = await card.renderRsrSection(parent, damage);
+    section.querySelector(".rsr-damage > .dice-total .rsr-overlay-crit [data-action='rsr-retro']").click();
+    await vi.waitFor(() => expect(damage.update).toHaveBeenCalledTimes(1));
+
+    expect(setNativeCritical).toHaveBeenCalledTimes(2);
+    expect(damage.update.mock.calls[0][0].rolls.every((roll) => roll.options.isCritical)).toBe(true);
+    expect(game.dice3d.showForRoll).toHaveBeenCalledTimes(2);
+    expect(game.dice3d.showForRoll.mock.calls[0].slice(2, 6)).toEqual([true, ["gm-id"], false, "dmg"]);
+});
+
+it("offers no critical overlay on healing or on damage that is already critical", async () => {
+    env.settings.enableOverlayButtons = true;
+    const heal = await card.renderRsrSection(parent, editable(child("h", "healing", [damageRoll("healing", 5, 8)])));
+    expect(heal.querySelector(".rsr-overlay-crit")).toBeNull();
+
+    const crit = damageRoll("fire", 6, 6);
+    Object.defineProperty(crit, "isCritical", { value: true });
+    const done = await card.renderRsrSection(parent, editable(child("d", "damage", [crit])));
+    expect(done.querySelector(".rsr-overlay-crit")).toBeNull();
 });
