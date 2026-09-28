@@ -120,7 +120,9 @@ export async function renderNativeMessage(message, suppliedHtml) {
     }
     // The legacy 5.3 breakdown toggles on click, as dnd5e's own roll cards did.
     combined.addEventListener('click', event => {
-        if (event.target.closest('button, a, input, damage-application, .rsr-overlay')) return;
+        // The retro overlay covers the whole total while hovered; only its own
+        // controls are exempt, so clicking the number still opens the breakdown.
+        if (event.target.closest('button, a, input, damage-application, .rsr-overlay [data-action]')) return;
         event.target.closest('.dice-roll')?.classList.toggle('expanded');
     });
     hideRepresentedButtons(content, sources);

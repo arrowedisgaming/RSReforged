@@ -81,13 +81,21 @@ it("toggles a section's breakdown on click, but not from its buttons", async () 
     const html = usageHtml();
     await renderer.renderNativeMessage(usageParent([attack.message]), html);
     const section = html.querySelector(".rsr-card");
-    section.innerHTML = '<div class="dice-roll"><h4 class="dice-total">12</h4><button class="apply">x</button></div>';
+    section.innerHTML = `<div class="dice-roll"><h4 class="dice-total">12
+        <div class="rsr-overlay"><div data-action="rsr-retro" data-state="kh"></div></div></h4>
+        <button class="apply">x</button></div>`;
     const roll = section.querySelector(".dice-roll");
 
     section.querySelector(".dice-total").click();
     expect(roll.classList.contains("expanded")).toBe(true);
     section.querySelector(".apply").click();
     expect(roll.classList.contains("expanded")).toBe(true);
+    // A hovered retro overlay covers the whole total: clicking the number through it
+    // still toggles, but its chevrons do not.
+    section.querySelector(".rsr-overlay").click();
+    expect(roll.classList.contains("expanded")).toBe(false);
+    section.querySelector(".rsr-overlay [data-action]").click();
+    expect(roll.classList.contains("expanded")).toBe(false);
 });
 
 it("replaces a previous fold-in instead of stacking a second one", async () => {
