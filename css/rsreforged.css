@@ -389,3 +389,16 @@
 /* The 4.x retroactive overlays sit over a section's total and show on hover. */
 .rsr-card .rsr-overlay { display: none; }
 .rsr-card:hover .rsr-overlay { display: flex; }
+
+/* The header "+" on a dnd5e 6 check/save card: anchored to the end of the flavor line.
+   The global .rsr-addon-bonus-btn rule positions it for section titles, which would
+   otherwise send it to the nearest positioned ancestor far up the chat log. */
+.rsr-native-card .message-header { position: relative; }
+.rsr-native-card .message-header > .rsr-addon-bonus-btn {
+    position: absolute;
+    top: auto;
+    bottom: 3px;
+    right: 0;
+    transform: none;
+}
+.rsr-native-card .message-header:has(> .rsr-addon-bonus-btn) > .flavor-text { padding-inline-end: 22px; }

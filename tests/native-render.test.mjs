@@ -14,6 +14,12 @@ beforeEach(async () => {
             section.dataset.messageId = child.id;
             section.dataset.rsrMessageId = child.id;
             return section;
+        }),
+        renderRsrCheck: vi.fn(async (message) => {
+            const section = document.createElement("div");
+            section.className = "rsr-card rsr-check";
+            section.dataset.messageId = message.id;
+            return section;
         })
     }));
     renderer = await import("../src/utils/native-render.js");
@@ -229,4 +235,91 @@ it("keeps the combined block hidden until RSR's pooled throw lands", async () =>
     land();
     await rendering;
     expect(html.querySelector(".rsr-native-combined").hidden).toBe(false);
+});
+
+function checkMessage({ quickRoll = true, isContentVisible = true, isAuthor = true } = {}) {
+    return { id: "chk", type: "check", isContentVisible, isAuthor, system: { type: "ability", skill: "ath" }, flags: { rsreforged: { quickRoll, processed: true } }, rolls: [] };
+}
+
+function checkHtml() {
+    const html = document.createElement("li");
+    html.className = "chat-message message";
+    html.dataset.messageId = "chk";
+    html.innerHTML = `<header class="message-header"><h4 class="message-sender">Azer</h4><span class="flavor-text">Athletics</span></header>
+        <div class="message-content"><div class="chat-card"><p class="supplement">kept</p></div>
+        <section class="icon-row"><i class="fa-dice"></i><button class="dice-roll">12</button><div class="roll-breakdown" popover></div></section></div>`;
+    return html;
+}
+
+it("replaces a quick-rolled check's compact roll row with RSR's, keeping dnd5e's header and supplements", async () => {
+    const html = checkHtml();
+
+    await renderer.renderNativeMessage(checkMessage(), html);
+
+    const content = html.querySelector(".message-content");
+    expect(content.querySelector(":scope > .icon-row")).toBeNull();
+    expect(content.querySelector(":scope > .rsr-check")).not.toBeNull();
+    expect(content.querySelector(".supplement").textContent).toBe("kept");
+    expect(html.classList.contains("rsr-native-card")).toBe(true);
+    // The 4.x header "+" for the roll's author.
+    expect(html.querySelector('.message-header .rsr-addon-bonus-btn[data-type="skill"]')).not.toBeNull();
+});
+
+it("leaves dialog-rolled and private checks as dnd5e rendered them", async () => {
+    const { renderRsrCheck } = await import("../src/utils/native-card.js");
+    for (const message of [checkMessage({ quickRoll: false }), checkMessage({ isContentVisible: false })]) {
+        const html = checkHtml();
+        await renderer.renderNativeMessage(message, html);
+        expect(html.querySelector(".icon-row .dice-roll")).not.toBeNull();
+        expect(html.querySelector(".rsr-check")).toBeNull();
+    }
+    expect(renderRsrCheck).not.toHaveBeenCalled();
+});
+
+it("styles every check in vanilla-with-styling mode, and gives other players no bonus button", async () => {
+    game.settings.set("rsreforged", "enableVanillaQuickRoll", true);
+    const html = checkHtml();
+
+    await renderer.renderNativeMessage(checkMessage({ quickRoll: false, isAuthor: false }), html);
+
+    expect(html.querySelector(".rsr-check")).not.toBeNull();
+    expect(html.querySelector(".rsr-addon-bonus-btn")).toBeNull();
+});
+
+it("masks an NPC's save summarised on a usage card for players, in either hidden style", async () => {
+    game.settings.set("rsreforged", "hideNpcRollMode", "all");
+    game.user.isGM = false;
+    const save = { id: "sv", type: "save", system: { type: "ability", ability: "dex" }, getAssociatedActor: () => ({ isOwner: false }) };
+    game.messages.set("sv", save);
+    const summaryHtml = () => {
+        const html = usageHtml();
+        html.querySelector(".card-summary").dataset.messageId = "sv";
+        html.querySelector(".card-summary").innerHTML = `<section class="icon-row save-summary">
+            <button class="dice-roll failure"><span class="icons"><i class="fa-xmark"></i></span>
+            <span class="result"><strong class="total">10</strong></span><span class="d20die"><span class="roll">9</span></span></button>
+            <div class="roll-breakdown" popover>9 + 1</div></section>`;
+        return html;
+    };
+
+    game.settings.set("rsreforged", "hideNpcRollStyle", "total");
+    const total = summaryHtml();
+    await renderer.renderNativeMessage(usageParent([]), total);
+    const hidden = total.querySelector(".card-summary");
+    expect(hidden.querySelector(".total").textContent).toBe("rsreforged.chat.hide");
+    expect(hidden.querySelector(".d20die .roll").textContent).toBe("9");
+    expect(hidden.querySelector(".icons").children).toHaveLength(0);
+    expect(hidden.querySelector(".dice-roll").classList.contains("failure")).toBe(false);
+    expect(hidden.querySelector(".roll-breakdown")).toBeNull();
+
+    game.settings.set("rsreforged", "hideNpcRollStyle", "breakdown");
+    const breakdown = summaryHtml();
+    await renderer.renderNativeMessage(usageParent([]), breakdown);
+    expect(breakdown.querySelector(".card-summary .total").textContent).toBe("10");
+    expect(breakdown.querySelector(".card-summary .d20die")).toBeNull();
+
+    // The GM always sees it.
+    game.user.isGM = true;
+    const gm = summaryHtml();
+    await renderer.renderNativeMessage(usageParent([]), gm);
+    expect(gm.querySelector(".card-summary .total").textContent).toBe("10");
 });

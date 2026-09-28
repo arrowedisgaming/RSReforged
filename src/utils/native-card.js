@@ -2,6 +2,7 @@ import { MODULE_SHORT, ROLL_TYPE } from '../module/const.js';
 import { TEMPLATE } from '../module/templates.js';
 import { BonusManager } from './bonus.js';
 import { ChatUtility } from './chat.js';
+import { getRollType } from './dnd5e-compat.js';
 import { CoreUtility } from './core.js';
 import { DialogUtility } from './dialog.js';
 import { setNativeCritical } from './native-critical.js';
@@ -23,6 +24,34 @@ export async function renderRsrSection(parent, child) {
         case 'generic': return _formulaSection(parent, child);
     }
     return null;
+}
+
+/**
+ * dnd5e 6: the 4.x look for a standalone check or save: RSR's multiroll total and
+ * collapsible breakdown in place of dnd5e's compact roll row. Hide NPC Roll Results,
+ * the retroactive advantage overlay, and Add Bonus apply as on 4.x cards.
+ */
+export async function renderRsrCheck(message) {
+    const roll = message.rolls.find(r => r instanceof CONFIG.Dice.D20Roll);
+    if (!roll) return null;
+    const rollType = getRollType(message);
+
+    const shown = Roll.fromData(foundry.utils.deepClone(roll.toJSON()));
+    shown.options.displayChallenge = message.shouldDisplayChallenge ?? game.user.isGM;
+    ChatUtility.configureNpcRollVisibility(shown, rollType, ChatUtility.getActorFromMessage(message));
+
+    const rollHTML = await _renderRoll(shown);
+    const total = await RenderUtility.render(TEMPLATE.MULTIROLL, { roll: shown, key: rollType });
+    rollHTML.querySelector('.dice-total')?.replaceWith(_fragment(total));
+    if (shown.options.hideFinalResult) ChatUtility.maskHiddenRoll($(rollHTML), shown);
+
+    const section = document.createElement('div');
+    section.className = 'rsr-card rsr-check';
+    section.dataset.messageId = message.id;
+    section.append(rollHTML);
+    // As 4.x did, a retroactive change of mode is also written into the flavor.
+    await _addAdvantageOverlay(section, message, roll, { flavor: true });
+    return section;
 }
 
 async function _attackSection(parent, child) {
@@ -127,7 +156,7 @@ function _canEdit(child) {
         && (game.user.isGM || child.isAuthor === true);
 }
 
-async function _addAdvantageOverlay(section, child, roll) {
+async function _addAdvantageOverlay(section, child, roll, { flavor = false } = {}) {
     if (!_canEdit(child) || roll.hasAdvantage || roll.hasDisadvantage) return;
     const total = section.querySelector('.rsr-multiroll .dice-total');
     if (!total) return;
@@ -141,7 +170,9 @@ async function _addAdvantageOverlay(section, child, roll) {
         if (index < 0) return;
         // Rolls and shows only the extra d20, keeping the original result.
         rolls[index] = await RollUtility.upgradeRoll(rolls[index], state);
-        await child.update({ rolls: CoreUtility.serializeRolls(rolls) });
+        const update = { rolls: CoreUtility.serializeRolls(rolls) };
+        if (flavor) update.flavor = `${child.flavor ?? ''} (${target})`.trim();
+        await child.update(update);
     });
 }
 

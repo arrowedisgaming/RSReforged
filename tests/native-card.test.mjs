@@ -398,3 +398,51 @@ describe("Hide NPC Roll Results", () => {
         expect(shown.querySelector(".rsr-damage > .dice-total").textContent).toBe("4");
     });
 });
+
+describe("check and save cards", () => {
+    function check({ owner = true, isAuthor = true } = {}) {
+        const message = editable(child("chk", "check", [attackRoll()]), { isAuthor });
+        Object.assign(message, { flavor: "Strength (Athletics) Check", shouldDisplayChallenge: true, system: { type: "ability", skill: "ath" } });
+        message.getAssociatedActor = () => ({ isOwner: owner });
+        return message;
+    }
+
+    it("renders the 4.x total and collapsible breakdown for a check", async () => {
+        const section = await card.renderRsrCheck(check());
+
+        expect(section.classList.contains("rsr-check")).toBe(true);
+        expect(section.dataset.messageId).toBe("chk");
+        expect(section.querySelector(".rsr-multiroll").dataset.key).toBe("skill");
+        expect(section.querySelector(".rsr-multiroll .dice-total").textContent).toContain("19");
+        expect(section.querySelector(".dice-tooltip-collapser .dice-formula")).not.toBeNull();
+    });
+
+    it("masks an NPC check from players when Hide NPC Roll Results covers all rolls", async () => {
+        env.settings.hideNpcRollMode = "all";
+        env.settings.hideNpcRollStyle = "total";
+        game.user.isGM = false;
+
+        const section = await card.renderRsrCheck(check({ owner: false, isAuthor: false }));
+
+        expect(section.querySelector(".rsr-multiroll .dice-total").textContent).toContain("???");
+        expect(section.querySelector(".rsr-overlay")).toBeNull();
+
+        // Attacks-only hiding leaves checks alone.
+        env.settings.hideNpcRollMode = "attacks";
+        const shown = await card.renderRsrCheck(check({ owner: false, isAuthor: false }));
+        expect(shown.querySelector(".rsr-multiroll .dice-total").textContent).toContain("19");
+    });
+
+    it("writes a retroactive advantage into the check's flavor, as 4.x did", async () => {
+        env.settings.enableOverlayButtons = true;
+        const { RollUtility } = await import("../src/utils/roll.js");
+        vi.spyOn(RollUtility, "upgradeRoll").mockImplementation(async (roll) => roll);
+        const message = check();
+
+        const section = await card.renderRsrCheck(message);
+        section.querySelector('.rsr-overlay-multiroll [data-state="kh"]').click();
+        await vi.waitFor(() => expect(message.update).toHaveBeenCalledTimes(1));
+
+        expect(message.update.mock.calls[0][0].flavor).toBe("Strength (Athletics) Check (DND5E.Advantage)");
+    });
+});

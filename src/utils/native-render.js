@@ -1,7 +1,9 @@
 import { MODULE_SHORT } from '../module/const.js';
-import { getOriginId } from './dnd5e-compat.js';
+import { BonusManager } from './bonus.js';
+import { getOriginId, getRollType } from './dnd5e-compat.js';
 import { getNativeRollSources } from './native-workflow.js';
-import { renderRsrSection } from './native-card.js';
+import { renderRsrCheck, renderRsrSection } from './native-card.js';
+import { HIDE_NPC_ROLL_STYLES, SETTING_NAMES, SettingsUtility } from './settings.js';
 
 const combinedTypes = new Set(['attack', 'damage', 'healing', 'generic']);
 const sectionOrder = { attack: 0, damage: 1, healing: 1, generic: 2 };
@@ -78,6 +80,7 @@ export async function renderNativeMessage(message, suppliedHtml) {
     if (!html) return;
     html.classList.remove('rsr-native-combined-original');
     if (message.type !== 'usage') {
+        if (checkTypes.has(message.type)) await renderNativeCheck(message, html);
         scheduleReconcile();
         return;
     }
@@ -91,6 +94,7 @@ export async function renderNativeMessage(message, suppliedHtml) {
     renders.set(html, token);
     content.querySelector(':scope > .rsr-native-combined')?.remove();
     // dnd5e's registry returns children in no guaranteed order; the card reads top-down.
+    maskHiddenSummaries(content);
     const sources = getNativeRollSources(message).filter(child =>
         combinedTypes.has(child.type) && child.visible !== false && child.isContentVisible)
         .sort((a, b) => (sectionOrder[a.type] - sectionOrder[b.type]) || (a.timestamp - b.timestamp));
@@ -119,12 +123,7 @@ export async function renderNativeMessage(message, suppliedHtml) {
         combined.append(section);
     }
     // The legacy 5.3 breakdown toggles on click, as dnd5e's own roll cards did.
-    combined.addEventListener('click', event => {
-        // The retro overlay covers the whole total while hovered; only its own
-        // controls are exempt, so clicking the number still opens the breakdown.
-        if (event.target.closest('button, a, input, damage-application, .rsr-overlay [data-action]')) return;
-        event.target.closest('.dice-roll')?.classList.toggle('expanded');
-    });
+    combined.addEventListener('click', toggleBreakdown);
     hideRepresentedButtons(content, sources);
     activateTargets(combined);
     scheduleReconcile();
@@ -140,6 +139,65 @@ export async function renderNativeMessage(message, suppliedHtml) {
         clearTimeout(timer);
         if (renders.get(html) === token) combined.hidden = false;
     }
+}
+
+const checkTypes = new Set(['check', 'save']);
+
+/**
+ * The 4.x check/save card: RSR's total and breakdown replace dnd5e's compact roll row,
+ * on checks and saves RSR rolled (or every one, in vanilla-with-styling mode). dnd5e's
+ * header, save outcome, supplements, buttons, and HP deltas stay as they are.
+ */
+async function renderNativeCheck(message, html) {
+    const styled = message.flags?.[MODULE_SHORT]?.quickRoll
+        || SettingsUtility.getSettingValue(SETTING_NAMES.QUICK_VANILLA_ENABLED);
+    // A private roll's content is dnd5e's to withhold; leave its placeholder alone.
+    if (!styled || !message.isContentVisible) return;
+    const content = html.querySelector('.message-content');
+    const rows = [...(content?.querySelectorAll(':scope > .icon-row') ?? [])].filter(row => row.querySelector('.dice-roll'));
+    if (!rows.length) return;
+
+    const section = await renderRsrCheck(message);
+    // dnd5e fires this before ChatLog inserts the card, so ask whether the row is still
+    // part of this render, not whether it is in the document.
+    if (!section || !html.contains(rows[0])) return;
+    rows[0].before(section);
+    rows.forEach(row => row.remove());
+    html.classList.add('rsr-native-card');
+    section.addEventListener('click', toggleBreakdown);
+
+    if (game.user.isGM || message.isAuthor) {
+        const rollType = getRollType(message);
+        BonusManager.injectButton(message, $(html), rollType === 'ability' ? 'check' : rollType, '.message-header');
+    }
+}
+
+/**
+ * dnd5e 6 summarises target saves and checks on the usage card. Hide NPC Roll Results
+ * masks those rows as it does the standalone cards: the total (keeping the natural d20)
+ * or the d20 and breakdown (keeping the total), and the pass/fail mark either way.
+ */
+function maskHiddenSummaries(content) {
+    for (const summary of content.querySelectorAll(':scope > .card-summary[data-message-id]')) {
+        const source = game.messages.get(summary.dataset.messageId);
+        if (!source || !checkTypes.has(source.type)) continue;
+        if (!SettingsUtility.shouldHideNpcRollForActor(source.getAssociatedActor?.(), getRollType(source))) continue;
+        const breakdown = SettingsUtility.getHideNpcRollStyle() === HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+        for (const roll of summary.querySelectorAll('.dice-roll')) {
+            roll.classList.remove('success', 'failure', 'critical', 'fumble');
+            roll.querySelector('.icons')?.replaceChildren();
+            if (breakdown) roll.querySelector('.d20die')?.remove();
+            else roll.querySelector('.result .total')?.replaceChildren(game.i18n.localize(`${MODULE_SHORT}.chat.hide`));
+        }
+        summary.querySelectorAll('.roll-breakdown').forEach(node => node.remove());
+    }
+}
+
+function toggleBreakdown(event) {
+    // The retro overlay covers the whole total while hovered; only its own
+    // controls are exempt, so clicking the number still opens the breakdown.
+    if (event.target.closest('button, a, input, damage-application, .rsr-overlay [data-action]')) return;
+    event.target.closest('.dice-roll')?.classList.toggle('expanded');
 }
 
 /** Hide originals that a fold-in represents; restore them when it disappears. */
