@@ -259,6 +259,17 @@ export class ChatUtility {
         });
     }
 
+    /**
+     * dnd5e 6: the 4.x click-to-cycle damage type on a damage section rendered from a
+     * native damage child. The choice is written to the child's own rolls.
+     */
+    static injectNativeDamageTypeToggles(message, html) {
+        _injectDamageTypeToggles(message, html);
+        html.find(DAMAGE_TYPE_TOGGLE_SELECTOR).click(async event => {
+            await _processDamageTypeCycleEvent(message, event);
+        });
+    }
+
     static getMessageType(message) {
         return getRollType(message);
     }
@@ -1460,12 +1471,15 @@ async function _processDamageTypeCycleEvent(message, event) {
     const type = $(event.currentTarget).closest('.rsr-damage-type-toggle').attr('data-rsr-damage-type');
     if (!type) return;
 
-    const originalRolls = ChatUtility.getMessageRolls(message);
+    const native = ChatUtility.isNativeRollMessage(message);
+    // A native message's rolls are its live document state; edit copies until the update lands.
+    const originalRolls = ChatUtility.getMessageRolls(message)
+        .map(roll => native ? Roll.fromData(foundry.utils.deepClone(roll.toJSON())) : roll);
     const damageRolls = originalRolls.filter(_isDamageRoll);
     const targets = _getCyclableDamageRolls(damageRolls, type);
     if (!targets.length) return;
 
-    const damageTypes = { ...(message.flags[MODULE_SHORT].damageTypes ?? {}) };
+    const damageTypes = { ...(message.flags?.[MODULE_SHORT]?.damageTypes ?? {}) };
 
     for (const roll of targets) {
         const options = _getDamageTypeOptions(roll);
@@ -1474,6 +1488,8 @@ async function _processDamageTypeCycleEvent(message, event) {
         const next = options[(options.indexOf(roll.options.type) + 1) % options.length];
 
         roll.options.type = next;
+        // A stored critical base still carries the old type; demoting to it would undo this.
+        delete roll.options.rsreforgedCriticalBase;
         // Keyed by index within the damage rolls — the array getDamageFromMessage returns.
         damageTypes[damageRolls.indexOf(roll)] = next;
     }
@@ -1481,6 +1497,13 @@ async function _processDamageTypeCycleEvent(message, event) {
     // The label is only reachable with the breakdown open, so remember to reopen it
     // after the update re-renders the card (see _injectDamageTypeToggles).
     message._rsrExpandDamageTooltip = $(event.currentTarget).closest('.dice-roll').hasClass('expanded');
+
+    if (native) {
+        // dnd5e 6 keeps the type on the roll itself; the update refreshes the usage card.
+        await message.update({ rolls: CoreUtility.serializeRolls(originalRolls) });
+        await ActivityUtility.rememberDamageTypes(message, _getDamageRolls(message));
+        return;
+    }
 
     message.flags[MODULE_SHORT].damageTypes = damageTypes;
     // The mutated rolls are shared with originalRolls, so serializing the full array

@@ -302,3 +302,43 @@ it("opens the bonus picker for the child message, not the usage card", async () 
 
     expect(open).toHaveBeenCalledWith(damage, "damage");
 });
+
+it("cycles a damage part's type on the damage message itself and remembers the choice", async () => {
+    CONFIG.DND5E.damageTypes.cold = { label: "Cold", labelShort: "Cold", icon: "systems/dnd5e/icons/svg/damage/cold.svg" };
+    const { ActivityUtility } = await import("../src/utils/activity.js");
+    const remember = vi.spyOn(ActivityUtility, "rememberDamageTypes").mockResolvedValue();
+    const orb = damageRoll("fire", 5, 8);
+    orb.options.types = ["fire", "cold"];
+    orb.options.rsreforgedCriticalBase = { stale: true };
+    const damage = editable(child("dmg", "damage", [orb, damageRoll("slashing", 3, 6)]));
+    // Real children carry workflow flags, which must not divert the write to the flag cache.
+    damage.flags = { rsreforged: { workflowVersion: 2, parentId: "parent" } };
+
+    const section = await card.renderRsrSection(parent, damage);
+    const parts = section.querySelectorAll(".rsr-damage .tooltip-part");
+    // Only the part with an alternative type reads as clickable.
+    expect(parts[0].classList.contains("rsr-damage-type-toggle")).toBe(true);
+    expect(parts[1].classList.contains("rsr-damage-type-toggle")).toBe(false);
+
+    parts[0].querySelector(".total .label").click();
+    await vi.waitFor(() => expect(damage.update).toHaveBeenCalledTimes(1));
+
+    const [cycled, untouched] = damage.update.mock.calls[0][0].rolls;
+    expect(cycled.options.type).toBe("cold");
+    expect(cycled.options.rsreforgedCriticalBase).toBeUndefined();
+    expect(untouched.options.type).toBe("slashing");
+    // The live document is only changed by the update itself.
+    expect(orb.options.type).toBe("fire");
+    expect(damage.flags.rsreforged.rolls).toBeUndefined();
+    await vi.waitFor(() => expect(remember).toHaveBeenCalledWith(damage, expect.any(Array)));
+});
+
+it("offers damage-type cycling only to the GM and the roll's author", async () => {
+    const orb = damageRoll("fire", 5, 8);
+    orb.options.types = ["fire", "cold"];
+    game.user.isGM = false;
+
+    const section = await card.renderRsrSection(parent, editable(child("dmg", "damage", [orb]), { isAuthor: false }));
+
+    expect(section.querySelector(".rsr-damage-type-toggle")).toBeNull();
+});

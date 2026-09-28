@@ -83,6 +83,9 @@ async function _damageSection(parent, child) {
         section.append(note);
     }
 
+    // Click a part's type label or icon to switch it, e.g. Chromatic Orb.
+    ChatUtility.injectNativeDamageTypeToggles(child, $(section));
+
     if (SettingsUtility._useRsrDamageApplyButtons) {
         await ChatUtility.injectNativeApplyButtons(child, $(section));
     } else if (game.user.isGM || dnd5e.settings?.allowPlayerDamageTray) {
