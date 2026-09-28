@@ -276,3 +276,29 @@ it("offers no critical overlay on healing or on damage that is already critical"
     const done = await card.renderRsrSection(parent, editable(child("d", "damage", [crit])));
     expect(done.querySelector(".rsr-overlay-crit")).toBeNull();
 });
+
+it("puts the 4.x Add Bonus button on attack, damage, and healing headers for the roll's author or the GM", async () => {
+    const attack = await card.renderRsrSection(parent, editable(child("atk", "attack", [attackRoll()])));
+    expect(attack.querySelector('.rsr-title .rsr-addon-bonus-btn[data-type="attack"]')).not.toBeNull();
+
+    const damage = await card.renderRsrSection(parent, editable(child("dmg", "damage", [damageRoll("fire", 4, 6)])));
+    expect(damage.querySelector('.rsr-title .rsr-addon-bonus-btn[data-type="damage"]')).not.toBeNull();
+
+    const heal = await card.renderRsrSection(parent, editable(child("heal", "healing", [damageRoll("healing", 5, 8)])));
+    expect(heal.querySelector('.rsr-addon-bonus-btn[data-type="damage"]')).not.toBeNull();
+
+    game.user.isGM = false;
+    const other = await card.renderRsrSection(parent, editable(child("x", "attack", [attackRoll()]), { isAuthor: false }));
+    expect(other.querySelector(".rsr-addon-bonus-btn")).toBeNull();
+});
+
+it("opens the bonus picker for the child message, not the usage card", async () => {
+    const { BonusManager } = await import("../src/utils/bonus.js");
+    const open = vi.spyOn(BonusManager, "openBonusDialog").mockResolvedValue();
+    const damage = editable(child("dmg", "damage", [damageRoll("fire", 4, 6)]));
+
+    const section = await card.renderRsrSection(parent, damage);
+    section.querySelector(".rsr-addon-bonus-btn").click();
+
+    expect(open).toHaveBeenCalledWith(damage, "damage");
+});

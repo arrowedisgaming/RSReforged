@@ -22,8 +22,13 @@ const NATIVE_ROLL_MESSAGE_TYPES = new Set(["attack", "damage", "healing", "check
 const DAMAGE_TYPE_TOGGLE_SELECTOR = '.rsr-damage-type-toggle .total .label, .rsr-damage-type-toggle .total img';
 
 export class ChatUtility {
+    /** dnd5e 6 typed roll messages keep their rolls natively, never in RSR's flag cache. */
+    static isNativeRollMessage(message) {
+        return NATIVE_ROLL_MESSAGE_TYPES.has(message?.type);
+    }
+
     static getMessageRolls(message) {
-        if (NATIVE_ROLL_MESSAGE_TYPES.has(message?.type)) return Array.from(message.rolls ?? []);
+        if (ChatUtility.isNativeRollMessage(message)) return Array.from(message.rolls ?? []);
 
         const flagRolls = message.flags?.[MODULE_SHORT]?.rolls;
         if (flagRolls && Array.isArray(flagRolls)) {

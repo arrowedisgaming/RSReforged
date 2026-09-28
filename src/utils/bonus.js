@@ -302,14 +302,19 @@ export class BonusManager {
 
             const newRoll = TargetRollClass.fromTerms(newTerms);
             newRoll.options = foundry.utils.deepClone(originalRoll.options);
+            // A critical's stored base predates the bonus; demoting to it would drop the bonus.
+            delete newRoll.options.rsreforgedCriticalBase;
             newRoll._total = originalRoll.total + bonusRoll.total;
             newRoll._evaluated = true; 
 
             currentRolls[targetRollIndex] = newRoll;
 
-            // Persist via flags so the RSR card re-renders from the correct data source.
+            // Persist to wherever the card renders from: a dnd5e 6 roll message's own
+            // rolls (its usage card refreshes from the update), else RSR's flag cache.
             const serialised = CoreUtility.serializeRolls(currentRolls);
-            if (message.flags?.[MODULE_SHORT]) {
+            if (ChatUtility.isNativeRollMessage(message)) {
+                await message.update({ rolls: serialised });
+            } else if (message.flags?.[MODULE_SHORT]) {
                 message.flags[MODULE_SHORT].rolls = serialised;
                 await ChatUtility.updateChatMessage(message, { flags: message.flags });
 

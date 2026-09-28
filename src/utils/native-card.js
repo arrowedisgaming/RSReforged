@@ -1,5 +1,6 @@
 import { MODULE_SHORT, ROLL_TYPE } from '../module/const.js';
 import { TEMPLATE } from '../module/templates.js';
+import { BonusManager } from './bonus.js';
 import { ChatUtility } from './chat.js';
 import { CoreUtility } from './core.js';
 import { DialogUtility } from './dialog.js';
@@ -42,6 +43,7 @@ async function _attackSection(parent, child) {
     });
     section.append(rollHTML);
     await _addAdvantageOverlay(section, child, roll);
+    _addBonusButton(section, child, ROLL_TYPE.ATTACK);
     return section;
 }
 
@@ -70,6 +72,7 @@ async function _damageSection(parent, child) {
     rollHTML.querySelector('.dice-result').classList.add('rsr-damage');
     section.append(rollHTML);
     if (!healing && !critical) await _addCriticalOverlay(section, child);
+    _addBonusButton(section, child, ROLL_TYPE.DAMAGE);
 
     const onSave = child.system?.onSave;
     if (onSave) {
@@ -151,6 +154,12 @@ async function _addCriticalOverlay(section, child) {
         await _showDice(child, promoted);
         await child.update({ rolls: CoreUtility.serializeRolls(rolls) });
     });
+}
+
+/** The 4.x header "+": the bonus is added to this child's own roll, as the overlays are. */
+function _addBonusButton(section, child, type) {
+    if (!game.user.isGM && child.isAuthor !== true) return;
+    BonusManager.injectButton(child, $(section), type, `.rsr-section-${type}`);
 }
 
 function _onOverlayClick(buttons, handler) {
