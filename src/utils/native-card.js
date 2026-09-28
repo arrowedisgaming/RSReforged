@@ -29,10 +29,17 @@ async function _attackSection(parent, child) {
     const roll = child.rolls.find(r => r instanceof CONFIG.Dice.D20Roll);
     if (!roll) return null;
 
-    const rollHTML = await _renderRoll(roll);
-    roll.options.displayChallenge = game.user.isGM || game.settings.get('dnd5e', 'attackRollVisibility') !== 'none';
-    const total = await RenderUtility.render(TEMPLATE.MULTIROLL, { roll, key: ROLL_TYPE.ATTACK });
+    // Render from a copy: the display options below are per viewer and must never
+    // reach the document through a later edit that serializes its rolls.
+    const shown = Roll.fromData(foundry.utils.deepClone(roll.toJSON()));
+    shown.options.displayChallenge = game.user.isGM || game.settings.get('dnd5e', 'attackRollVisibility') !== 'none';
+    // Hide NPC Roll Results: masks the total or the breakdown for players who do not own the actor.
+    ChatUtility.configureNpcRollVisibility(shown, ROLL_TYPE.ATTACK, ChatUtility.getActorFromMessage(child));
+
+    const rollHTML = await _renderRoll(shown);
+    const total = await RenderUtility.render(TEMPLATE.MULTIROLL, { roll: shown, key: ROLL_TYPE.ATTACK });
     rollHTML.querySelector('.dice-total')?.replaceWith(_fragment(total));
+    if (shown.options.hideFinalResult) ChatUtility.maskHiddenRoll($(rollHTML), shown);
 
     const ammo = child.system?.ammunitionItem?.name;
     const section = await _section(child, {

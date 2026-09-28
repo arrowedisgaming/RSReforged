@@ -1,4 +1,4 @@
-import { beforeEach, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { setupFoundryEnv } from "./helpers/foundry-env.mjs";
 
 let env;
@@ -46,7 +46,7 @@ beforeEach(async () => {
     const renderTemplate = foundry.applications.handlebars.renderTemplate;
     const base = renderTemplate.getMockImplementation();
     renderTemplate.mockImplementation(async (template, data) => template.endsWith("rsr-multiroll.html")
-        ? `<div class="rsr-multiroll" data-key="${data.key}">${data.entries.map((entry) => `<h4 class="dice-total">${entry.total}</h4>`).join("")}</div>`
+        ? `<div class="rsr-multiroll" data-key="${data.key}">${data.entries.map((entry) => `<h4 class="dice-total">${entry.hideTotal ? "???" : entry.total}${entry.d20Result ? `<span class="die-icon">${entry.d20Result}</span>` : ""}</h4>`).join("")}</div>`
         : base(template, data));
     card = await import("../src/utils/native-card.js");
 });
@@ -137,7 +137,9 @@ it("renders the attack section with RSR's total inside core's roll markup, colla
     expect(section.querySelector(".dice-result > h4.dice-total")).toBeNull();
     expect(section.querySelector(".dice-tooltip-collapser > .dice-tooltip > .dice-formula").textContent).toBe("1d20 + 5");
     expect(section.querySelector(".rsr-subtitle").textContent).toContain("Arrow");
-    expect(roll.options.displayChallenge).toBe(true);
+    // Per-viewer display options stay off the document's own roll.
+    expect(roll.options.displayChallenge).toBeUndefined();
+    expect(roll.options.hideFinalResult).toBeUndefined();
 });
 
 it("escapes damage-type labels and icons that another module registered", async () => {
@@ -198,10 +200,12 @@ it("applies a native damage part with its own properties, like dnd5e's tray", as
 });
 
 function attackRoll() {
-    const { D20Roll, TestDie } = env.classes;
+    const { D20Roll, TestDie, OperatorTerm } = env.classes;
     const roll = new D20Roll("1d20 + 5");
-    roll.terms = [new TestDie({ number: 1, faces: 20, results: [{ result: 14, active: true }] })];
-    roll.dice = roll.terms;
+    const d20 = new TestDie({ number: 1, faces: 20, results: [{ result: 14, active: true }] });
+    // Own data properties, as serialized Foundry terms carry, so a copied roll keeps its +5.
+    roll.terms = [d20, Object.assign(new OperatorTerm({ operator: "+" }), { _evaluated: true }), { number: 5, total: 5, _evaluated: true }];
+    roll.dice = [d20];
     roll.total = 19;
     return roll;
 }
@@ -341,4 +345,56 @@ it("offers damage-type cycling only to the GM and the roll's author", async () =
     const section = await card.renderRsrSection(parent, editable(child("dmg", "damage", [orb]), { isAuthor: false }));
 
     expect(section.querySelector(".rsr-damage-type-toggle")).toBeNull();
+});
+
+describe("Hide NPC Roll Results", () => {
+    function npcAttack({ owner = false } = {}) {
+        const message = editable(child("atk", "attack", [attackRoll()]), { isAuthor: false });
+        message.getAssociatedActor = () => ({ isOwner: owner });
+        return message;
+    }
+
+    beforeEach(() => {
+        env.settings.hideNpcRollMode = "attacks";
+        game.user.isGM = false;
+    });
+
+    it("masks an NPC attack total from players, keeping the natural d20 (Hide Total)", async () => {
+        env.settings.hideNpcRollStyle = "total";
+
+        const section = await card.renderRsrSection(parent, npcAttack());
+
+        const total = section.querySelector(".rsr-multiroll .dice-total");
+        expect(total.textContent).toContain("???");
+        expect(total.textContent).not.toContain("19");
+        expect(total.querySelector(".die-icon").textContent).toBe("14");
+        expect(section.querySelector(".dice-formula").textContent).not.toContain("5");
+    });
+
+    it("shows the total but masks the d20 and every modifier (Hide Breakdown)", async () => {
+        env.settings.hideNpcRollStyle = "breakdown";
+
+        const section = await card.renderRsrSection(parent, npcAttack());
+
+        const total = section.querySelector(".rsr-multiroll .dice-total");
+        expect(total.textContent).toContain("19");
+        expect(total.querySelector(".die-icon")).toBeNull();
+        expect(section.querySelectorAll(".dice-tooltip .tooltip-part")).toHaveLength(0);
+    });
+
+    it("never hides from the GM or the actor's owner, and never hides damage", async () => {
+        env.settings.hideNpcRollStyle = "total";
+        const owned = await card.renderRsrSection(parent, npcAttack({ owner: true }));
+        expect(owned.querySelector(".rsr-multiroll .dice-total").textContent).toContain("19");
+
+        game.user.isGM = true;
+        const gm = await card.renderRsrSection(parent, npcAttack());
+        expect(gm.querySelector(".rsr-multiroll .dice-total").textContent).toContain("19");
+
+        game.user.isGM = false;
+        const damage = editable(child("dmg", "damage", [damageRoll("fire", 4, 6)]), { isAuthor: false });
+        damage.getAssociatedActor = () => ({ isOwner: false });
+        const shown = await card.renderRsrSection(parent, damage);
+        expect(shown.querySelector(".rsr-damage > .dice-total").textContent).toBe("4");
+    });
 });

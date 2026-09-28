@@ -270,6 +270,19 @@ export class ChatUtility {
         });
     }
 
+    /**
+     * dnd5e 6: Hide NPC Roll Results on a roll rendered for a native card section. Call
+     * before rendering its total, then mask the rendered roll markup if it came back hidden.
+     * @param {Roll} roll A display copy of the roll; this sets per-viewer render options on it.
+     */
+    static configureNpcRollVisibility(roll, rollType, actor) {
+        _configureRollVisibility(roll, rollType, actor);
+    }
+
+    static maskHiddenRoll(rollHTML, roll) {
+        _applyHiddenRollPresentation(rollHTML, roll);
+    }
+
     static getMessageType(message) {
         return getRollType(message);
     }
