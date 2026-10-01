@@ -196,7 +196,8 @@ function maskHiddenSummaries(content) {
 function toggleBreakdown(event) {
     // The retro overlay covers the whole total while hovered; only its own
     // controls are exempt, so clicking the number still opens the breakdown.
-    if (event.target.closest('button, a, input, damage-application, .rsr-overlay [data-action]')) return;
+    // Stamped dice are reroll/fudge targets (reroll.js), not breakdown toggles.
+    if (event.target.closest('button, a, input, damage-application, .rsr-overlay [data-action], [data-rsr-roll]')) return;
     event.target.closest('.dice-roll')?.classList.toggle('expanded');
 }
 

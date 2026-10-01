@@ -446,3 +446,43 @@ describe("check and save cards", () => {
         expect(message.update.mock.calls[0][0].flavor).toBe("Strength (Athletics) Check (DND5E.Advantage)");
     });
 });
+
+describe("reroll stamps", () => {
+    it("stamps each damage die with its own roll, die term, and result, across rolls", async () => {
+        const slashing = damageRoll("slashing", 7, 10, 3);
+        const fire = damageRoll("fire", 6, 6);
+        const section = await card.renderRsrSection(parent, child("dmg", "damage", [slashing, fire]));
+
+        const stamps = [...section.querySelectorAll(".dice-rolls .roll")].map((die) => [die.textContent, die.dataset.rsrRoll, die.dataset.rsrDie, die.dataset.rsrResult]);
+        expect(stamps).toEqual([["7", "0", "0", "0"], ["6", "1", "0", "0"]]);
+        // Constants are not dice.
+        expect(section.querySelector(".dice-rolls .constant").dataset.rsrRoll).toBeUndefined();
+    });
+
+    it("stamps the dice of a core-rendered roll by their place in roll.dice", async () => {
+        const { D20Roll, TestDie } = env.classes;
+        D20Roll.prototype.render = async function () {
+            return `<div class="dice-roll"><div class="dice-result"><div class="dice-formula">2d20kh + 5</div><div class="dice-tooltip">
+                <section class="tooltip-part"><div class="dice"><ol class="dice-rolls"><li class="roll d20 discarded">4</li><li class="roll d20">15</li></ol></div></section>
+                <section class="tooltip-part constant-term"><div class="dice"><div class="total">+5</div></div></section>
+            </div><h4 class="dice-total">20</h4></div></div>`;
+        };
+        const roll = attackRoll();
+        roll.dice[0].results = [{ result: 4, discarded: true, active: false }, { result: 15, active: true }];
+
+        const section = await card.renderRsrSection(parent, child("atk", "attack", [roll]));
+
+        expect([...section.querySelectorAll(".dice-rolls .roll")].map((die) => [die.dataset.rsrRoll, die.dataset.rsrDie, die.dataset.rsrResult]))
+            .toEqual([["0", "0", "0"], ["0", "0", "1"]]);
+    });
+
+    it("reopens the breakdown after an edit re-renders the section", async () => {
+        const damage = child("dmg", "damage", [damageRoll("fire", 4, 6)]);
+        damage._rsrKeepExpanded = true;
+
+        const section = await card.renderRsrSection(parent, damage);
+
+        expect(section.querySelector(".dice-roll").classList.contains("expanded")).toBe(true);
+        expect(damage._rsrKeepExpanded).toBeUndefined();
+    });
+});

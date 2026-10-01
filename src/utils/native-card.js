@@ -17,13 +17,15 @@ import { SETTING_NAMES, SettingsUtility } from './settings.js';
  * the real attack or damage message.
  */
 export async function renderRsrSection(parent, child) {
+    let section = null;
     switch (child.type) {
-        case 'attack': return _attackSection(parent, child);
+        case 'attack': section = await _attackSection(parent, child); break;
         case 'damage':
-        case 'healing': return _damageSection(parent, child);
-        case 'generic': return _formulaSection(parent, child);
+        case 'healing': section = await _damageSection(parent, child); break;
+        case 'generic': section = await _formulaSection(parent, child); break;
     }
-    return null;
+    if (section) _restoreExpanded(section, child);
+    return section;
 }
 
 /**
@@ -40,7 +42,7 @@ export async function renderRsrCheck(message) {
     shown.options.displayChallenge = message.shouldDisplayChallenge ?? game.user.isGM;
     ChatUtility.configureNpcRollVisibility(shown, rollType, ChatUtility.getActorFromMessage(message));
 
-    const rollHTML = await _renderRoll(shown);
+    const rollHTML = await _renderRoll(shown, message.rolls.indexOf(roll));
     const total = await RenderUtility.render(TEMPLATE.MULTIROLL, { roll: shown, key: rollType });
     rollHTML.querySelector('.dice-total')?.replaceWith(_fragment(total));
     if (shown.options.hideFinalResult) ChatUtility.maskHiddenRoll($(rollHTML), shown);
@@ -51,6 +53,7 @@ export async function renderRsrCheck(message) {
     section.append(rollHTML);
     // As 4.x did, a retroactive change of mode is also written into the flavor.
     await _addAdvantageOverlay(section, message, roll, { flavor: true });
+    _restoreExpanded(section, message);
     return section;
 }
 
@@ -65,7 +68,7 @@ async function _attackSection(parent, child) {
     // Hide NPC Roll Results: masks the total or the breakdown for players who do not own the actor.
     ChatUtility.configureNpcRollVisibility(shown, ROLL_TYPE.ATTACK, ChatUtility.getActorFromMessage(child));
 
-    const rollHTML = await _renderRoll(shown);
+    const rollHTML = await _renderRoll(shown, child.rolls.indexOf(roll));
     const total = await RenderUtility.render(TEMPLATE.MULTIROLL, { roll: shown, key: ROLL_TYPE.ATTACK });
     rollHTML.querySelector('.dice-total')?.replaceWith(_fragment(total));
     if (shown.options.hideFinalResult) ChatUtility.maskHiddenRoll($(rollHTML), shown);
@@ -104,7 +107,7 @@ async function _damageSection(parent, child) {
             critical
         });
 
-    const rollHTML = _renderDamage(rolls);
+    const rollHTML = _renderDamage(rolls, child.rolls);
     rollHTML.querySelector('.dice-result').classList.add('rsr-damage');
     section.append(rollHTML);
     if (!healing && !critical) await _addCriticalOverlay(section, child);
@@ -143,7 +146,7 @@ async function _formulaSection(parent, child) {
         icon: '<i class="fas fa-dice"></i>'
     });
     // A formula child can hold several rolls; its hidden original must not be their only view.
-    for (const each of child.rolls) section.append(await _renderRoll(each));
+    for (const [index, each] of child.rolls.entries()) section.append(await _renderRoll(each, index));
     return section;
 }
 
@@ -262,12 +265,20 @@ function _fragment(html) {
 }
 
 /** Core roll markup in dnd5e 5.3's collapsible breakdown. Foundry 14 already lists constant terms. */
-async function _renderRoll(roll) {
+async function _renderRoll(roll, rollIndex) {
     const root = _fragment(await roll.render()).firstElementChild;
     delete root.dataset.action;
 
     const tooltip = root.querySelector('.dice-tooltip');
     if (tooltip) {
+        // dnd5e 6 lists one part per die term in roll.dice order, then its constant
+        // part, which holds no dice; stamp each result with its source for rerolls.
+        const parts = [...tooltip.querySelectorAll('.tooltip-part')].filter(part => part.querySelector('.dice-rolls .roll'));
+        if (parts.length === roll.dice.length) parts.forEach((part, dieIndex) => {
+            const results = part.querySelectorAll('.dice-rolls .roll');
+            if (results.length !== roll.dice[dieIndex].results.length) return;
+            results.forEach((node, resultIndex) => _stampDie(node, rollIndex, dieIndex, resultIndex));
+        });
         const collapser = document.createElement('div');
         collapser.className = 'dice-tooltip-collapser';
         tooltip.replaceWith(collapser);
@@ -283,7 +294,7 @@ async function _renderRoll(roll) {
  * Coalesce damage rolls into one breakdown, as dnd5e 5.3's `_enrichDamageTooltip`
  * did before dnd5e 6 replaced it with the compact roll button.
  */
-function _renderDamage(rolls) {
+function _renderDamage(rolls, sources = rolls) {
     const aggregate = CONFIG.DND5E.aggregateDamageDisplay;
     const parts = aggregate ? dnd5e.dice.aggregateDamageRolls(rolls) : rolls;
     // Aggregated parts carry their own leading " + ", which the first part must drop.
@@ -299,7 +310,7 @@ function _renderDamage(rolls) {
         return `<section class="tooltip-part" data-rsr-damage-type="${_escape(type ?? '')}"${source}><div class="dice">
             ${icon ? `<span class="part-method" data-tooltip aria-label="${_escape(CoreUtility.localize(method))}">${icon}</span>` : ''}
             <ol class="dice-rolls">
-                ${dice.map(({ result, classes }) => `<li class="roll ${classes}">${result}</li>`).join('')}
+                ${dice.map(die => `<li class="roll ${die.classes}"${_dieSource(die, sources)}>${die.result}</li>`).join('')}
                 ${constant ? `<li class="constant"><span class="sign">${constant < 0 ? '-' : '+'}</span>${Math.abs(constant)}</li>` : ''}
             </ol>
             <div class="total">
@@ -318,6 +329,31 @@ function _renderDamage(rolls) {
     </div>`;
     root.querySelector('.dice-formula').textContent = formula;
     return root;
+}
+
+/**
+ * A die's place in its message: roll, die term (roll.dice), and result. The reroll and
+ * fudge listener acts only on dice stamped this way; dnd5e's own breakdowns stay inert.
+ */
+function _stampDie(node, rollIndex, dieIndex, resultIndex) {
+    if (!(rollIndex >= 0)) return;
+    Object.assign(node.dataset, { rsrRoll: rollIndex, rsrDie: dieIndex, rsrResult: resultIndex });
+}
+
+/** The same stamp as markup, found by term identity: damage parts list dice in their own order. */
+function _dieSource({ term, resultIndex }, sources) {
+    for (const [rollIndex, roll] of sources.entries()) {
+        const dieIndex = roll.dice?.indexOf(term) ?? -1;
+        if (dieIndex >= 0) return ` data-rsr-roll="${rollIndex}" data-rsr-die="${dieIndex}" data-rsr-result="${resultIndex}"`;
+    }
+    return '';
+}
+
+/** After a reroll or other in-place edit, reopen the breakdown the user was working in. */
+function _restoreExpanded(section, message) {
+    if (!message._rsrKeepExpanded) return;
+    delete message._rsrKeepExpanded;
+    section.querySelectorAll('.dice-roll').forEach(node => node.classList.add('expanded'));
 }
 
 /** Damage types can be registered by other modules; dnd5e 6's own template escapes them. */
@@ -339,7 +375,8 @@ function _simplifyDamageRoll(roll) {
         const value = term.total;
         if (term instanceof DiceTerm) {
             const tooltipData = term.getTooltipData();
-            aggregate.dice.push(...tooltipData.rolls);
+            // Keep each result's term so the breakdown can stamp its source for rerolls.
+            aggregate.dice.push(...tooltipData.rolls.map((die, resultIndex) => ({ ...die, term, resultIndex })));
             aggregate.icon ??= tooltipData.icon;
             aggregate.method ??= tooltipData.method;
         }

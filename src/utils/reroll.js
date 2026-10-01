@@ -12,37 +12,39 @@ export class RerollManager {
     static registerGlobalListener() {
         // FIX: Broadened the selector from '.roll.die' to '.roll' to catch 5e damage dice templates
         $(document).on("mousedown", ".dice-tooltip .dice-rolls .roll", (event) => {
-            // dnd5e 6 keeps these classes inside its roll breakdown, so this listener
-            // still matches there. Rerolls persist through the legacy flag cache, which
-            // native cards never read, so stay out until native rerolls are restored.
-            if (usesNativeWorkflow()) return;
             if (!SettingsUtility.getSettingValue(SETTING_NAMES.REROLL_EVERYONE)) return;
-            
+
             const dieElement = $(event.currentTarget);
-            const messageElement = dieElement.closest(".chat-message");
-            const messageId = messageElement.data("messageId");
-            const message = game.messages.get(messageId);
+            let message;
+            let path;
+            if (usesNativeWorkflow()) {
+                // dnd5e 6: only dice RSR rendered carry their source; dnd5e's own
+                // breakdown popovers reuse these classes but are left alone.
+                path = _nativeDiePath(event.currentTarget);
+                if (!path) return;
+                message = game.messages.get(path.messageId);
+            } else {
+                message = game.messages.get(dieElement.closest(".chat-message").data("messageId"));
+            }
 
             if (!message) return;
 
             if (event.button === 2) {
                 if (!game.user.isGM || !SettingsUtility.getSettingValue(SETTING_NAMES.FUDGE_GM)) return;
-                this._handleFudge(message, dieElement);
+                this._handleFudge(message, dieElement, path);
             } else if (event.button === 0) {
                 const canReroll = game.user.isGM || 
                                  (message.isAuthor && SettingsUtility.getSettingValue(SETTING_NAMES.REROLL_PLAYERS));
                 if (!canReroll) return;
-                this._handleReroll(message, dieElement);
+                this._handleReroll(message, dieElement, path);
             }
         });
     }
 
-    static async _handleReroll(message, dieElement) {
-        const { rollIndex, termIndex, resultIndex } = this._getDiePath(dieElement);
+    static async _handleReroll(message, dieElement, path = this._getDiePath(dieElement)) {
+        const { rollIndex, termIndex, resultIndex } = path;
 
-        const rolls = ChatUtility.getMessageRolls(message).map(r => {
-            return r instanceof Roll ? r : Roll.fromData(r);
-        });
+        const rolls = _editableRolls(message);
 
         const targetRoll = rolls[rollIndex];
         if (!targetRoll) {
@@ -67,8 +69,10 @@ export class RerollManager {
         targetTerm.results[resultIndex].result = newResult.result;
         this._recalculateModifiers(targetTerm);
         targetRoll._total = targetRoll._evaluateTotal();
+        // A stored critical base predates this die; demoting to it would undo the reroll.
+        delete targetRoll.options.rsreforgedCriticalBase;
 
-        _persistRolls(message, rolls);
+        await _persistRolls(message, rolls);
 
         await this._announceReroll(message, newDieRoll, { faces, oldResult, newResult: newResult.result });
     }
@@ -110,8 +114,8 @@ export class RerollManager {
         ui.notifications.info(localize("notification", { new: newResult }));
     }
 
-    static async _handleFudge(message, dieElement) {
-        const { rollIndex, termIndex, resultIndex } = this._getDiePath(dieElement);
+    static async _handleFudge(message, dieElement, path = this._getDiePath(dieElement)) {
+        const { rollIndex, termIndex, resultIndex } = path;
 
         const content = `<div style="padding:4px 0">
             <input type="number" id="fudge-value" placeholder="Enter new value" autofocus
@@ -133,9 +137,7 @@ export class RerollManager {
 
         if (newVal === null || newVal === undefined) return;
 
-        const rolls = ChatUtility.getMessageRolls(message).map(r => {
-            return r instanceof Roll ? r : Roll.fromData(r);
-        });
+        const rolls = _editableRolls(message);
 
         const targetRoll = rolls[rollIndex];
         if (!targetRoll) {
@@ -152,8 +154,9 @@ export class RerollManager {
         targetTerm.results[resultIndex].result = newVal;
         this._recalculateModifiers(targetTerm);
         targetRoll._total = targetRoll._evaluateTotal();
+        delete targetRoll.options.rsreforgedCriticalBase;
 
-        _persistRolls(message, rolls);
+        await _persistRolls(message, rolls);
     }
 
     static _recalculateModifiers(targetTerm) {
@@ -181,8 +184,35 @@ export class RerollManager {
     }
 }
 
+/**
+ * dnd5e 6: a die RSR rendered carries its roll, die term, and result indexes, and its
+ * section carries the message ID. Counting rendered parts cannot map damage breakdowns,
+ * whose parts are whole or merged rolls listing dice in their own order.
+ */
+function _nativeDiePath(die) {
+    const { rsrRoll, rsrDie, rsrResult } = die.dataset;
+    const messageId = die.closest("[data-message-id]")?.dataset.messageId;
+    if (rsrRoll === undefined || rsrDie === undefined || rsrResult === undefined || !messageId) return null;
+    return { messageId, rollIndex: Number(rsrRoll), termIndex: Number(rsrDie), resultIndex: Number(rsrResult) };
+}
+
+/** A native message's rolls are its live document state; edit copies until the update lands. */
+function _editableRolls(message) {
+    const native = ChatUtility.isNativeRollMessage(message);
+    return ChatUtility.getMessageRolls(message).map(r => {
+        if (native) return Roll.fromData(foundry.utils.deepClone(r.toJSON()));
+        return r instanceof Roll ? r : Roll.fromData(r);
+    });
+}
+
 function _persistRolls(message, rolls) {
     const serialised = CoreUtility.serializeRolls(rolls);
+
+    if (ChatUtility.isNativeRollMessage(message)) {
+        // The update re-renders the card; keep the breakdown the user is working in open.
+        message._rsrKeepExpanded = true;
+        return message.update({ rolls: serialised });
+    }
 
     if (message.flags?.[MODULE_SHORT]) {
         message.flags[MODULE_SHORT].rolls = serialised;

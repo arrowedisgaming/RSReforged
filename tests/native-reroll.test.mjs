@@ -2,10 +2,11 @@ import { beforeEach, it, expect, vi } from "vitest";
 import { setupFoundryEnv } from "./helpers/foundry-env.mjs";
 
 let RerollManager;
+let env;
 
 beforeEach(async () => {
     vi.resetModules();
-    await setupFoundryEnv({ settings: { rerollEveryone: true, rerollPlayers: true } });
+    env = await setupFoundryEnv({ settings: { rerollEveryone: true, rerollPlayers: false } });
     $(document).off("mousedown");
     game.user.isGM = true;
     ({ RerollManager } = await import("../src/utils/reroll.js"));
@@ -53,7 +54,7 @@ it("still rerolls a clicked die on the legacy workflow", () => {
     expect(reroll).toHaveBeenCalledOnce();
 });
 
-it("ignores dice in dnd5e 6 breakdowns until native rerolls are restored", () => {
+it("leaves dice in dnd5e 6's own breakdowns alone", () => {
     useDnd5e("6.0.1");
     const reroll = vi.spyOn(RerollManager, "_handleReroll").mockImplementation(() => {});
     const fudge = vi.spyOn(RerollManager, "_handleFudge").mockImplementation(() => {});
@@ -64,4 +65,81 @@ it("ignores dice in dnd5e 6 breakdowns until native rerolls are restored", () =>
 
     expect(reroll).not.toHaveBeenCalled();
     expect(fudge).not.toHaveBeenCalled();
+});
+
+/** A die RSR rendered on a dnd5e 6 section: its source is stamped on it. */
+function stampedDie({ isAuthor = true } = {}) {
+    const section = document.createElement("div");
+    section.className = "rsr-card";
+    section.dataset.messageId = "dmg";
+    section.innerHTML = `<div class="dice-roll expanded"><div class="dice-tooltip"><section class="tooltip-part"><div class="dice">
+        <ol class="dice-rolls"><li class="roll d6">2</li><li class="roll d6" data-rsr-roll="1" data-rsr-die="0" data-rsr-result="1">5</li></ol>
+    </div></section></div></div>`;
+    document.body.append(section);
+    game.messages.set("dmg", { id: "dmg", type: "damage", isAuthor, rolls: [], flags: { rsreforged: { workflowVersion: 2 } } });
+    return section.querySelectorAll(".roll");
+}
+
+it("rerolls a stamped die on dnd5e 6 using its stamped source, not its position", () => {
+    useDnd5e("6.0.5");
+    const reroll = vi.spyOn(RerollManager, "_handleReroll").mockImplementation(() => {});
+    const [unstamped, stamped] = stampedDie();
+
+    click(unstamped);
+    expect(reroll).not.toHaveBeenCalled();
+
+    click(stamped);
+    expect(reroll).toHaveBeenCalledOnce();
+    const [message, , path] = reroll.mock.calls[0];
+    expect(message.id).toBe("dmg");
+    expect(path).toEqual({ messageId: "dmg", rollIndex: 1, termIndex: 0, resultIndex: 1 });
+});
+
+it("fudges a stamped die for the GM only, and rerolls for its author only with player rerolls on", () => {
+    useDnd5e("6.0.5");
+    game.settings.set("rsreforged", "fudgeGM", true);
+    const fudge = vi.spyOn(RerollManager, "_handleFudge").mockImplementation(() => {});
+    const reroll = vi.spyOn(RerollManager, "_handleReroll").mockImplementation(() => {});
+    const [, stamped] = stampedDie({ isAuthor: false });
+
+    $(stamped).trigger($.Event("mousedown", { button: 2 }));
+    expect(fudge).toHaveBeenCalledOnce();
+
+    game.user.isGM = false;
+    $(stamped).trigger($.Event("mousedown", { button: 2 }));
+    click(stamped);
+    expect(fudge).toHaveBeenCalledOnce();
+    expect(reroll).not.toHaveBeenCalled();
+});
+
+it("writes a dnd5e 6 reroll to the message's own rolls and keeps its breakdown open", async () => {
+    const { DamageRoll, TestDie } = env.classes;
+    const makeRoll = () => {
+        const roll = new DamageRoll("2d6");
+        const die = new TestDie({ number: 2, faces: 6, results: [{ result: 2, active: true }, { result: 5, active: true }] });
+        roll.terms = [die];
+        roll.dice = [die];
+        roll.total = 7;
+        roll.options.rsreforgedCriticalBase = { stale: true };
+        return roll;
+    };
+    const live = makeRoll();
+    const message = { id: "dmg", type: "damage", rolls: [live], flags: { rsreforged: { workflowVersion: 2 } }, update: vi.fn(async () => {}) };
+    vi.spyOn(RerollManager, "_announceReroll").mockResolvedValue();
+    // Roll.fromData returns an independent copy, as in Foundry; a fresh 1d6 rolls a 6.
+    globalThis.Roll = class extends Roll {
+        static fromData() { return makeRoll(); }
+        async evaluate() { this.dice = [{ results: [{ result: 6 }] }]; return this; }
+    };
+
+    await RerollManager._handleReroll(message, $(), { messageId: "dmg", rollIndex: 0, termIndex: 0, resultIndex: 1 });
+
+    expect(message.update).toHaveBeenCalledTimes(1);
+    const [written] = message.update.mock.calls[0][0].rolls;
+    expect(written.dice[0].results.map((r) => r.result)).toEqual([2, 6]);
+    expect(written.options.rsreforgedCriticalBase).toBeUndefined();
+    // The live document only changes through the update.
+    expect(live.dice[0].results.map((r) => r.result)).toEqual([2, 5]);
+    expect(message.flags.rsreforged.rolls).toBeUndefined();
+    expect(message._rsrKeepExpanded).toBe(true);
 });
