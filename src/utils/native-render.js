@@ -128,17 +128,21 @@ export async function renderNativeMessage(message, suppliedHtml) {
     activateTargets(combined);
     scheduleReconcile();
 
-    if (combined.hidden) {
-        // Bounded: a backgrounded tab can hold a throw indefinitely, and Dice So Nice's
-        // own safety timeout never fires its roll-complete hook. Neither may leave the
-        // results hidden.
-        const landed = Promise.all(throws);
-        let timer;
-        const giveUp = new Promise(resolve => { timer = setTimeout(resolve, DICE_REVEAL_TIMEOUT_MS); });
-        await Promise.race([landed, giveUp]).catch(() => {});
-        clearTimeout(timer);
-        if (renders.get(html) === token) combined.hidden = false;
-    }
+    if (combined.hidden) await revealAfter(combined, throws, () => renders.get(html) === token);
+}
+
+/**
+ * Keep results hidden until their dice land. Bounded: a backgrounded tab can hold a throw
+ * indefinitely, and Dice So Nice's own safety timeout never fires its roll-complete hook.
+ * Neither may leave the results hidden.
+ */
+async function revealAfter(node, throws, current = () => true) {
+    node.hidden = true;
+    let timer;
+    const giveUp = new Promise(resolve => { timer = setTimeout(resolve, DICE_REVEAL_TIMEOUT_MS); });
+    await Promise.race([Promise.all(throws), giveUp]).catch(() => {});
+    clearTimeout(timer);
+    if (current()) node.hidden = false;
 }
 
 const checkTypes = new Set(['check', 'save']);
@@ -165,6 +169,8 @@ async function renderNativeCheck(message, html) {
     rows.forEach(row => row.remove());
     html.classList.add('rsr-native-card');
     section.addEventListener('click', toggleBreakdown);
+    // A check thrown with its extra d20 (native-dice.js) shows its result when the dice land.
+    if (message._rsrNativeThrow) revealAfter(section, [message._rsrNativeThrow]);
 
     if (game.user.isGM || message.isAuthor) {
         const rollType = getRollType(message);

@@ -1,4 +1,4 @@
-import { beforeEach, it, expect, vi } from "vitest";
+import { describe, beforeEach, it, expect, vi } from "vitest";
 import { setupFoundryEnv } from "./helpers/foundry-env.mjs";
 
 let RerollManager;
@@ -142,4 +142,48 @@ it("writes a dnd5e 6 reroll to the message's own rolls and keeps its breakdown o
     expect(live.dice[0].results.map((r) => r.result)).toEqual([2, 5]);
     expect(message.flags.rsreforged.rolls).toBeUndefined();
     expect(message._rsrKeepExpanded).toBe(true);
+});
+
+describe("retroactive advantage's extra d20", () => {
+    let RollUtility;
+
+    beforeEach(async () => {
+        ({ RollUtility } = await import("../src/utils/roll.js"));
+        game.dice3d = { isEnabled: () => true, showForRoll: vi.fn(async () => true) };
+    });
+
+    function single() {
+        const { D20Roll, TestDie } = env.classes;
+        const roll = new D20Roll("1d20 + 5");
+        const die = new TestDie({ number: 1, faces: 20, results: [{ result: 9, active: true }] });
+        die._evaluateModifiers = () => {};
+        roll.terms = [die];
+        roll.dice = [die];
+        return roll;
+    }
+
+    it("adopts an Always Roll Multiple Dice alternate instead of rolling and throwing a new die", async () => {
+        const roll = single();
+        roll.options.rsreforgedAlternates = [{ result: 15, active: true }];
+
+        const upgraded = await RollUtility.ensureMultiRoll(roll, { message: { id: "m", whisper: [] } });
+
+        expect(upgraded.terms[0].results.map((r) => r.result)).toEqual([9, 15]);
+        expect(upgraded.options.rsreforgedAlternates).toBeUndefined();
+        expect(game.dice3d.showForRoll).not.toHaveBeenCalled();
+    });
+
+    it("throws a freshly rolled extra d20 for the message's audience, not the current roll mode", async () => {
+        const TestRoll = Roll;
+        globalThis.Roll = class extends TestRoll {
+            async evaluate() { this.dice = [{ faces: 20, results: [{ result: 4, active: true }] }]; return this; }
+        };
+        const roll = single();
+        const message = { id: "m", whisper: ["gm"], blind: true, speaker: { actor: "a" } };
+
+        await RollUtility.ensureMultiRoll(roll, { message });
+
+        expect(game.dice3d.showForRoll).toHaveBeenCalledTimes(1);
+        expect(game.dice3d.showForRoll.mock.calls[0].slice(2, 7)).toEqual([true, ["gm"], true, "m", { actor: "a" }]);
+    });
 });

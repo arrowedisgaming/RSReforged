@@ -43,6 +43,7 @@ export async function renderRsrCheck(message) {
     ChatUtility.configureNpcRollVisibility(shown, rollType, ChatUtility.getActorFromMessage(message));
 
     const rollHTML = await _renderRoll(shown, message.rolls.indexOf(roll));
+    _showAlternates(shown);
     const total = await RenderUtility.render(TEMPLATE.MULTIROLL, { roll: shown, key: rollType });
     rollHTML.querySelector('.dice-total')?.replaceWith(_fragment(total));
     if (shown.options.hideFinalResult) ChatUtility.maskHiddenRoll($(rollHTML), shown);
@@ -69,6 +70,7 @@ async function _attackSection(parent, child) {
     ChatUtility.configureNpcRollVisibility(shown, ROLL_TYPE.ATTACK, ChatUtility.getActorFromMessage(child));
 
     const rollHTML = await _renderRoll(shown, child.rolls.indexOf(roll));
+    _showAlternates(shown);
     const total = await RenderUtility.render(TEMPLATE.MULTIROLL, { roll: shown, key: ROLL_TYPE.ATTACK });
     rollHTML.querySelector('.dice-total')?.replaceWith(_fragment(total));
     if (shown.options.hideFinalResult) ChatUtility.maskHiddenRoll($(rollHTML), shown);
@@ -171,8 +173,9 @@ async function _addAdvantageOverlay(section, child, roll, { flavor = false } = {
         const rolls = _cloneRolls(child);
         const index = rolls.findIndex(r => r instanceof CONFIG.Dice.D20Roll);
         if (index < 0) return;
-        // Rolls and shows only the extra d20, keeping the original result.
-        rolls[index] = await RollUtility.upgradeRoll(rolls[index], state);
+        // Adds the extra d20 (a stored Always Roll Multiple Dice alternate, or one rolled
+        // and thrown now for this message's audience), keeping the original result.
+        rolls[index] = await RollUtility.upgradeRoll(rolls[index], state, { message: child });
         const update = { rolls: CoreUtility.serializeRolls(rolls) };
         if (flavor) update.flavor = `${child.flavor ?? ''} (${target})`.trim();
         await child.update(update);
@@ -347,6 +350,18 @@ function _dieSource({ term, resultIndex }, sources) {
         if (dieIndex >= 0) return ` data-rsr-roll="${rollIndex}" data-rsr-die="${dieIndex}" data-rsr-result="${resultIndex}"`;
     }
     return '';
+}
+
+/**
+ * Always Roll Multiple Dice: show the stored extra d20s as further totals beside the real
+ * one, as 4.x did. Display copy only, after the breakdown is stamped, so rerolls still map
+ * to the real roll. Never on a hidden roll, where a second total would reveal the d20.
+ */
+function _showAlternates(shown) {
+    const alternates = shown.options.rsreforgedAlternates;
+    const die = shown.dice.find(d => d.faces === 20);
+    if (!alternates?.length || !die || shown.options.hideFinalResult) return;
+    die.results.push(...foundry.utils.deepClone(alternates).map(result => ({ ...result, active: true, discarded: false })));
 }
 
 /** After a reroll or other in-place edit, reopen the breakdown the user was working in. */

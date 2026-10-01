@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, it, expect, vi } from "vitest";
+import { describe, beforeEach, afterEach, it, expect, vi } from "vitest";
 import { setupFoundryEnv } from "./helpers/foundry-env.mjs";
 
 let claimNativeThrow;
@@ -100,4 +100,80 @@ it("still releases the card when the throw fails", async () => {
 
     await expect(landed).resolves.toBeUndefined();
     expect(attack._rsrNativeThrow).toBeUndefined();
+});
+
+describe("Always Roll Multiple Dice", () => {
+    let prepareAlternates;
+    let env;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        env = await setupFoundryEnv({ settings: { alwaysRollMulti: true } });
+        ({ prepareAlternates, claimNativeThrow } = await import("../src/utils/native-dice.js"));
+        foundry.dice.terms.PoolTerm = { fromRolls: (rolls) => ({ pooled: rolls }) };
+        CONFIG.Dice.rolls = [{ fromTerms: (terms) => ({ terms }) }];
+        game.dice3d = { showForRoll: vi.fn(async () => true) };
+        // The extra d20 rolls a 12.
+        const TestRoll = Roll;
+        globalThis.Roll = class extends TestRoll {
+            async evaluate() { this.dice = [{ results: [{ result: 12, active: true }] }]; return this; }
+        };
+    });
+
+    function d20Roll({ advantage = false } = {}) {
+        const { D20Roll, TestDie } = env.classes;
+        const roll = new D20Roll("1d20 + 5");
+        const die = new TestDie({ number: advantage ? 2 : 1, faces: 20, results: [{ result: 9, active: true }] });
+        roll.terms = [die];
+        roll.dice = [die];
+        roll._evaluated = false;
+        if (advantage) Object.defineProperty(roll, "hasAdvantage", { value: true });
+        return roll;
+    }
+
+    const quick = { data: { flags: { rsreforged: { quickRoll: true } } } };
+
+    it("rolls the extra d20 when dnd5e evaluates a quick-rolled d20, before its message is built", async () => {
+        const roll = d20Roll();
+
+        prepareAlternates([roll], quick);
+        expect(roll.options.rsreforgedAlternates).toBeUndefined();
+        await roll.evaluate();
+
+        expect(roll.options.rsreforgedAlternates).toEqual([{ result: 12, active: true }]);
+        // The one-shot evaluate is gone; the roll is back on its own method.
+        expect(Object.hasOwn(roll, "evaluate")).toBe(false);
+    });
+
+    it("leaves dialog rolls, advantaged rolls, and the setting off alone", async () => {
+        const dialog = d20Roll();
+        prepareAlternates([dialog], { data: { flags: { rsreforged: { quickRoll: false } } } });
+        const advantaged = d20Roll({ advantage: true });
+        prepareAlternates([advantaged], quick);
+        env.settings.alwaysRollMulti = false;
+        const off = d20Roll();
+        prepareAlternates([off], quick);
+
+        for (const roll of [dialog, advantaged, off]) {
+            await roll.evaluate();
+            expect(roll.options.rsreforgedAlternates).toBeUndefined();
+        }
+    });
+
+    it("throws a lone check's extra d20 with its real one, claiming it from Dice So Nice", async () => {
+        const roll = d20Roll();
+        roll.options.rsreforgedAlternates = [{ result: 12, active: true }];
+        const check = { id: "chk", type: "check", rolls: [roll], flags: { rsreforged: { quickRoll: true } } };
+        game.messages.set("chk", check);
+        const interception = { willTrigger3DRoll: true };
+
+        claimNativeThrow("chk", interception);
+        expect(interception.willTrigger3DRoll).toBe(false);
+        expect(check._rsrNativeThrow).toBeInstanceOf(Promise);
+        await vi.waitFor(() => expect(game.dice3d.showForRoll).toHaveBeenCalledTimes(1));
+
+        const pooled = game.dice3d.showForRoll.mock.calls[0][0].terms[0].pooled;
+        expect(pooled[0]).toBe(roll);
+        expect(pooled[1].dice[0].results.map((r) => r.result)).toEqual([12]);
+    });
 });

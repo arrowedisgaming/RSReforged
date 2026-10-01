@@ -1566,7 +1566,7 @@ async function _processRetroAdvButtonEvent(message, event) {
         const rollIndex = originalRolls.findIndex(r => r instanceof CONFIG.Dice.D20Roll || r.class === "D20Roll");
         
         if (rollIndex > -1) {
-            const upgradedRoll = await RollUtility.upgradeRoll(originalRolls[rollIndex], state);
+            const upgradedRoll = await RollUtility.upgradeRoll(originalRolls[rollIndex], state, { message });
             if (upgradedRoll) originalRolls[rollIndex] = upgradedRoll;
         }
 

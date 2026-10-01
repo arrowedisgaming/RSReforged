@@ -230,7 +230,8 @@ it("offers retroactive advantage and disadvantage on an attack, persisting the u
     overlay.querySelector('[data-state="kh"]').click();
     await vi.waitFor(() => expect(attack.update).toHaveBeenCalledTimes(1));
 
-    expect(upgrade).toHaveBeenCalledWith(expect.anything(), "kh");
+    // The message lets a freshly rolled extra d20 be thrown for its own audience.
+    expect(upgrade).toHaveBeenCalledWith(expect.anything(), "kh", { message: attack });
     // The edit is written to the attack message itself, never to the usage card.
     const { rolls } = attack.update.mock.calls[0][0];
     expect(rolls[0].options.advantageMode).toBe(1);
@@ -484,5 +485,44 @@ describe("reroll stamps", () => {
 
         expect(section.querySelector(".dice-roll").classList.contains("expanded")).toBe(true);
         expect(damage._rsrKeepExpanded).toBeUndefined();
+    });
+});
+
+describe("Always Roll Multiple Dice display", () => {
+    function withAlternate() {
+        const roll = attackRoll();
+        roll.options.rsreforgedAlternates = [{ result: 3, active: true }];
+        return roll;
+    }
+
+    it("shows the stored extra d20 as a further total, without making it a reroll target", async () => {
+        const { D20Roll } = env.classes;
+        D20Roll.prototype.render = async function () {
+            const dice = this.dice[0].results.map((r) => `<li class="roll d20">${r.result}</li>`).join("");
+            return `<div class="dice-roll"><div class="dice-result"><div class="dice-formula">${this.formula}</div>
+                <div class="dice-tooltip"><section class="tooltip-part"><div class="dice"><ol class="dice-rolls">${dice}</ol></div></section></div>
+                <h4 class="dice-total">${this.total}</h4></div></div>`;
+        };
+        const roll = withAlternate();
+        const section = await card.renderRsrSection(parent, child("atk", "attack", [roll]));
+
+        const totals = [...section.querySelectorAll(".rsr-multiroll .dice-total")].map((total) => total.textContent);
+        expect(totals).toHaveLength(2);
+        expect(totals[0]).toContain("19");
+        expect(totals[1]).toContain("8");
+        // Only the real d20 maps to a reroll; the document's roll is untouched.
+        expect(section.querySelectorAll("[data-rsr-roll]")).toHaveLength(1);
+        expect(roll.dice[0].results).toHaveLength(1);
+    });
+
+    it("never shows the extra d20 on a hidden NPC roll", async () => {
+        env.settings.hideNpcRollMode = "attacks";
+        game.user.isGM = false;
+        const message = editable(child("atk", "attack", [withAlternate()]), { isAuthor: false });
+        message.getAssociatedActor = () => ({ isOwner: false });
+
+        const section = await card.renderRsrSection(parent, message);
+
+        expect(section.querySelectorAll(".rsr-multiroll .dice-total")).toHaveLength(1);
     });
 });

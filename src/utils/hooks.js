@@ -11,7 +11,7 @@ import { SETTING_NAMES, SettingsUtility, HIDE_NPC_ROLL_MODES } from "./settings.
 import { usesNativeWorkflow, getOriginId } from "./dnd5e-compat.js";
 import { NATIVE_ACTIVITY_TYPES, runNativeUsage, recordAmmunitionSnapshot, captureNativeMessageConfig } from "./native-workflow.js";
 import { renderNativeMessage, refreshNativeOrigin, reconcileNativeSources } from "./native-render.js";
-import { claimNativeThrow } from "./native-dice.js";
+import { claimNativeThrow, prepareAlternates } from "./native-dice.js";
 
 export const HOOKS_CORE = { INIT: "init", READY: "ready" }
 
@@ -191,6 +191,8 @@ export class HooksUtility {
             // dnd5e 6: `message` is dnd5e's own object, the only place the prepared
             // message source lands when the native workflow rolls with create:false.
             captureNativeMessageConfig(message);
+            // dnd5e 6: Always Roll Multiple Dice rolls its extra d20 with the real one.
+            if (usesNativeWorkflow()) prepareAlternates(rolls, message);
         });
 
         Hooks.on(HOOKS_DND5E.PRE_ROLL_DAMAGE, (config, dialog, message) => {

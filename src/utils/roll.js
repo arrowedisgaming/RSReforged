@@ -174,7 +174,7 @@ export class RollUtility {
      * @param {Roll} roll The roll to check.
      * @returns {Promise<Roll>} The version of the roll with multi roll enforced if needed, or the original roll otherwise.
      */
-    static async ensureMultiRoll(roll) {
+    static async ensureMultiRoll(roll, { message } = {}) {
         if (!roll) {
 			LogUtility.logError(CoreUtility.localize(`${MODULE_SHORT}.messages.error.rollIsNullOrUndefined`));
             return null;
@@ -183,9 +183,17 @@ export class RollUtility {
         if (!(roll.hasAdvantage || roll.hasDisadvantage)) {
             const forcedDiceCount = roll.options.elvenAccuracy ? 3 : 2;
             const d20BaseTerm = roll.terms.find(d => d.faces === 20);
-            const d20Additional = await new Roll(`${forcedDiceCount - d20BaseTerm.number}d20${d20BaseTerm.modifiers.join('')}`).evaluate();
-
-            await CoreUtility.tryRollDice3D(d20Additional);
+            const needed = forcedDiceCount - d20BaseTerm.number;
+            // Always Roll Multiple Dice already rolled, threw, and showed these with the
+            // roll (dnd5e 6); adopt them instead of rolling dice the table never saw.
+            const saved = foundry.utils.deepClone(roll.options.rsreforgedAlternates ?? []).slice(0, needed);
+            delete roll.options.rsreforgedAlternates;
+            const d20Additional = { dice: [{ results: saved }] };
+            if (saved.length < needed) {
+                const fresh = await new Roll(`${needed - saved.length}d20${d20BaseTerm.modifiers.join('')}`).evaluate();
+                await RollUtility._showExtraDice(fresh, message);
+                d20Additional.dice[0].results.push(...fresh.dice[0].results);
+            }
 
             // Keep the term's own class and options: dnd5e 6's D20Roll finds its d20
             // through D20Die, which a plain Die would not satisfy.
@@ -211,7 +219,7 @@ export class RollUtility {
      * @param {ROLL_STATE} targetState The target state of the roll.
      * @returns {Promise<Roll>} The upgraded multi roll from the provided roll.
      */
-    static async upgradeRoll(roll, targetState) {
+    static async upgradeRoll(roll, targetState, { message } = {}) {
         if (!roll) {
             LogUtility.logError(CoreUtility.localize(`${MODULE_SHORT}.messages.error.rollIsNullOrUndefined`));
             return null;
@@ -226,7 +234,7 @@ export class RollUtility {
             roll.options.elvenAccuracy = false;
         }
 
-        const upgradedRoll = await RollUtility.ensureMultiRoll(roll);
+        const upgradedRoll = await RollUtility.ensureMultiRoll(roll, { message });
         
         const d20BaseTerm = upgradedRoll.terms.find(d => d.faces === 20);
         d20BaseTerm.keep(targetState);
@@ -240,6 +248,18 @@ export class RollUtility {
 
         RollUtility.resetRollGetters(upgradedRoll);
         return upgradedRoll;
+    }
+
+    /**
+     * Throw dice added to an existing roll. With the roll's message, they are thrown for
+     * that message's audience (its whisper and blind state); without one, for the current
+     * roll mode, as before.
+     */
+    static async _showExtraDice(roll, message) {
+        if (!message) return CoreUtility.tryRollDice3D(roll);
+        if (!game.dice3d?.isEnabled?.()) return;
+        const whisper = message.whisper?.length ? message.whisper : null;
+        await game.dice3d.showForRoll(roll, game.user, true, whisper, message.blind ?? false, message.id, message.speaker);
     }
 
     static resetRollGetters(roll) {

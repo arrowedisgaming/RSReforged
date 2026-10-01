@@ -1,4 +1,5 @@
 import { MODULE_SHORT } from '../module/const.js';
+import { SETTING_NAMES, SettingsUtility } from './settings.js';
 
 /**
  * dnd5e 6: a quick roll's attack and damage are separate native messages, and Dice So
@@ -10,35 +11,91 @@ import { MODULE_SHORT } from '../module/const.js';
  */
 const batches = new Map();
 
+/**
+ * Always Roll Multiple Dice on dnd5e 6. 4.x turned the roll itself into an unkept 2d20,
+ * which dnd5e 6 would sum for hit, success, and critical checks. Instead the extra d20 is
+ * stored beside the real roll: the card shows it as a second total, it joins the dice
+ * throw, and retroactive advantage adopts it.
+ *
+ * `dnd5e.postRollConfiguration` hands over the configured rolls just before dnd5e
+ * evaluates them and builds the message. Foundry 14 cannot roll dice synchronously, so
+ * each quick-rolled d20 gets a one-shot evaluate that rolls its extra die right after its
+ * own, through Foundry's normal fulfillment; the message then carries both from creation.
+ */
+export function prepareAlternates(rolls, message) {
+    if (!SettingsUtility.getSettingValue(SETTING_NAMES.ALWAYS_ROLL_MULTIROLL)) return;
+    if (!message?.data?.flags?.[MODULE_SHORT]?.quickRoll) return;
+    for (const roll of rolls ?? []) {
+        if (!(roll instanceof CONFIG.Dice.D20Roll) || roll._evaluated || Object.hasOwn(roll, 'evaluate')) continue;
+        const evaluate = roll.evaluate;
+        roll.evaluate = async function (options) {
+            delete this.evaluate;
+            const result = await evaluate.call(this, options);
+            await seedAlternate(this, options);
+            return result;
+        };
+    }
+}
+
+async function seedAlternate(roll, options = {}) {
+    const die = roll.dice?.find(d => d.faces === 20);
+    if (!die || die.number !== 1 || roll.hasAdvantage || roll.hasDisadvantage) return;
+    try {
+        const count = roll.options.elvenAccuracy ? 2 : 1;
+        const extra = await new Roll(`${count}d20${die.modifiers.join('')}`).evaluate({ allowInteractive: options.allowInteractive });
+        roll.options.rsreforgedAlternates = extra.dice[0].results;
+    } catch (error) {
+        console.warn('RSReforged | could not roll the extra d20', error);
+    }
+}
+
+/** A roll of a message's stored extra d20s, so they are thrown with the real dice. */
+function alternateRolls(message) {
+    return (message.rolls ?? []).flatMap(roll => {
+        const results = roll.options?.rsreforgedAlternates;
+        if (!results?.length) return [];
+        const die = new foundry.dice.terms.Die({ number: results.length, faces: 20, results: foundry.utils.deepClone(results) });
+        die._evaluated = true;
+        const alternate = Roll.fromTerms([die]);
+        alternate._evaluated = true;
+        return [alternate];
+    });
+}
+
 /** `diceSoNiceMessagePreProcess` listener, called synchronously from Dice So Nice's createChatMessage hook. */
 export function claimNativeThrow(messageId, interception) {
     if (!interception?.willTrigger3DRoll) return;
     const message = game.messages.get(messageId);
     const flags = message?.flags?.[MODULE_SHORT];
-    if (flags?.workflowVersion !== 2 || !flags.parentId || !message.rolls?.length) return;
+    if (!message?.rolls?.length) return;
+    const workflow = flags?.workflowVersion === 2 && flags.parentId;
+    const alternates = alternateRolls(message);
+    // Workflow children throw together; a lone check or save only when it has extras.
+    if (!workflow && !alternates.length) return;
     if (typeof game.dice3d?.showForRoll !== 'function') return;
     interception.willTrigger3DRoll = false;
 
-    let batch = batches.get(flags.parentId);
+    const key = workflow ? flags.parentId : message.id;
+    let batch = batches.get(key);
     if (!batch) {
         let landed;
         batch = { messages: [], rolls: [], landed: new Promise(resolve => { landed = resolve; }) };
         batch.resolve = landed;
-        batches.set(flags.parentId, batch);
+        batches.set(key, batch);
         // The batch's other messages fire their create hooks in the same task.
-        setTimeout(() => throwBatch(flags.parentId), 0);
+        setTimeout(() => throwBatch(key), 0);
     }
     // The combined card waits on this until the dice land.
     message._rsrNativeThrow = batch.landed;
     // Dice So Nice replaces the core dice sound on messages it animates.
     if (message.sound === CONFIG.sounds?.dice) delete message.sound;
     batch.messages.push(message);
-    batch.rolls.push(...message.rolls);
+    batch.rolls.push(...message.rolls, ...alternates);
 }
 
-async function throwBatch(parentId) {
-    const batch = batches.get(parentId);
-    batches.delete(parentId);
+async function throwBatch(key) {
+    const batch = batches.get(key);
+    batches.delete(key);
     if (!batch) return;
     const [first] = batch.messages;
     try {
