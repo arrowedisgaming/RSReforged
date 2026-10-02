@@ -1,7 +1,4 @@
-import { MODULE_SHORT } from "../module/const.js";
-import { CoreUtility } from "./core.js";
-import { LogUtility } from "./log.js";
-import { SETTING_NAMES, SettingsUtility } from "./settings.js";
+import { MODULE_SHORT, CoreUtility, LogUtility, SETTING_NAMES, SettingsUtility } from "./shim.js";
 
 /**
  * Private roll handling (GM roll / blind / self — V14 message modes "gm" | "blind" | "self").

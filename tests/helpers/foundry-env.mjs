@@ -240,6 +240,22 @@ export async function setupFoundryEnv(options = {}) {
             return foundry.utils.deepClone(this._source);
         }
 
+        // Foundry resolves the configured document class through `implementation`;
+        // the test double is its own implementation.
+        static get implementation() {
+            return TestChatMessage;
+        }
+
+        // Batch creation double: one call, documents created in the given order.
+        // Tests inspect the created documents (registered in game.messages) and the
+        // spy's call list to assert batching.
+        static async createDocuments(dataArray = [], options = {}) {
+            TestChatMessage.createDocumentCalls.push({ dataArray: foundry.utils.deepClone(dataArray), options });
+            return dataArray.map((data) => new TestChatMessage(foundry.utils.deepClone(data)));
+        }
+
+        static createDocumentCalls = [];
+
         async renderHTML() {
             const rollHtml = this.rolls.map((roll) => renderRollHtml(roll)).join("");
             // dnd5e 5.3.1+ injects a native damage-application tray into any message
@@ -580,11 +596,11 @@ function renderTemplate(template, data = {}) {
     }
 
     if (template.endsWith("rsr-overlay-multiroll.html")) {
-        return `<div class="rsr-overlay-multiroll"><div></div></div>`;
+        return `<div class="rsr-overlay rsr-overlay-multiroll"><div data-action="rsr-retro" data-state="kl"></div><div data-action="rsr-retro" data-state="kh"></div></div>`;
     }
 
     if (template.endsWith("rsr-overlay-crit.html")) {
-        return `<div class="rsr-overlay-crit"><div></div></div>`;
+        return `<div class="rsr-overlay rsr-overlay-crit"><div data-action="rsr-retro"></div></div>`;
     }
 
     return "";

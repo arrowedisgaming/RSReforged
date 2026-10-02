@@ -2,58 +2,56 @@ import { MODULE_SHORT } from "../module/const.js";
 import { ChatUtility } from "./chat.js";
 import { CoreUtility } from "./core.js";
 import { LogUtility } from "./log.js";
-import { RollUtility } from "./roll.js";
 import { SETTING_NAMES, SettingsUtility } from "./settings.js";
+import { usesNativeWorkflow } from "./dnd5e-compat.js";
+import { RollUtility } from "./roll.js";
 
 /**
  * Utility class to handle rerolling and fudging individual dice on the canvas.
  */
 export class RerollManager {
     static registerGlobalListener() {
-        // Dice in a roll's breakdown popover carry `data-rsr-path` ("roll:die:result"),
-        // stamped by chat.js from the message's rolls; unstamped dice are not rerollable.
-        document.addEventListener("mousedown", event => {
-            const dieElement = event.target?.closest?.(".dice-tooltip .dice-rolls .roll[data-rsr-path]");
-            if (!dieElement) return;
+        // FIX: Broadened the selector from '.roll.die' to '.roll' to catch 5e damage dice templates
+        $(document).on("mousedown", ".dice-tooltip .dice-rolls .roll", (event) => {
             if (!SettingsUtility.getSettingValue(SETTING_NAMES.REROLL_EVERYONE)) return;
 
-            const messageId = dieElement.closest("[data-rsr-message-id]")?.dataset.rsrMessageId
-                ?? dieElement.closest("[data-message-id]")?.dataset.messageId;
-            const message = game.messages.get(messageId);
-            if (!message) return;
+            const dieElement = $(event.currentTarget);
+            let message;
+            let path;
+            if (usesNativeWorkflow()) {
+                // dnd5e 6: dice RSR rendered carry their source. Unstamped dice are either
+                // in dnd5e's own breakdown popovers, which are left alone, or on a legacy
+                // card from before the upgrade, which keeps its 4.x reroll path.
+                // undefined, not null, so a legacy card's handlers fall back to locating the die.
+                path = _nativeDiePath(event.currentTarget) ?? undefined;
+                if (path) message = game.messages.get(path.messageId);
+                else {
+                    const legacy = game.messages.get(dieElement.closest(".chat-message").data("messageId"));
+                    if (!_isLegacyCard(legacy)) return;
+                    message = legacy;
+                }
+            } else {
+                message = game.messages.get(dieElement.closest(".chat-message").data("messageId"));
+            }
 
-            const path = RerollManager._getDiePath(dieElement);
-            if (!path) return;
+            if (!message) return;
 
             if (event.button === 2) {
                 if (!game.user.isGM || !SettingsUtility.getSettingValue(SETTING_NAMES.FUDGE_GM)) return;
-                event.preventDefault();
-                event.stopPropagation();
-                RerollManager._handleFudge(message, path);
+                this._handleFudge(message, dieElement, path);
             } else if (event.button === 0) {
-                const canReroll = game.user.isGM ||
+                const canReroll = game.user.isGM || 
                                  (message.isAuthor && SettingsUtility.getSettingValue(SETTING_NAMES.REROLL_PLAYERS));
                 if (!canReroll) return;
-                event.preventDefault();
-                event.stopPropagation();
-                RerollManager._handleReroll(message, path);
+                this._handleReroll(message, dieElement, path);
             }
-        }, { capture: true });
-
-        // Keep the chat context menu from opening on top of the GM's fudge prompt.
-        document.addEventListener("contextmenu", event => {
-            if (!event.target?.closest?.(".dice-tooltip .dice-rolls .roll[data-rsr-path]")) return;
-            if (!game.user.isGM || !SettingsUtility.getSettingValue(SETTING_NAMES.REROLL_EVERYONE)
-                || !SettingsUtility.getSettingValue(SETTING_NAMES.FUDGE_GM)) return;
-            event.preventDefault();
-            event.stopPropagation();
-        }, { capture: true });
+        });
     }
 
-    static async _handleReroll(message, { rollIndex, termIndex, resultIndex }) {
-        const rolls = ChatUtility.getMessageRolls(message).map(r => {
-            return r instanceof Roll ? r : Roll.fromData(r);
-        });
+    static async _handleReroll(message, dieElement, path = this._getDiePath(dieElement)) {
+        const { rollIndex, termIndex, resultIndex } = path;
+
+        const rolls = _editableRolls(message);
 
         const targetRoll = rolls[rollIndex];
         if (!targetRoll) {
@@ -61,10 +59,11 @@ export class RerollManager {
             return;
         }
 
-        // dnd5e tooltips render `roll.dice` (not `roll.terms`), so termIndex indexes `dice`.
+        // dnd5e tooltips render `roll.dice` (not `roll.terms`) as one tooltip-part each,
+        // so termIndex is an index into `dice`, not `terms`.
         const targetTerm = targetRoll.dice[termIndex];
-        if (!targetTerm?.results?.[resultIndex]) {
-            LogUtility.logWarning(`_handleReroll: no die result at ${termIndex}/${resultIndex}`, { ui: false });
+        if (!targetTerm) {
+            LogUtility.logWarning(`_handleReroll: no dice term at index ${termIndex}`, { ui: false });
             return;
         }
 
@@ -75,10 +74,12 @@ export class RerollManager {
         const newResult = newDieRoll.dice[0].results[0];
 
         targetTerm.results[resultIndex].result = newResult.result;
-        this._recalculateModifiers(targetRoll, targetTerm);
+        this._recalculateModifiers(targetTerm);
         targetRoll._total = targetRoll._evaluateTotal();
+        // A stored critical base predates this die; demoting to it would undo the reroll.
+        delete targetRoll.options.rsreforgedCriticalBase;
 
-        _persistRolls(message, rolls, { rollIndex });
+        await _persistRolls(message, rolls);
 
         await this._announceReroll(message, newDieRoll, { faces, oldResult, newResult: newResult.result });
     }
@@ -92,41 +93,42 @@ export class RerollManager {
         const localize = (key, data) => CoreUtility.localize(`${MODULE_SHORT}.chat.reroll.${key}`, data);
 
         if (SettingsUtility.getSettingValue(SETTING_NAMES.REROLL_SOUND_ENABLED)) {
-            const playedDsn = await CoreUtility.tryRollDice3D(newDieRoll, message?.id ?? null);
+            // Thrown for the edited message's audience, not the user's current roll mode.
+            const playedDsn = await RollUtility._showExtraDice(newDieRoll, message);
             if (!playedDsn) {
                 CoreUtility.playRollSound();
             }
         }
 
         if (SettingsUtility.getSettingValue(SETTING_NAMES.REROLL_LOG_CHAT)) {
-            const { messageMode } = CoreUtility.getWhisperData();
+            // The log reveals the old and new values, so a whispered or blind roll's log goes
+            // only to that roll's audience; a public roll's log follows the current roll mode.
+            const { rollMode, whisper, blind } = message?.whisper?.length
+                ? { rollMode: undefined, whisper: [...message.whisper], blind: message.blind ?? false }
+                : CoreUtility.getWhisperData();
             // Escape the user's display name before interpolating into HTML — Foundry user names
             // allow characters that would otherwise render as markup in the chat message.
             const safeUser = foundry.utils.escapeHTML(game.user.name);
             const content = localize("log", { user: safeUser, faces, old: oldResult, new: newResult });
 
-            const data = {
-                author: game.user.id,
+            await ChatMessage.create({
+                user: game.user.id,
                 speaker: ChatMessage.getSpeaker({ user: game.user }),
                 flavor: localize("flavor"),
                 content,
+                whisper,
+                blind: blind ?? false,
+                rollMode,
                 flags: { [MODULE_SHORT]: { rerollLog: true } }
-            };
-
-            // Foundry V14: ChatMessage.applyMode / the `messageMode` creation option
-            // replace applyRollMode / `rollMode` (as used by dnd5e 6 BasicRoll.toMessage).
-            if (typeof ChatMessage.applyMode === "function") {
-                ChatMessage.applyMode(data, messageMode);
-                await ChatMessage.create(data);
-            } else {
-                await ChatMessage.create(data, { messageMode, rollMode: messageMode });
-            }
+            });
         }
 
         ui.notifications.info(localize("notification", { new: newResult }));
     }
 
-    static async _handleFudge(message, { rollIndex, termIndex, resultIndex }) {
+    static async _handleFudge(message, dieElement, path = this._getDiePath(dieElement)) {
+        const { rollIndex, termIndex, resultIndex } = path;
+
         const content = `<div style="padding:4px 0">
             <input type="number" id="fudge-value" placeholder="Enter new value" autofocus
                    style="width:100%; text-align:center; font-size:1.2em;">
@@ -147,9 +149,7 @@ export class RerollManager {
 
         if (newVal === null || newVal === undefined) return;
 
-        const rolls = ChatUtility.getMessageRolls(message).map(r => {
-            return r instanceof Roll ? r : Roll.fromData(r);
-        });
+        const rolls = _editableRolls(message);
 
         const targetRoll = rolls[rollIndex];
         if (!targetRoll) {
@@ -158,23 +158,25 @@ export class RerollManager {
         }
 
         const targetTerm = targetRoll.dice[termIndex];
-        if (!targetTerm?.results?.[resultIndex]) {
-            LogUtility.logWarning(`_handleFudge: no die result at ${termIndex}/${resultIndex}`, { ui: false });
+        if (!targetTerm) {
+            LogUtility.logWarning(`_handleFudge: no dice term at index ${termIndex}`, { ui: false });
             return;
         }
 
         targetTerm.results[resultIndex].result = newVal;
-        this._recalculateModifiers(targetRoll, targetTerm);
+        this._recalculateModifiers(targetTerm);
         targetRoll._total = targetRoll._evaluateTotal();
+        delete targetRoll.options.rsreforgedCriticalBase;
 
-        _persistRolls(message, rolls, { rollIndex });
+        await _persistRolls(message, rolls);
     }
 
-    static _recalculateModifiers(targetRoll, targetTerm) {
-        // The leading d20 of a d20 roll: re-select the kept die (normal = first, advantage =
-        // highest, disadvantage = lowest) without re-running reroll/min modifiers.
-        if (targetRoll instanceof CONFIG.Dice.D20Roll && RollUtility.getD20Term(targetRoll) === targetTerm) {
-            RollUtility.applyD20Selection(targetRoll);
+    static _recalculateModifiers(targetTerm) {
+        // dnd5e 6 marks advantage as adv/dis on its d20, and its handler keeps the best
+        // set using state it deletes after evaluation; reselect the same way here.
+        const advantage = targetTerm.modifiers.map(m => /^(adv|dis)(\d*)$/i.exec(m)).find(Boolean);
+        if (advantage) {
+            _reselectAdvantage(targetTerm, advantage[1].toLowerCase() === "adv", parseInt(advantage[2] || 1));
             return;
         }
         if (targetTerm.modifiers.some(m => m.includes("kh") || m.includes("kl"))) {
@@ -186,20 +188,87 @@ export class RerollManager {
         }
     }
 
-    /**
-     * Read the "roll:die:result" path chat.js stamped on a breakdown die.
-     * @param {HTMLElement} dieElement
-     * @returns {{rollIndex: number, termIndex: number, resultIndex: number}|null}
-     */
     static _getDiePath(dieElement) {
-        const [rollIndex, termIndex, resultIndex] = String(dieElement.dataset.rsrPath ?? "").split(":").map(Number);
-        if (![rollIndex, termIndex, resultIndex].every(Number.isInteger)) return null;
+        const tooltipPart = dieElement.closest(".tooltip-part");
+        const allParts = dieElement.closest(".dice-tooltip").find(".tooltip-part");
+        const termIndex = allParts.index(tooltipPart);
+
+        const diceRoll = dieElement.closest(".dice-roll");
+        const allDiceRolls = dieElement.closest(".message-content").find(".dice-roll");
+        const rollIndex = Math.max(0, allDiceRolls.index(diceRoll));
+
+        const resultIndex = dieElement.index();
+
         return { rollIndex, termIndex, resultIndex };
     }
 }
 
-function _persistRolls(message, rolls, { rollIndex } = {}) {
-    ChatUtility.persistRolls(message, rolls).then(() => {
-        if (rolls[rollIndex] instanceof CONFIG.Dice.D20Roll) ChatUtility.resyncAttackRegistry(message);
-    }).catch(err => console.error("RSReforged | failed to persist rerolled dice", err));
+/**
+ * dnd5e 6's BasicDie#advantage, rerun after a die changes: partition the term's live
+ * results into count + 1 equal sets and keep the best (adv) or worst (dis) set. Results a
+ * reroll modifier replaced stay inactive; only advantage discards are reconsidered.
+ */
+function _reselectAdvantage(term, adv, count) {
+    for (const result of term.results) {
+        if (result.discarded && !result.rerolled) {
+            result.discarded = false;
+            result.active = true;
+        }
+    }
+    const live = term.results.filter(r => r.active);
+    const size = live.length / (count + 1);
+    if (!Number.isInteger(size) || size < 1) return;
+    const sets = Array.from({ length: count + 1 }, (_, index) => live.slice(index * size, (index + 1) * size));
+    const totals = sets.map(set => set.reduce((total, r) => total + r.result, 0));
+    const target = adv ? Math.max(...totals) : Math.min(...totals);
+    const keep = totals.indexOf(target);
+    sets.forEach((set, index) => {
+        if (index === keep) return;
+        set.forEach(r => { r.discarded = true; r.active = false; });
+    });
+}
+
+/**
+ * dnd5e 6: a die RSR rendered carries its roll, die term, and result indexes, and its
+ * section carries the message ID. Counting rendered parts cannot map damage breakdowns,
+ * whose parts are whole or merged rolls listing dice in their own order.
+ */
+function _nativeDiePath(die) {
+    const { rsrRoll, rsrDie, rsrResult } = die.dataset;
+    const messageId = die.closest("[data-message-id]")?.dataset.messageId;
+    if (rsrRoll === undefined || rsrDie === undefined || rsrResult === undefined || !messageId) return null;
+    return { messageId, rollIndex: Number(rsrRoll), termIndex: Number(rsrDie), resultIndex: Number(rsrResult) };
+}
+
+/** A 5.3-era RSReforged card: its rolls live in RSR's flag cache or a legacy "roll" message. */
+function _isLegacyCard(message) {
+    const flags = message?.flags?.[MODULE_SHORT];
+    if (!message || ChatUtility.isNativeRollMessage(message) || flags?.workflowVersion === 2) return false;
+    return Array.isArray(flags?.rolls) || ["roll", "dnd5e.roll"].includes(message.type);
+}
+
+/** A native message's rolls are its live document state; edit copies until the update lands. */
+function _editableRolls(message) {
+    const native = ChatUtility.isNativeRollMessage(message);
+    return ChatUtility.getMessageRolls(message).map(r => {
+        if (native) return Roll.fromData(foundry.utils.deepClone(r.toJSON()));
+        return r instanceof Roll ? r : Roll.fromData(r);
+    });
+}
+
+function _persistRolls(message, rolls) {
+    const serialised = CoreUtility.serializeRolls(rolls);
+
+    if (ChatUtility.isNativeRollMessage(message)) {
+        // The update re-renders the card; keep the breakdown the user is working in open.
+        message._rsrKeepExpanded = true;
+        return message.update({ rolls: serialised });
+    }
+
+    if (message.flags?.[MODULE_SHORT]) {
+        message.flags[MODULE_SHORT].rolls = serialised;
+        ChatUtility.updateChatMessage(message, { flags: message.flags });
+    } else {
+        message.update({ rolls: serialised });
+    }
 }

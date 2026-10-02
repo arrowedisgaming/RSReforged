@@ -1,8 +1,8 @@
 {
 	"id": "rsreforged",
 	"title": "RSReforged",
-	"description": "GMC fork of RSReforged (Ready Set Roll for D&D5e) for Foundry V14 and dnd5e 6: one-card quick rolls in the system's compact chat style, always-two-d20 multiroll with retroactive advantage/disadvantage, bonuses and crits from the roll breakdown, fast-forward rolls with Shift to configure, fully hidden private rolls with a GM reveal control on save results, and a damage tray facelift with a temp HP mode.",
-	"version": "6.0.0",
+	"description": "RSReforged (Ready Set Roll for D&D5e) for Foundry V14 and dnd5e 6. Upstream RSReforged 6.0.0 with a Card Style setting (Classic RSReforged sections, or Vanilla+: dnd5e 6's own compact roll rows on one card with advantage / critical / bonus buttons in the roll breakdown), the wide saving throw button on Classic cards, and the GMC extras: damage tray facelift with a temp HP mode, fully hidden private rolls with a GM reveal control, and fast-forward rolls with Shift to configure.",
+	"version": "6.2.0",
 	"compatibility": {
 		"minimum": "14.367",
 		"verified": "14.368",
@@ -36,10 +36,12 @@
 	],
 	"esmodules": [
 		"./src/rsreforged.js",
-		"./src/module/config.js"
+		"./src/module/config.js",
+		"./src/gmc/extras.js"
 	],
 	"styles": [
-		"./css/rsreforged.css"
+		"./css/rsreforged.css",
+		"./css/gmc-extras.css"
 	],
 	"languages": [
 		{
@@ -66,7 +68,7 @@
 				"manifest": "https://raw.githubusercontent.com/foundryvtt/dnd5e/master/system.json",
 				"compatibility": {
 					"minimum": "6.0.0",
-					"verified": "6.0.3"
+					"verified": "6.0.5"
 				}
 			}
 		],
@@ -82,23 +84,38 @@
 	"bugs": "https://github.com/maxobremer/RSReforged/issues",
 	"readme": "https://github.com/maxobremer/RSReforged/blob/master/README.md",
 	"manifest": "https://raw.githubusercontent.com/maxobremer/RSReforged/master/module.json",
-	"download": "https://github.com/maxobremer/RSReforged/releases/download/release-6.0.0/rsreforged-release-6.0.0.zip",
+	"download": "https://github.com/maxobremer/RSReforged/releases/download/release-6.2.0/rsreforged-release-6.2.0.zip",
 	"changelog": "https://github.com/maxobremer/RSReforged/blob/master/CHANGELOG.md",
 	"media": [
 		{
 			"type": "screenshot",
 			"url": "https://raw.githubusercontent.com/maxobremer/RSReforged/master/assets/screenshots/attack-card.png",
-			"caption": "One card per attack: targets, attack roll with both d20s, damage and the apply tray."
+			"caption": "Vanilla+: dnd5e 6's own attack and damage rows on one card, with the damage tray."
 		},
 		{
 			"type": "screenshot",
 			"url": "https://raw.githubusercontent.com/maxobremer/RSReforged/master/assets/screenshots/roll-breakdown.png",
-			"caption": "Roll breakdown with + Bonus and retroactive advantage / disadvantage."
+			"caption": "Vanilla+: Disadvantage, Advantage and Bonus inside the roll breakdown."
+		},
+		{
+			"type": "screenshot",
+			"url": "https://raw.githubusercontent.com/maxobremer/RSReforged/master/assets/screenshots/damage-breakdown.png",
+			"caption": "Vanilla+: Critical Hit and Bonus on damage; dice are clickable to reroll."
 		},
 		{
 			"type": "screenshot",
 			"url": "https://raw.githubusercontent.com/maxobremer/RSReforged/master/assets/screenshots/save-card.png",
-			"caption": "Save activity with the targets' saves summarized on the card."
+			"caption": "Vanilla+: a save activity with the target's save summarised on the card."
+		},
+		{
+			"type": "screenshot",
+			"url": "https://raw.githubusercontent.com/maxobremer/RSReforged/master/assets/screenshots/classic-save.png",
+			"caption": "Classic RSReforged card with the wide saving throw button."
+		},
+		{
+			"type": "screenshot",
+			"url": "https://raw.githubusercontent.com/maxobremer/RSReforged/master/assets/screenshots/classic-attack.png",
+			"caption": "Classic RSReforged attack card."
 		}
 	],
 	"license": "LICENSE"

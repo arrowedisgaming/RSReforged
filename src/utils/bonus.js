@@ -10,19 +10,90 @@ const { ApplicationV2 } = foundry.applications.api;
 // to register selectable bonuses (e.g. Bless, Bardic Inspiration).
 const AE_BONUS_FLAG = `flags.${MODULE_SHORT}.bonus`;
 
-/**
- * Retroactive bonuses (Bless, Bardic Inspiration, custom formulas) added to a roll after it
- * was made. Opened from the "+ Bonus" button in a roll's breakdown popover (chat.js).
- */
 export class BonusManager {
-    /**
-     * @param {ChatMessage} message
-     * @param {string} type Bonus filter type ("attack", "damage", "skill", "check", "save", ...).
-     * @param {object} [options]
-     * @param {number} [options.rollIndex] Index into ChatUtility.getMessageRolls(message) of the
-     *   roll to modify; defaults to the first roll matching `type`.
-     */
-    static async openBonusDialog(message, type, { rollIndex } = {}) {
+    static init(message, html) {
+        const $html = html instanceof HTMLElement ? $(html) : html;
+
+        if (!message.isAuthor && !game.user.isGM) return false;
+        if (!$html || $html.length === 0) return false;
+
+        // Narrow to RSR's own apply-button actions so foreign buttons added under
+        // .rsr-damage-buttons / .rsr-damage-buttons-xl by third-party listeners
+        // (rsreforged.renderApplyDamageButtons hook — see docs/INTEGRATION.md)
+        // can receive their own clicks. Matches the narrowing in _setupCardListeners.
+        const rsrApplyActions = '[data-action="rsr-apply-damage"], [data-action="rsr-apply-temp"]';
+        $html.find('.rsr-damage-buttons, .rsr-damage-buttons-xl').find(rsrApplyActions)
+            .off('click.rsrFix')
+            .on('click.rsrFix', (ev) => {
+                ev.stopPropagation();
+            });
+
+        const hasAttackSection = $html.find('.rsr-section-attack').length > 0;
+        const hasDamageSection = $html.find('.rsr-section-damage').length > 0;
+
+        const messageType = ChatUtility.getMessageType(message);
+        const isInitiative = message.flags?.core?.initiativeRoll ||
+                             messageType === "initiative" ||
+                             (message.flavor && message.flavor.includes("Initiative")) ||
+                             $html.find('.dice-flavor').text().includes("Initiative");
+
+        const validTypes = ["skill", "tool", "ability", "save", "death", "concentration", "initiative"];
+        if (!hasAttackSection && !hasDamageSection && !validTypes.includes(messageType) && !isInitiative) return false;
+
+        let injected = false;
+
+        if (hasAttackSection) {
+            this.injectButton(message, $html, "attack", ".rsr-section-attack");
+            injected = true;
+        }
+        
+        if (hasDamageSection) {
+            this.injectButton(message, $html, "damage", ".rsr-section-damage");
+            injected = true;
+        }
+
+        let rollType = null;
+        if (isInitiative) rollType = "initiative";
+        else rollType = messageType;
+
+        if (rollType && validTypes.includes(rollType)) {
+            const label = rollType === "ability" ? "check" : rollType;
+            this.injectButton(message, $html, label, ".message-header");
+            injected = true;
+        }
+
+        return injected;
+    }
+
+    static injectButton(message, html, type, sectionSelector) {
+        const section = html.find(sectionSelector);
+        if (section.length === 0) return;
+
+        if (section.find(`.rsr-addon-bonus-btn[data-type="${type}"]`).length > 0) return;
+
+        let container = section.find('.rsr-header .rsr-title').first();
+        if (container.length === 0) container = section.find('.rsr-header').first();
+        if (container.length === 0) container = section.find('.message-sender').first(); 
+        if (container.length === 0) container = section; 
+
+        const titleType = type.charAt(0).toUpperCase() + type.slice(1);
+        const btn = $(`<i class="fas fa-plus-circle rsr-addon-bonus-btn" data-type="${type}" title="Add Bonus to ${titleType}"></i>`);
+        
+        if (sectionSelector === ".message-header") {
+            btn.css({ "margin-left": "8px", "align-self": "center", "font-size": "1.2em", "order": "10", "cursor": "pointer" });
+            section.append(btn);
+        } else {
+            container.append(btn);
+        }
+        
+        btn.click((ev) => {
+            ev.preventDefault();
+            ev.stopPropagation(); 
+            this.openBonusDialog(message, type);
+        });
+    }
+
+    static async openBonusDialog(message, type) {
         // Use ChatUtility.getActorFromMessage for consistent, null-safe actor resolution
         // that correctly handles unlinked token actors (same fix as was applied in chat.js).
         const actor = ChatUtility.getActorFromMessage(message);
@@ -34,10 +105,7 @@ export class BonusManager {
         const candidateEffects = actorEffects.filter(e => !e.disabled && !e.isSuppressed);
 
         for (const effect of candidateEffects) {
-            // Foundry V14 ActiveEffect v2 stores changes in system data (`system.changes`);
-            // `effect.changes` is kept as an accessor.
-            const allChanges = Array.from(effect.changes ?? effect.system?.changes ?? []);
-            const changes = allChanges.filter(c => c?.key?.trim() === AE_BONUS_FLAG);
+            const changes = effect.changes.filter(c => c.key.trim() === AE_BONUS_FLAG);
             for (const change of changes) {
                 const parsed = BonusManager.parseBonusChange(change.value, type, rollData);
                 if (!parsed) continue;
@@ -60,7 +128,7 @@ export class BonusManager {
                 if (bonusDef) {
                     // Carry the resolved damage type (from a random/choice bonus) into apply.
                     if (result.damageType) bonusDef = { ...bonusDef, damageType: result.damageType };
-                    await this.applyBonus(message, type, bonusDef, actor, { rollIndex });
+                    await this.applyBonus(message, type, bonusDef, actor);
                 }
             }
         }).render(true);
@@ -167,7 +235,7 @@ export class BonusManager {
         return { rawFormula, resolvedFormula, isOnce, consumeTarget, damageMode, damageTypeOptions };
     }
 
-    static async applyBonus(message, type, bonusDef, actor, { rollIndex } = {}) {
+    static async applyBonus(message, type, bonusDef, actor) {
         try {
             if (bonusDef.consumeTarget) {
                 let itemToConsume = null;
@@ -188,18 +256,18 @@ export class BonusManager {
                 }
             }
 
-            // RSR cards keep their authoritative rolls in flags (mirrored to message.rolls);
-            // ChatUtility.getMessageRolls picks the right source for any message.
+            // RSR stores rolls in message.flags[MODULE_SHORT].rolls, not in message.rolls.
+            // For a processed RSR activity card, message.rolls is empty — the attack and
+            // damage rolls were intercepted and stored in flags by runActivityActions().
+            // ChatUtility.getMessageRolls() reads the flags path first, falling back to
+            // message.rolls for non-RSR messages.
             const currentRolls = ChatUtility.getMessageRolls(message).map(r => {
                 return r instanceof Roll ? r : Roll.fromData(r);
             });
 
-            let targetRollIndex = Number.isInteger(rollIndex) && currentRolls[rollIndex] ? rollIndex : -1;
-            if (targetRollIndex === -1) {
-                targetRollIndex = currentRolls.findIndex(r =>
-                    type === "damage" ? r instanceof CONFIG.Dice.DamageRoll : r instanceof CONFIG.Dice.D20Roll
-                );
-            }
+            let targetRollIndex = currentRolls.findIndex(r =>
+                type === "damage" ? r instanceof CONFIG.Dice.DamageRoll : r instanceof CONFIG.Dice.D20Roll
+            );
             if (targetRollIndex === -1) targetRollIndex = currentRolls.length > 0 ? 0 : -1;
             if (targetRollIndex === -1) return ui.notifications.error("No roll found.");
 
@@ -216,40 +284,48 @@ export class BonusManager {
             let effectiveFormula = cleanFormula;
             const damageType = bonusDef.damageType;
             if (damageType && originalRoll instanceof CONFIG.Dice.DamageRoll) {
+                // Wrap multi-term formulas so the flavor applies to the whole bonus
+                // ("(1d6 + 2)[fire]"); a single term takes the flavor directly ("2d6[fire]").
+                // A leading +/- sign is ignored when testing for operators.
                 const needsParens = /[+\-*/]/.test(cleanFormula.trim().replace(/^[+-]/, ""));
                 effectiveFormula = needsParens ? `(${cleanFormula})[${damageType}]` : `${cleanFormula}[${damageType}]`;
             }
 
-            // Evaluate the bonus as a plain roll: a D20Roll would turn its first die into the
-            // "d20" of the bonus, and a DamageRoll would re-apply critical rules to it.
-            const bonusRoll = new CONFIG.Dice.BasicRoll(effectiveFormula, rollData);
+            const bonusRoll = new TargetRollClass(effectiveFormula, rollData, originalRoll.options);
             await bonusRoll.evaluate();
-            await CoreUtility.tryRollDice3D(bonusRoll, message.id);
 
-            // Rebuild from serialized data rather than a formula / fromTerms so the original
-            // roll keeps its configured state (D20Roll would otherwise re-run configureModifiers
-            // and collapse a multiroll / advantage d20 back to one die).
-            const json = originalRoll.toJSON();
-            const plus = new foundry.dice.terms.OperatorTerm({ operator: "+" });
-            plus._evaluated = true;
-            json.terms = [
-                ...json.terms,
-                plus.toJSON(),
-                ...bonusRoll.terms.map(t => t.toJSON())
+            const newTerms = [
+                ...originalRoll.terms.map(t => foundry.utils.deepClone(t)),
+                new foundry.dice.terms.OperatorTerm({operator: "+"}),
+                ...bonusRoll.terms
             ];
-            json.total = originalRoll.total + bonusRoll.total;
-            json.evaluated = true;
-            const newRoll = TargetRollClass.fromData(json);
-            newRoll.resetFormula();
+
+            const newRoll = TargetRollClass.fromTerms(newTerms);
+            newRoll.options = foundry.utils.deepClone(originalRoll.options);
+            // A critical's stored base predates the bonus; demoting to it would drop the bonus.
+            delete newRoll.options.rsreforgedCriticalBase;
+            newRoll._total = originalRoll.total + bonusRoll.total;
+            newRoll._evaluated = true; 
 
             currentRolls[targetRollIndex] = newRoll;
 
-            await ChatUtility.persistRolls(message, currentRolls);
+            // Persist to wherever the card renders from: a dnd5e 6 roll message's own
+            // rolls (its usage card refreshes from the update), else RSR's flag cache.
+            const serialised = CoreUtility.serializeRolls(currentRolls);
+            if (ChatUtility.isNativeRollMessage(message)) {
+                await message.update({ rolls: serialised });
+            } else if (message.flags?.[MODULE_SHORT]) {
+                message.flags[MODULE_SHORT].rolls = serialised;
+                await ChatUtility.updateChatMessage(message, { flags: message.flags });
 
-            // If the bonus modified the attack roll, re-register it in dnd5e's MessageRegistry
-            // so AC5e resolves the boosted attack on a later damage roll.
-            if (originalRoll instanceof CONFIG.Dice.D20Roll) {
-                ChatUtility.resyncAttackRegistry(message);
+                // If the bonus modified the attack roll, re-register it in dnd5e's
+                // MessageRegistry so AC5e resolves the boosted attack on a later damage
+                // roll. No-ops for non-attack cards / damage bonuses.
+                if (originalRoll instanceof CONFIG.Dice.D20Roll) {
+                    ChatUtility.resyncAttackRegistry(message);
+                }
+            } else {
+                await message.update({ rolls: serialised });
             }
 
             if (type === "initiative") {

@@ -1,6 +1,4 @@
-import { MODULE_SHORT } from "../module/const.js";
-import { CoreUtility } from "./core.js";
-import { LogUtility } from "./log.js";
+import { MODULE_SHORT, CoreUtility, LogUtility } from "./shim.js";
 
 /**
  * Facelift for dnd5e 6's native <damage-application> tray
@@ -201,6 +199,7 @@ export class TrayUtility {
      */
     static _usageSaveMultiplier(message, uuid) {
         if (message?.type !== "usage" || !message.flags?.[MODULE_SHORT]?.quickRoll) return null;
+        if (message.flags[MODULE_SHORT].workflowVersion === 2) return null; // RSReforged-engine card
         const activity = message.getAssociatedActivity?.();
         if (activity?.type !== "save") return null;
         if (message.system?.outcomes?.get?.(uuid) !== "success") return null;

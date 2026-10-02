@@ -7,28 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [6.0.0] — 2026-09-19 (GMC fork)
+## [6.2.0] — 2026-10-02 (GMC fork)
 
-First release of the GMC fork, for Foundry V14 (14.367+) and dnd5e 6.0.x. Versioned 6.x to follow dnd5e's major version. Not compatible with dnd5e 5.x.
+This fork is now upstream RSReforged 6.0.0 plus the one feature commit described under *Added*, with the fork's own extras moved to `src/gmc/`. The fork's earlier dnd5e 6 port (its 6.0.0, with its own compact card engine) is retired; Vanilla+ replaces it. See the README for what changed and why.
 
 ### Changed
 
-- **Ported to Foundry V14 and dnd5e 6.** Chat messages use dnd5e 6's system data models (`usage` / `attack` / `damage` / `check` / `save`), V14 message modes, and the `_del` data operator.
-- **Cards use dnd5e 6's compact chat style.** Attack, damage and formula rows on a usage card are rendered with dnd5e's own templates and the native `<damage-application>` tray. RSR's own `templates/` folder is gone. A dotted divider separates the attack and damage rows.
-- **Fast-forward by default.** Rolls skip their dialog unless Shift (dnd5e's "Skip Dialog" key) is held. A Shift-used activity shows its dialogs, and every result still lands on the single usage card.
-- **Multiroll is always on.** Normal d20 rolls are `2d20kf`, and the ignored die is shown dimmed.
-- **Roll breakdown actions.** Click a roll to open its breakdown. It has **+ Bonus** on every roll, **Disadvantage / Normal / Advantage** on d20 rolls, and **Critical** on card damage.
-- **Private rolls are fully hidden** from players who may not see them. On save/check results inside a usage card, the GM gets an eye control that reveals the roll and then, faded, makes it private again.
-- **Damage tray facelift** on every dnd5e damage tray:
-  - The multiplier row reads heart (healing), hourglass (temp HP mode), 0, ¼, ½, 1, and 2 with a faded burst behind it.
-  - In temp HP mode, the target pills preview the temp HP each target would get, and Apply grants it.
-- The manifest and download point at this fork. The release workflow no longer ships `templates/` and never publishes to Foundry's package browser; the `rsreforged` package id there belongs to upstream.
-- The upstream test suite covers the dnd5e 5 code paths and does not match this port. The Test workflow now runs only on manual dispatch.
+- **Rebased on upstream 6.0.0.** Rolls are dnd5e's native attack and damage messages, as upstream describes below under 6.0.0. The fork's "one usage card holds the rolls" engine is gone.
+- **GMC extras live in `src/gmc/`** (damage tray facelift with temp HP mode, Hide Private Rolls Completely, Fast-Forward Rolls) and no longer touch RSReforged's own source.
+- **Shift-click follows upstream:** it uses dnd5e's normal dialogs and messages and is not folded onto the card. The fork's Item#use Shift wrapper is removed.
+
+### Added
+
+- **Card Style setting (dnd5e 6).** *Classic RSReforged* (the default) is the card as it is in 6.0.0. *Vanilla+* keeps dnd5e 6's own compact roll rows and folds them onto the usage card: RSReforged asks dnd5e to render each attack, damage, healing or formula message and moves its rows (roll button, breakdown popover, targets, damage tray) under the item card, so the look follows the system and other modules' changes to those rows carry over. Each roll's breakdown gets Disadvantage / Advantage, Critical Hit and Bonus buttons that run the same edits as the classic overlays, on quick-roll cards, standalone checks and saves, and the save lines summarised on a usage card. *Hide NPC Roll Results*, the *Always Roll Multiple Dice* extra d20 (shown faded beside the real one), and click-to-reroll / GM fudging apply in both styles; in Vanilla+ the dice in dnd5e's breakdown are matched to the roll's dice and left inert if they do not correspond exactly. Not in Vanilla+ yet: damage-type cycling and the RSReforged quick apply buttons (it always uses dnd5e's tray).
+- **Wide saving throw button on Classic cards.** dnd5e 6 shows a save as a small shield icon among the card's action icons. Classic cards now also get the 4.x full-width "DC 15 Dexterity Saving Throw" button under the damage section, one per save ability. It forwards the click (with Shift/Ctrl/Alt) to dnd5e's own button, and leaves the DC off for viewers dnd5e hides it from.
+
+## [6.0.0] — 2026-10-02
+
+> **Experimental support for the D&D 5e system version 6.** We're still working out some bugs, but we want to get a release out for early testers. Please report problems on the [issue tracker](https://github.com/arrowedisgaming/RSReforged/issues) with your Foundry, dnd5e, and RSReforged versions. If you are on dnd5e 5.3, stay on RSReforged 4.13.4 (see below).
+
+RSReforged's version number now tracks the dnd5e system: **RSReforged 6.x is for dnd5e 6.x.** dnd5e 6.0 replaced the chat-message model RSReforged was built on, so this release rebuilds the RSReforged card on top of dnd5e 6's own roll messages. Refs [#40](https://github.com/arrowedisgaming/RSReforged/issues/40).
+
+### Changed
+
+- **BREAKING: requires Foundry VTT 14 and dnd5e 6.x.** If you are staying on dnd5e 5.3.x, stay on RSReforged 4.13.4 and do not accept this update; Foundry offers it with only a compatibility warning. Install 4.13.4 from `https://github.com/arrowedisgaming/RSReforged/releases/download/release-4.13.4/module.json`, or lock the module in *Add-on Modules*.
+- **Each roll is a real dnd5e message.** A quick roll uses the activity, then rolls the attack and damage (or healing, or a utility formula) through dnd5e's own roll methods and creates dnd5e's native attack and damage messages, linked to the usage card. RSReforged renders its card from them and hides the standalone copies. Every edit on the card is written to those messages, so dnd5e's targeting, damage application, and other modules see the same numbers the card shows.
+- **BREAKING (Integration API):** on dnd5e 6 cards only `rsreforged.renderApplyDamageButtons` fires so far; `preRenderChatMessageContent`, `renderChatMessageContent`, and `renderRoll` are emitted only for legacy dnd5e 5.3 cards. See `docs/INTEGRATION.md`.
+
+### Added
+
+- **The RSReforged card on dnd5e 6:** Attack, Damage/Healing, and Formula sections with the big totals, d20 badge, hit/miss coloring, and the damage breakdown split by type, under dnd5e's item header, description, and target rows.
+- **One Dice So Nice throw** for the attack, damage, and any extra d20s, regardless of Dice So Nice's *Simultaneous Rolls* setting; the card appears when the dice land.
+- **Checks and saves** (skills, abilities, tools, saving throws, initiative) rolled through RSReforged get the RSReforged total and breakdown in place of dnd5e's compact roll row; dnd5e's header, save outcome, buttons, and HP changes stay as they are.
+- Restored on dnd5e 6 cards, behaving as in 4.x:
+  - RSReforged apply buttons (per damage type and for the total) or dnd5e's tray, per *Damage Apply UI*.
+  - Retroactive advantage/disadvantage and critical overlays, with their confirmation settings.
+  - **Add Bonus**, including pre-defined bonuses from Active Effects, on attack, damage, check, and save cards.
+  - Click-to-cycle damage types, remembered for the next roll.
+  - Click-to-reroll and GM dice fudging, with the reroll sound and chat log.
+  - **Hide NPC Roll Results** in both styles, including save summaries on spell cards.
+  - **Always Roll Multiple Dice:** the extra d20 is shown as a second total, thrown with the real dice, and adopted by retroactive advantage.
+  - *Show D20 Rolls*, *Aggregate Damage Fields*, *Roll Damage Manually*, the equipped-ammunition preference, and the Versatile keybinding.
+- When the last unit of auto-destroying ammunition is fired, its snapshot is kept on the attack so the damage roll still includes it.
 
 ### Fixed
 
-- Usage cards could stay hidden (processed flag never saved) after the attack roll was registered.
-- Integration render hooks receive jQuery again where listeners expect it (Wire / AC5e compatibility).
+- RSReforged's roll hooks no longer throw on dnd5e 6, where roll message configurations arrive without a `flags` object. That exception let dnd5e fall through to its default dialog and left chat cards half-rendered, as reported in [#40](https://github.com/arrowedisgaming/RSReforged/issues/40).
+- Rerolling a whispered or blind roll sends the 3D die and the reroll log only to that roll's audience, instead of following the user's current roll mode. Retroactive advantage throws its extra d20 the same way.
+- Damage-type labels and icons from other modules are escaped in the damage breakdown.
+
+### Known issues
+
+- Critical promotion refuses damage containing a typed multi-term bonus (e.g. `+1d6 + 2` fire from *Add Bonus*) and shows an error.
+- *Hide NPC Roll Results* masks save summaries only on cards RSReforged manages.
+- Changing a death save after the fact (bonus or advantage) does not update the actor's death-save tally.
+- Clicking dice inside dnd5e's own roll breakdowns does nothing; rerolls work on RSReforged's cards.
 
 ## [4.13.4] — 2026-07-27
 
@@ -351,7 +384,12 @@ The first RSReforged release. Forked from [MangoFVTT/fvtt-ready-set-roll-5e@v3.5
 - **MangoFVTT** — author and maintainer of upstream Ready Set Roll for D&D5e (the direct ancestor of this fork).
 - **RedReign** — author of the original [Better Rolls for 5e](https://github.com/RedReign/FoundryVTT-BetterRolls5e), which RSR is a rewrite of.
 
-[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.0...HEAD
+[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.0...HEAD
+[6.0.0]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.4...release-6.0.0
+[4.13.4]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.3...release-4.13.4
+[4.13.3]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.2...release-4.13.3
+[4.13.2]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.1...release-4.13.2
+[4.13.1]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.13.0...release-4.13.1
 [4.13.0]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.12.0...release-4.13.0
 [4.12.0]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.11.5...release-4.12.0
 [4.11.5]: https://github.com/arrowedisgaming/RSReforged/compare/release-4.11.4...release-4.11.5

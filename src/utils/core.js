@@ -124,55 +124,47 @@ export class CoreUtility {
     }
 
     /**
-     * The current chat message mode. Foundry V14 replaced the "rollMode" core setting
-     * with "messageMode" ("public" | "ic" | "gm" | "blind" | "self"); dnd5e 6 treats
-     * in-character as public for rolls (BasicRoll.getMessageMode). Falls back to the
-     * legacy setting on cores that do not have it.
-     * @returns {string}
-     */
-    static getMessageMode() {
-        const fromSystem = CONFIG.Dice?.BasicRoll?.getMessageMode;
-        if (typeof fromSystem === "function") {
-            try { return fromSystem.call(CONFIG.Dice.BasicRoll); } catch (err) { /* fall through */ }
-        }
-        try {
-            const mode = game.settings.get("core", "messageMode");
-            return mode === "ic" ? "public" : mode;
-        } catch (err) {
-            return game.settings.get("core", "rollMode");
-        }
-    }
-
-    /**
-     * Gets data about whispers and message mode for use in rendering messages.
-     * Accepts both V14 message modes and legacy roll modes.
-     * @param {string} [rollMode] A message mode (or legacy roll mode); defaults to the current one.
-     * @returns {Object} A data package with the current mode, whisper recipients and blind flag.
+     * Gets data about whispers and roll mode for use in rendering messages.
+     * @param {*} rollMode 
+     * @returns {Object} A data package with the current roll mode.
      */
     static getWhisperData(rollMode = null) {
-        let whisper = undefined;
-        let blind = null;
+		let whisper = undefined;
+		let blind = null;
 
-        rollMode = rollMode || CoreUtility.getMessageMode();
+		rollMode = rollMode || game.settings.get("core", "rollMode");
 
-        const isGm = ["gm", "gmroll"].includes(rollMode);
-        const isBlind = ["blind", "blindroll"].includes(rollMode);
-        const isSelf = ["self", "selfroll"].includes(rollMode);
-
-        if (isGm || isBlind) {
-            whisper = typeof ChatMessage.getWhisperRecipients === "function"
-                ? ChatMessage.getWhisperRecipients("GM").map(u => u.id ?? u)
-                : game.users.filter(u => u.isGM).map(u => u.id);
+        if (["gmroll", "blindroll"].includes(rollMode)) {
+            whisper = ChatMessage.getWhisperRecipients("GM");
         }
 
-        if (isBlind) {
+        if (rollMode === "blindroll") {
             blind = true;
-        }
-        else if (isSelf) {
+        } 
+        else if (rollMode === "selfroll") {
             whisper = [game.user.id];
+        } 
+
+		return { rollMode, whisper, blind }
+	}
+
+    /**
+     * Gets the current set of tokens that are selected or targeted (or both) depending on the chosen setting.
+     * @returns {Set} A set of tokens that the module considers as current targets.
+     */
+    static getCurrentTargets() {
+        let selectTokens = SettingsUtility._applyDamageToSelected ? canvas.tokens.controlled : [];
+        let targetTokens = SettingsUtility._applyDamageToTargeted ? game.user.targets : [];
+
+        if (SettingsUtility._prioritiseDamageSelected && selectTokens.length > 0) {
+            targetTokens = [];
         }
 
-        return { rollMode, messageMode: rollMode, whisper, blind }
+        if (SettingsUtility._prioritiseDamageTargeted && targetTokens.size > 0) {
+            selectTokens = [];
+        }
+
+        return new Set([...selectTokens, ...targetTokens]);
     }
 
     /**

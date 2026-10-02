@@ -1,0 +1,66 @@
+/* GMC extras (src/gmc/): damage tray facelift, GM reveal eye, fully hidden private rolls. */
+
+.rsr-private-hidden {
+	display: none !important;
+}
+
+damage-application .damage-multipliers .multiplier-button.rsr-mult-double {
+	position: relative;
+}
+
+damage-application .damage-multipliers .multiplier-button.rsr-mult-double > .rsr-mult-bg {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0;
+	inline-size: 100%;
+	font-size: var(--font-size-14);
+	opacity: 0.35;
+	pointer-events: none;
+}
+
+damage-application .damage-multipliers .multiplier-button.rsr-mult-double > span {
+	position: relative;
+	z-index: 1;
+	font-weight: bold;
+}
+
+damage-application .damage-multipliers .multiplier-button.rsr-mult-healing > i {
+	margin: 0;
+	font-size: var(--font-size-11);
+}
+
+damage-application .damage-multipliers .rsr-temphp-button > i {
+	margin: 0;
+	font-size: var(--font-size-11);
+}
+
+.message .message-metadata .rsr-reveal,
+.card-summary .rsr-reveal {
+	background: none;
+	border: none;
+	box-shadow: none;
+	padding: 0;
+	inline-size: auto;
+	block-size: auto;
+	color: var(--color-text-secondary, inherit);
+	cursor: pointer;
+}
+
+.message .message-metadata .rsr-reveal:hover,
+.card-summary .rsr-reveal:hover {
+	color: var(--dnd5e-color-gold, #ff6400);
+	text-shadow: 0 0 6px var(--color-shadow-primary);
+}
+
+.message .message-metadata .rsr-reveal.rsr-revealed,
+.card-summary .rsr-reveal.rsr-revealed {
+	opacity: 0.35;
+}
+
+.message .message-metadata .rsr-reveal.rsr-revealed:hover,
+.card-summary .rsr-reveal.rsr-revealed:hover {
+	opacity: 0.8;
+}

@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { setupFoundryEnv } from "./helpers/foundry-env.mjs";
+import { makeRoll, setupFoundryEnv } from "./helpers/foundry-env.mjs";
 
 describe("BonusManager", () => {
     let BonusManager;
+    let env;
 
     beforeEach(async () => {
         vi.resetModules();
-        await setupFoundryEnv();
+        env = await setupFoundryEnv();
         ({ BonusManager } = await import("../src/utils/bonus.js"));
     });
 
@@ -49,6 +50,24 @@ describe("BonusManager", () => {
 
         expect(BonusManager.init(message, html)).toBe(false);
         expect(html.find(".rsr-addon-bonus-btn")).toHaveLength(0);
+    });
+
+    it("writes a bonus on a dnd5e 6 roll message to that message's own rolls, not RSR's flag cache", async () => {
+        const { DamageRoll } = env.classes;
+        const roll = makeRoll(DamageRoll, { formula: "1d8 + 3", total: 7, faces: 8, results: [4], type: "slashing" });
+        roll.options.rsreforgedCriticalBase = { formula: "stale" };
+        // Native children carry RSR workflow flags, which must not divert the write.
+        const message = { type: "damage", rolls: [roll], flags: { rsreforged: { workflowVersion: 2, parentId: "p" } }, update: vi.fn(async () => {}) };
+        const actor = { getRollData: () => ({}), effects: { get: () => null }, items: { get: () => null } };
+
+        await BonusManager.applyBonus(message, "damage", { name: "Custom Bonus", rawFormula: "2", isOnce: false }, actor);
+
+        expect(message.update).toHaveBeenCalledTimes(1);
+        const [written] = message.update.mock.calls[0][0].rolls;
+        expect(written.total).toBe(9);
+        expect(written.options.type).toBe("slashing");
+        expect(written.options.rsreforgedCriticalBase).toBeUndefined();
+        expect(message.flags.rsreforged.rolls).toBeUndefined();
     });
 });
 

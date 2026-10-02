@@ -2,7 +2,6 @@ import { MODULE_SHORT } from "../module/const.js";
 import { MODULE_MIDI } from "../module/integration.js";
 import { ChatUtility } from "./chat.js";
 import { CoreUtility } from "./core.js";
-import { LogUtility } from "./log.js";
 import { CRIT_TYPE, ROLL_TYPE, RollUtility } from "./roll.js";
 import { SETTING_NAMES, SettingsUtility } from "./settings.js";
 
@@ -18,8 +17,8 @@ const _rollCaptures = new Map();
 let _rollCaptureSequence = 0;
 
 /**
- * Cards whose target descriptors (dnd5e 6: `system.targets`) were written by the roll
- * capture on the current quick-roll pass.
+ * Cards whose `flags.dnd5e.targets` was written by the roll capture on the current
+ * quick-roll pass.
  *
  * Two writers touch that field on the quick-roll path and they must not race:
  * getAttackFromMessage applies the capture as the attack roll settles, and
@@ -35,76 +34,51 @@ let _rollCaptureSequence = 0;
  */
 const _captureWrittenCards = new WeakSet();
 
-/**
- * Target descriptors decided for a card during the current quick-roll / merge pass but not
- * yet persisted. dnd5e 6.0 stores descriptors in the message's system data
- * (`system.targets`, a TargetsField); writing them onto the live document in-memory would be
- * undone by every `updateSource()` RSR performs mid-pass (each one re-initialises the system
- * model from `_source`), and writing them into `_source` would make the final
- * `message.update()` diff them away. They are therefore kept here, re-applied to the live
- * document after each updateSource, and persisted by the final update
- * (see ActivityUtility.consumePendingTargetsUpdate).
- */
-const _pendingCardTargets = new WeakMap();
-
-/**
- * Resolve dnd5e 6's TargetsField class (data/chat-message/fields/targets-field.mjs).
- * Exported as `dnd5e.dataModels.chatMessage.fields.TargetsField`; the schema lookup is a
- * fallback that does not depend on the export path.
- * @returns {Function|null}
- */
-function _getTargetsField() {
-    return globalThis.dnd5e?.dataModels?.chatMessage?.fields?.TargetsField
-        ?? CONFIG.ChatMessage?.dataModels?.usage?.schema?.fields?.targets?.constructor
-        ?? null;
-}
-
 export class ActivityUtility {
 
     /**
      * Resolve the activity associated with a chat message.
      *
-     * dnd5e 6.0: activity/item references live in the message's system data
-     * (`system.activity.{id,uuid}`, `system.item.{id,uuid}`), and
-     * ChatMessage5e#getAssociatedActivity() reads them (falling back to the legacy
-     * `flags.dnd5e.*` locations). The UsageMessageData#activity / #item getters were
-     * removed, so `message.system.activity` is now plain reference data, not an Activity.
-     * The manual fallbacks cover plain data objects.
+     * dnd5e 5.3.0: `getAssociatedActivity()` is now a native ChatMessage5e method
+     * (line 69694 of dnd5e.mjs). It tries `fromUuidSync(flags.dnd5e.activity.uuid)`
+     * first, then falls back to `getAssociatedItem()?.system.activities?.get(flags.dnd5e.activity.id)`.
+     * We call it directly and only fall through to manual UUID/id resolution when the
+     * message object is a plain data object (e.g. during preCreateChatMessage before the
+     * document is instantiated) where the method may not exist.
      *
-     * @param {ChatMessage|object} message
-     * @param {object} [options]
-     * @param {boolean} [options.scaled=false] Resolve against the item scaled to the card's
-     *   `system.scaling` (ChatMessage5e#getAssociatedActivity({ scaled })).
+     * NOTE: `message.system.activity` is intentionally NOT used as a primary path.
+     * In 5.3.0 it is a getter on UsageMessageData that itself calls
+     * `this.parent.getAssociatedActivity()` — identical to calling the method directly,
+     * but with the added risk of throwing when `message.system` is undefined (non-usage
+     * messages) or when the system data model is not yet initialised (preCreate hooks).
      */
-    static _getActivityFromMessage(message, { scaled = false } = {}) {
-        if (!message) return null;
-
+    static _getActivityFromMessage(message) {
+        // Primary: native ChatMessage5e method available on instantiated documents.
         if (typeof message.getAssociatedActivity === "function") {
-            try {
-                const act = message.getAssociatedActivity({ scaled });
-                if (act) return act;
-            } catch (err) {
-                // A scaled clone can fail for exotic items; fall through to the unscaled lookups.
-            }
-        }
-
-        const activityRef = message.system?.activity ?? message.flags?.dnd5e?.activity;
-        const itemRef = message.system?.item ?? message.flags?.dnd5e?.item;
-
-        let item = null;
-        if (typeof message.getAssociatedItem === "function") {
-            try { item = message.getAssociatedItem(); } catch (err) { item = null; }
-        }
-        if (!item && itemRef?.uuid) item = fromUuidSync(itemRef.uuid, { strict: false });
-        if (!item && message.flags?.dnd5e?.use?.itemUuid) item = fromUuidSync(message.flags.dnd5e.use.itemUuid, { strict: false });
-
-        if (item && activityRef?.id) {
-            const act = item.system?.activities?.get(activityRef.id);
+            const act = message.getAssociatedActivity();
             if (act) return act;
         }
 
-        if (activityRef?.uuid) {
-            const act = fromUuidSync(activityRef.uuid, { strict: false });
+        // Fallback A: resolve via item UUID + activity id (covers preCreate where the
+        // document method above may not yet exist, or may return null because flags
+        // haven't been saved to the database yet and fromUuidSync can't find the UUID).
+        let item = null;
+        if (typeof message.getAssociatedItem === "function") item = message.getAssociatedItem();
+        if (!item && message.flags?.dnd5e?.item?.uuid) item = fromUuidSync(message.flags.dnd5e.item.uuid, { strict: false });
+        if (!item && message.flags?.dnd5e?.use?.itemUuid) item = fromUuidSync(message.flags.dnd5e.use.itemUuid, { strict: false });
+
+        const activityId = message.flags?.dnd5e?.activity?.id;
+        if (item && activityId) {
+            const act = item.system?.activities?.get(activityId);
+            if (act) return act;
+        }
+
+        // Fallback B: resolve directly via activity UUID stored in flags.
+        // dnd5e 5.3.0: the activity UUID is stored at flags.dnd5e.activity.uuid
+        // (set by Activity#messageFlags getter, line 16711 of dnd5e.mjs).
+        const activityUuid = message.flags?.dnd5e?.activity?.uuid;
+        if (activityUuid) {
+            const act = fromUuidSync(activityUuid, { strict: false });
             if (act) return act;
         }
 
@@ -122,95 +96,24 @@ export class ActivityUtility {
     }
 
     /**
-     * Read a message's stored target descriptors. dnd5e 6.0 moved them from
-     * `flags.dnd5e.targets` to `system.targets`; the flag is read for legacy messages.
-     * Pending (not yet persisted) descriptors decided during this pass win.
-     * @param {ChatMessage|object} message
-     * @returns {object[]|undefined}
-     */
-    static getCardTargets(message) {
-        if (!message) return undefined;
-        if (_pendingCardTargets.has(message)) return _pendingCardTargets.get(message);
-        const system = message.system?.targets;
-        if (Array.isArray(system)) return system;
-        const legacy = message.flags?.dnd5e?.targets;
-        return Array.isArray(legacy) ? legacy : undefined;
-    }
-
-    /**
-     * Record the target descriptors decided for a card. They are applied to the live
-     * document in-memory (so hooks running during the rest of the pass read them) and
-     * persisted by the next ChatUtility.updateChatMessage call on that card.
-     * @param {ChatMessage} message
-     * @param {object[]} targets TargetsField descriptors ({ ac, actor, img, name, token }).
-     */
-    static setCardTargets(message, targets) {
-        if (!message || !Array.isArray(targets)) return;
-        const clean = targets.map(t => ActivityUtility._normalizeTargetDescriptor(t)).filter(t => t);
-        _pendingCardTargets.set(message, clean);
-        ActivityUtility._applyPendingTargetsInMemory(message);
-    }
-
-    /**
-     * Returns the `system.targets` update for a card with pending descriptors (and clears
-     * them), or an empty object. Only messages whose system model has a `targets` field
-     * (usage, attack, damage, ... in dnd5e 6) get the update.
-     * @param {ChatMessage} message
-     * @returns {object}
-     */
-    static consumePendingTargetsUpdate(message) {
-        if (!message || !_pendingCardTargets.has(message)) return {};
-        const targets = _pendingCardTargets.get(message);
-        _pendingCardTargets.delete(message);
-        if (!ActivityUtility._hasTargetsField(message)) return {};
-        return { "system.targets": foundry.utils.deepClone(targets) };
-    }
-
-    static _hasTargetsField(message) {
-        return !!message?.system?.schema?.fields?.targets
-            || !!message?.system?.constructor?.schema?.fields?.targets;
-    }
-
-    static _applyPendingTargetsInMemory(message) {
-        if (!_pendingCardTargets.has(message) || !ActivityUtility._hasTargetsField(message)) return;
-        try {
-            message.system.targets = foundry.utils.deepClone(_pendingCardTargets.get(message));
-        } catch (err) {
-            // Read-only system model: the descriptors are still persisted by the final update.
-        }
-    }
-
-    /**
-     * Coerce a descriptor into dnd5e 6's TargetsField shape. Legacy (5.x) descriptors
-     * were `{ name, img, uuid (actor), ac }`.
-     */
-    static _normalizeTargetDescriptor(target) {
-        if (!target || typeof target !== "object") return null;
-        const actor = target.actor ?? target.uuid ?? null;
-        if (!actor && !target.token) return null;
-        const descriptor = {
-            ac: Number.isFinite(target.ac) ? target.ac : null,
-            actor,
-            img: target.img ?? null,
-            name: target.name ?? "",
-            token: target.token ?? null
-        };
-        return descriptor;
-    }
-
-    /**
-     * Ensure the card carries target descriptors so modules (e.g. wm5e) and RSR's hit/miss
-     * row can resolve the attacked actor. RSR rolls with `create: false`, so dnd5e's
-     * attack message (which would carry them) never exists.
+     * Ensure `flags.dnd5e.targets` is present on a merged quick-roll card so modules
+     * such as wm5e can resolve the attacked actor from the chat message (e.g. Sap reads
+     * `targets[0].uuid` via `fromUuidSync`). RSR rolls with `create: false`, so dnd5e's
+     * attack-target enrichment on a discrete roll message never reaches the parent card
+     * unless we copy it during child-merge or stamp it from the user's targeted tokens
+     * at attack-roll time.
      *
      * Precedence, highest first:
-     *   1. The pending roll-message configuration captured mid-workflow (applied by
-     *      getAttackFromMessage via _applyRollCapture; runActivityActions skips this
-     *      method entirely when it wrote — see _captureWrittenCards).
+     *   1. The pending roll-message configuration captured mid-workflow. That writer is
+     *      NOT here — getAttackFromMessage applies it via _applyRollCapture before
+     *      runActivityActions reaches this method, and runActivityActions skips this
+     *      method entirely when it wrote (see _captureWrittenCards). It is listed
+     *      because it is the source that outranks both of the two below.
      *   2. A child attack-roll message merged into the card (`sourceMessage`), which
-     *      overwrites whatever is on the card — including with an empty list.
-     *   3. The user's currently targeted tokens (TargetsField.getDescriptors), which are
-     *      no fresher than the card's own descriptors and therefore never clobber them.
+     *      overwrites whatever is on the card — including with an empty list, which
+     *      means "this roll had no targets" and not "nothing to offer".
+     *   3. The user's currently targeted tokens, which are no fresher than the card's
+     *      own descriptors and therefore never clobber them.
      *
      * @param {ChatMessage} message The activation card to stamp.
      * @param {ChatMessage} [sourceMessage] Optional child attack-roll message to copy from.
@@ -218,31 +121,51 @@ export class ActivityUtility {
     static _syncAttackTargets(message, sourceMessage = null) {
         if (!message) return;
 
-        const fromSource = sourceMessage ? ActivityUtility.getCardTargets(sourceMessage) : undefined;
+        message.flags.dnd5e ??= {};
+
+        // A child roll message wins outright. dnd5e's Activity#use stamps descriptors on
+        // the usage card from getTargetDescriptors() before any roll happens, so whatever
+        // is already on the card predates every target-dependent adjustment made during
+        // the roll — cover bonuses, condition-driven AC changes. The child message was
+        // created later in that same workflow and carries the adjusted values (#38).
+        // Array.isArray, not `?.length`: a child message carrying `targets: []` rolled
+        // against nothing, and that is an answer. Treating it as "no offer" would leave
+        // the card advertising a target the roll never happened against, which is the
+        // opposite of the contract published in docs/INTEGRATION.md.
+        const fromSource = sourceMessage?.flags?.dnd5e?.targets;
         if (Array.isArray(fromSource)) {
-            ActivityUtility.setCardTargets(message, foundry.utils.deepClone(fromSource));
+            message.flags.dnd5e.targets = foundry.utils.deepClone(fromSource);
             return;
         }
 
-        // Activity#use stamps `system.targets: []` on every card used with nothing
-        // targeted; fill that in from the tokens targeted by attack-roll time.
-        if (ActivityUtility.getCardTargets(message)?.length) return;
+        // No child message means the only other source is the user's current targets,
+        // which are no fresher than what the card already holds — so never clobber here.
+        //
+        // Deliberately `?.length` rather than the Array.isArray used above: Activity#use
+        // stamps `targets: []` on every card used with nothing targeted, and this fallback
+        // exists precisely to fill that case in from the tokens the user has targeted by
+        // attack-roll time. The writer that must be able to say "empty on purpose" is the
+        // roll capture, and it never reaches this point — runActivityActions skips the
+        // whole method when the capture wrote (see _captureWrittenCards).
+        if (message.flags.dnd5e.targets?.length) return;
 
-        const TargetsField = _getTargetsField();
-        let targets = [];
-        if (typeof TargetsField?.getDescriptors === "function") {
-            targets = TargetsField.getDescriptors();
-        } else {
-            for (const token of game.user?.targets ?? []) {
-                const doc = token.document ?? token;
-                const { statuses, system, uuid } = doc.actor ?? {};
-                if (!uuid) continue;
-                const ac = statuses?.has("coverTotal") ? null : system?.attributes?.ac?.value;
-                targets.push({ actor: uuid, ac: ac ?? null, img: doc.texture?.src, name: doc.name, token: doc.uuid });
-            }
+        const tokens = Array.from(game.user?.targets ?? []);
+        if (!tokens.length) return;
+
+        // Mirror dnd5e's getTargetDescriptors() shape exactly: a fully-covered
+        // target reports ac:null (so the tray shows no hit/miss), a missing AC
+        // coerces to null rather than undefined, the avatar img is carried, and
+        // targets dedupe by uuid (two tokens of one actor collapse to one entry).
+        const targets = new Map();
+        for (const token of tokens) {
+            const { name } = token;
+            const { img, system, uuid, statuses } = token.actor ?? {};
+            if (!uuid) continue;
+            const ac = statuses?.has("coverTotal") ? null : system?.attributes?.ac?.value;
+            targets.set(uuid, { name, img, uuid, ac: ac ?? null });
         }
 
-        if (targets.length) ActivityUtility.setCardTargets(message, targets);
+        if (targets.size) message.flags.dnd5e.targets = Array.from(targets.values());
     }
 
     /**
@@ -262,7 +185,7 @@ export class ActivityUtility {
     /**
      * Snapshot a pending dnd5e roll-message configuration mid-workflow.
      *
-     * dnd5e seeds `data.system.targets` from TargetsField.getDescriptors() inside
+     * dnd5e seeds `data.flags.dnd5e.targets` from getTargetDescriptors() inside
      * rollAttack, and modules that adjust a roll against its targets (cover, condition
      * automation) rewrite those entries during the preRoll hooks. Because RSR rolls with
      * `create: false`, dnd5e never turns the configuration into a message, so without
@@ -289,14 +212,9 @@ export class ActivityUtility {
         const captureId = flags?.[MODULE_SHORT]?.captureId;
         if (!captureId) return;
 
-        // dnd5e 6.0: AttackActivity#rollAttack seeds `data.system.targets` from
-        // TargetsField.getDescriptors(); `data.flags.dnd5e.targets` is the 5.x location.
-        const data = messageConfig.data;
-        const source = Array.isArray(data.system?.targets) ? data.system.targets
-            : Array.isArray(data["system.targets"]) ? data["system.targets"]
-            : Array.isArray(flags.dnd5e?.targets) ? flags.dnd5e.targets
+        const targets = Array.isArray(flags.dnd5e?.targets)
+            ? foundry.utils.deepClone(flags.dnd5e.targets)
             : null;
-        const targets = source ? foundry.utils.deepClone(source) : null;
 
         // `flags` is intentionally unread today. It is the hook for the deferred
         // "carry third-party flag namespaces from the roll config onto the card" work
@@ -322,10 +240,13 @@ export class ActivityUtility {
     /**
      * Write a capture onto the RSR card.
      *
-     * This OVERWRITES the card's descriptors, including with an empty list. dnd5e's
-     * Activity#use already stamped `system.targets` on the usage card before the attack
-     * roll ran, so the existing entries are the stale pre-roll set (issue #38). The
-     * captured set has the identical shape and is produced later in the same workflow.
+     * This OVERWRITES `flags.dnd5e.targets`, including with an empty list. dnd5e's
+     * Activity#use already stamped descriptors on the usage card from
+     * getTargetDescriptors() before the attack roll ran, so the existing entries are the
+     * stale pre-roll set that produces both the wrong AC and the wrong hit/miss verdict
+     * in the target tray (issue #38; the tray derives its per-row verdict from the
+     * descriptor AC — dnd5e chat-message.mjs:462). The captured set has the identical
+     * shape and is produced later in the same workflow.
      *
      * @param {object} message The RSR card to write to.
      * @param {{targets: object[]|null, flags: object}|null} capture
@@ -335,7 +256,9 @@ export class ActivityUtility {
         const targets = capture?.targets;
         if (!message || !Array.isArray(targets)) return false;
 
-        ActivityUtility.setCardTargets(message, targets);
+        message.flags ??= {};
+        message.flags.dnd5e ??= {};
+        message.flags.dnd5e.targets = targets;
         return true;
     }
 
@@ -469,19 +392,22 @@ export class ActivityUtility {
 
     /**
      * Execute all pending roll actions for a usage message (attack, damage, formula)
-     * and persist the resulting rolls back to the message.
-     *
-     * In configure mode (the activity was Shift-used, `flags.configure`) dnd5e's attack and
-     * damage configuration dialogs are shown one after another, but the results still land
-     * on this single card. A roll whose dialog is cancelled is simply skipped; its native
-     * card button stays, and clicking it later rolls onto the card (runActivityAction).
+     * and persist the resulting rolls back to the message flags.
      */
     static async runActivityActions(message) {
         const flags = message.flags[MODULE_SHORT] ?? (message.flags[MODULE_SHORT] = {});
 
-        // Render-time retry for preCreate resolution failures (the activity could not be
-        // resolved before the message existed). Legacy messages (issue #15) cannot reach this:
-        // runActivityActions only runs when quickRoll is set and the message is unprocessed.
+        // Render-time retry for preCreate resolution failures. preCreate sees the
+        // message before it is persisted, so the UUID fallbacks in
+        // _getActivityFromMessage can miss and the message arrives here claimed
+        // (quickRoll set by processActivity, which already suppressed dnd5e's
+        // subsequentActions) but without render flags — and would otherwise be
+        // marked processed with zero rolls. By now the message is a full document
+        // with getAssociatedActivity available, so resolution that failed at
+        // preCreate normally succeeds. Legacy messages (issue #15) cannot reach
+        // this: runActivityActions only runs when quickRoll is set and the message
+        // is unprocessed. If the activity has no rollable parts, setRenderFlags is
+        // an idempotent no-op and the message stays passive as before.
         if (!flags.renderAttack && !flags.renderDamage && !flags.renderFormula && !flags.manualDamage) {
             const activity = ActivityUtility._getActivityFromMessage(message);
             if (activity) {
@@ -489,220 +415,168 @@ export class ActivityUtility {
             }
         }
 
-        const state = ActivityUtility._newRollState(message);
-        const configure = flags.configure === true;
-        LogUtility.debug("runActivityActions", message.id, { configure, flags: foundry.utils.deepClone(flags) });
+        let currentRolls = Array.from(flags.rolls || []);
+        const newRolls = [];
+        // Raw source rolls from before _registerCardAsAttack temporarily preloads the
+        // attack. Restoring this snapshot just before the final update lets modern DSN
+        // observe every new roll in one appended batch (#32).
+        let rollSourceBeforeAttackRegistration = null;
 
-        let attackMissing = false;
-        if (flags.renderAttack) {
-            attackMissing = !(await ActivityUtility._rollAttackInto(message, state, { configure }));
-        }
+        if (message.flags[MODULE_SHORT].renderAttack) {
+            const rawAttack = await ActivityUtility.getAttackFromMessage(message);
+            const attackRolls = ActivityUtility._extractRolls(rawAttack);
 
-        // No attack (dialog cancelled or roll vetoed): do not roll damage for nothing. The
-        // native Attack / Damage buttons stay on the card.
-        if (flags.renderDamage && !attackMissing) {
-            await ActivityUtility._rollDamageInto(message, state, { configure });
-        }
-
-        if (flags.renderFormula) {
-            await ActivityUtility._rollFormulaInto(message, state, { configure });
-        }
-
-        // Re-read the namespace: _registerCardAsAttack re-initialises the document
-        // (updateSource), which replaces message.flags with a fresh object.
-        message.flags[MODULE_SHORT].processed = true;
-        await ActivityUtility._persistRollState(message, state);
-    }
-
-    /**
-     * Execute a single on-demand roll action on an RSR card: a native card button (Attack,
-     * Damage, Healing, Other Formula) was clicked, or manual damage mode left the damage for
-     * later. Rolls onto the existing card instead of creating a new message.
-     * @param {ChatMessage} message The RSR usage card.
-     * @param {string} action ROLL_TYPE.ATTACK | ROLL_TYPE.DAMAGE | ROLL_TYPE.FORMULA.
-     * @param {object} [options]
-     * @param {boolean} [options.configure=false] Show dnd5e's configuration dialog(s).
-     * @param {boolean} [options.advantage] Pre-select advantage (Alt held).
-     * @param {boolean} [options.disadvantage] Pre-select disadvantage (Ctrl held).
-     */
-    static async runActivityAction(message, action, { configure = false, advantage, disadvantage } = {}) {
-        const flags = message.flags[MODULE_SHORT] ?? (message.flags[MODULE_SHORT] = {});
-        const state = ActivityUtility._newRollState(message);
-        LogUtility.debug("runActivityAction", message.id, action, { configure });
-
-        switch (action) {
-            case ROLL_TYPE.ATTACK: {
-                if (advantage !== undefined) flags.advantage = !!advantage;
-                if (disadvantage !== undefined) flags.disadvantage = !!disadvantage;
-                flags.renderAttack = true;
-                const rolled = await ActivityUtility._rollAttackInto(message, state, { configure });
-                const hasDamage = state.currentRolls.some(r => RollUtility.isRollOfType(r, CONFIG.Dice.DamageRoll));
-                if (rolled && flags.renderDamage && !flags.manualDamage && !hasDamage) {
-                    await ActivityUtility._rollDamageInto(message, state, { configure });
+            if (attackRolls.length > 0) {
+                currentRolls = RollUtility.mergeRollsByType(currentRolls, attackRolls, CONFIG.Dice.D20Roll);
+                newRolls.push(...attackRolls);
+                // dnd5e builds every D20 roll in this attack from one ammunition
+                // config, so the first roll is canonical (matching critical handling).
+                const ammunition = attackRolls[0]?.options?.ammunition;
+                if (ammunition) {
+                    message.flags[MODULE_SHORT].ammunition = ammunition;
+                } else {
+                    delete message.flags[MODULE_SHORT].ammunition;
                 }
-                break;
+                // dual flag means a multi-roll was enforced by ALWAYS_ROLL_MULTIROLL;
+                // in that case isCritical is determined later during rendering.
+                message.flags[MODULE_SHORT].isCritical = message.flags[MODULE_SHORT].dual
+                    ? false
+                    : ActivityUtility.isCriticalRoll(attackRolls[0]);
+            } else {
+                message.flags[MODULE_SHORT].isCritical = false;
             }
-            case ROLL_TYPE.DAMAGE:
-                flags.manualDamage = false;
-                flags.renderDamage = true;
-                await ActivityUtility._rollDamageInto(message, state, { configure });
-                break;
-            case ROLL_TYPE.FORMULA:
-                flags.renderFormula = true;
-                await ActivityUtility._rollFormulaInto(message, state, { configure });
-                break;
+
+            // Only when the roll capture did not already decide this card's descriptors.
+            // The capture is the roll workflow's own view and is strictly newer than
+            // anything _syncAttackTargets can offer here, so letting both writers run
+            // would let the current-targets fallback re-stamp a set the capture just
+            // cleared on purpose (#38).
+            if (!ActivityUtility._consumeCaptureWrite(message)) {
+                ActivityUtility._syncAttackTargets(message);
+            }
+
+            // Register this card as its own "attack" roll message so condition
+            // modules (AC5e) and dnd5e's native attack->damage association can find
+            // the attack roll via dnd5e.registry.messages.get(<cardId>, "attack").
+            // RSR rolls with create:false and emits no discrete attack message, so
+            // the registry would otherwise have no attack entry for this card. Must
+            // run BEFORE the damage roll below so the lookup resolves during the
+            // damage roll's hooks on the quick-roll (attack+damage) path.
+            const sourceRolls = message._source?.rolls ?? message.toObject?.().rolls ?? [];
+            const sourceRollSnapshot = foundry.utils.deepClone(sourceRolls);
+            if (ActivityUtility._registerCardAsAttack(message, currentRolls)) {
+                rollSourceBeforeAttackRegistration = sourceRollSnapshot;
+            }
         }
 
-        if (!state.newRolls.length) return;
+        if (message.flags[MODULE_SHORT].renderDamage) {
+            const rawDamage = await ActivityUtility.getDamageFromMessage(message);
+            const damageRolls = ActivityUtility._extractRolls(rawDamage);
+
+            if (damageRolls.length > 0) {
+                currentRolls = RollUtility.mergeRollsByType(currentRolls, damageRolls, CONFIG.Dice.DamageRoll);
+                newRolls.push(...damageRolls);
+            }
+        }
+
+        if (message.flags[MODULE_SHORT].renderFormula) {
+            const rawFormula = await ActivityUtility.getFormulaFromMessage(message);
+            const formulaRolls = ActivityUtility._extractRolls(rawFormula);
+
+            if (formulaRolls.length > 0) {
+                currentRolls = RollUtility.mergeRollsByType(currentRolls, formulaRolls, CONFIG.Dice.BasicRoll);
+                newRolls.push(...formulaRolls);
+            }
+        }
+
+        await _provideNewRollFeedback(newRolls, message);
+
         message.flags[MODULE_SHORT].processed = true;
-        await ActivityUtility._persistRollState(message, state);
-    }
-
-    /**
-     * Mutable bookkeeping shared by the roll steps of one pass.
-     * @param {ChatMessage} message
-     * @returns {{currentRolls: Array<Roll|object>, newRolls: Roll[], sourceSnapshot: object[]|null}}
-     */
-    static _newRollState(message) {
-        return {
-            currentRolls: Array.from(message.flags[MODULE_SHORT]?.rolls || []),
-            newRolls: [],
-            // Raw source rolls from before _registerCardAsAttack temporarily preloads the
-            // attack. Restoring this snapshot just before the final update lets modern DSN
-            // observe every new roll in one appended batch (#32).
-            sourceSnapshot: null
-        };
-    }
-
-    /**
-     * Roll the card's attack and merge it into the pass state.
-     * @returns {Promise<boolean>} Whether an attack roll was produced.
-     */
-    static async _rollAttackInto(message, state, { configure = false } = {}) {
-        const flags = message.flags[MODULE_SHORT];
-        const rawAttack = await ActivityUtility.getAttackFromMessage(message, { configure });
-        const attackRolls = ActivityUtility._extractRolls(rawAttack);
-
-        if (attackRolls.length > 0) {
-            state.currentRolls = RollUtility.mergeRollsByType(state.currentRolls, attackRolls, CONFIG.Dice.D20Roll);
-            state.newRolls.push(...attackRolls);
-            // dnd5e builds every D20 roll in this attack from one ammunition
-            // config, so the first roll is canonical (matching critical handling).
-            const ammunition = attackRolls[0]?.options?.ammunition;
-            if (ammunition) flags.ammunition = ammunition;
-            else delete flags.ammunition;
-            // The attack mode chosen in the attack dialog (configure mode) drives the damage
-            // formula (versatile two-handed, offhand).
-            const attackMode = attackRolls[0]?.options?.attackMode;
-            if (attackMode) {
-                flags.attackMode = attackMode;
-                if (attackMode === "twoHanded") flags.versatile = !!ActivityUtility._getActivityFromMessage(message)?.item?.system?.isVersatile;
-            }
-            flags.isCritical = ActivityUtility.isCriticalRoll(attackRolls[0]);
-            // dnd5e 6 has no flags.dnd5e.roll; keep the chosen mastery in RSR's own
-            // namespace for the mastery supplement.
-            const mastery = attackRolls[0]?.options?.mastery;
-            if (mastery) flags.mastery = mastery;
-            else delete flags.mastery;
-        } else {
-            flags.isCritical = false;
-        }
-
-        // Only when the roll capture did not already decide this card's descriptors (#38).
-        if (!ActivityUtility._consumeCaptureWrite(message)) {
-            ActivityUtility._syncAttackTargets(message);
-        }
-
-        if (!attackRolls.length) return false;
-
-        // Register this card as the "attack" roll message of itself so condition modules
-        // (AC5e) and dnd5e's native attack->damage association can find the attack roll via
-        // dnd5e.registry.messages.get(<cardId>, "attack"). Must run BEFORE the damage roll.
-        const sourceRolls = message._source?.rolls ?? message.toObject?.().rolls ?? [];
-        const sourceRollSnapshot = foundry.utils.deepClone(sourceRolls);
-        if (ActivityUtility._registerCardAsAttack(message, state.currentRolls) && state.sourceSnapshot === null) {
-            state.sourceSnapshot = sourceRollSnapshot;
-        }
-        return true;
-    }
-
-    /**
-     * Roll the card's damage / healing and merge it into the pass state.
-     * @returns {Promise<boolean>} Whether damage rolls were produced.
-     */
-    static async _rollDamageInto(message, state, { configure = false } = {}) {
-        const rawDamage = await ActivityUtility.getDamageFromMessage(message, { configure });
-        const damageRolls = ActivityUtility._extractRolls(rawDamage);
-        if (!damageRolls.length) return false;
-        state.currentRolls = RollUtility.mergeRollsByType(state.currentRolls, damageRolls, CONFIG.Dice.DamageRoll);
-        state.newRolls.push(...damageRolls);
-        // The configuration dialog can switch to a critical roll.
-        if (damageRolls.some(r => r.options?.isCritical)) message.flags[MODULE_SHORT].isCritical = true;
-        return true;
-    }
-
-    /**
-     * Roll the card's utility formula and merge it into the pass state.
-     * @returns {Promise<boolean>} Whether a formula roll was produced.
-     */
-    static async _rollFormulaInto(message, state, { configure = false } = {}) {
-        const rawFormula = await ActivityUtility.getFormulaFromMessage(message, { configure });
-        const formulaRolls = ActivityUtility._extractRolls(rawFormula);
-        if (!formulaRolls.length) return false;
-        state.currentRolls = RollUtility.mergeRollsByType(state.currentRolls, formulaRolls, CONFIG.Dice.BasicRoll);
-        state.newRolls.push(...formulaRolls);
-        return true;
-    }
-
-    /**
-     * Persist a pass: feedback (sound / legacy DSN), flags + native rolls, target descriptors.
-     */
-    static async _persistRollState(message, state) {
-        // Nothing rolled (no rollable part, or every dialog cancelled): only mark the card
-        // processed, leaving any native rolls (e.g. a consumption roll) untouched.
-        if (!state.newRolls.length && !Array.isArray(message.flags[MODULE_SHORT].rolls)) {
-            await ChatUtility.updateChatMessage(message, {
-                flags: message.flags,
-                ...ActivityUtility.consumePendingTargetsUpdate(message)
-            });
-            return;
-        }
-
-        await _provideNewRollFeedback(state.newRolls, message);
-
-        const serializedRolls = CoreUtility.serializeRolls(state.currentRolls);
+        const serializedRolls = CoreUtility.serializeRolls(currentRolls);
         message.flags[MODULE_SHORT].rolls = serializedRolls;
 
-        if (state.sourceSnapshot !== null) {
-            ActivityUtility._restoreRollSource(message, state.sourceSnapshot);
+        const attackRoll = currentRolls.find(r => r instanceof CONFIG.Dice.D20Roll || r.class === "D20Roll" || r.constructor?.name === "D20Roll");
+        if (attackRoll) {
+            message.flags.dnd5e ??= {};
+            message.flags.dnd5e.roll = {
+                ...(message.flags.dnd5e.roll ?? {}),
+                type: ROLL_TYPE.ATTACK,
+                ...(attackRoll.options?.mastery ? { mastery: attackRoll.options.mastery } : {})
+            };
+            // Persist the self-link so dnd5e's ChatMessage5e#prepareData ->
+            // MessageRegistry.track re-registers this card under the "attack" hook on
+            // every load. Pairs with the chat.js _injectContent guard that stops a
+            // self-referencing card from being treated as its own merge parent.
+            message.flags.dnd5e.originatingMessage = message.id;
+        }
+
+        if (rollSourceBeforeAttackRegistration !== null) {
+            ActivityUtility._restoreRollSource(message, rollSourceBeforeAttackRegistration);
         }
 
         await ChatUtility.updateChatMessage(message, {
             flags: message.flags,
-            rolls: serializedRolls,
-            ...ActivityUtility.consumePendingTargetsUpdate(message)
+            rolls: serializedRolls
+        });
+    }
+
+    /**
+     * Execute a single on-demand roll action (currently only ROLL_TYPE.DAMAGE, triggered
+     * by the manual damage button) and persist the result.
+     */
+    static async runActivityAction(message, action) {
+        let currentRolls = Array.from(message.flags[MODULE_SHORT]?.rolls || []);
+        const newRolls = [];
+
+        switch (action) {
+            case ROLL_TYPE.DAMAGE: {
+                const rawDamage = await ActivityUtility.getDamageFromMessage(message);
+                const damageRolls = ActivityUtility._extractRolls(rawDamage);
+
+                if (damageRolls.length > 0) {
+                    currentRolls = RollUtility.mergeRollsByType(currentRolls, damageRolls, CONFIG.Dice.DamageRoll);
+                    newRolls.push(...damageRolls);
+                }
+                break;
+            }
+        }
+
+        await _provideNewRollFeedback(newRolls, message);
+
+        const serializedRolls = CoreUtility.serializeRolls(currentRolls);
+        message.flags[MODULE_SHORT].rolls = serializedRolls;
+
+        await ChatUtility.updateChatMessage(message, {
+            flags: message.flags,
+            rolls: serializedRolls
         });
     }
 
     /**
      * Register the activation card as its own "attack" roll message in dnd5e's
      * MessageRegistry, so dnd5e.registry.messages.get(<cardId>, "attack") resolves to
-     * this card and its stored attack D20Roll.
+     * this card and its stored attack D20Roll. RSR rolls with create:false and emits no
+     * discrete attack message, so without this the registry has no attack entry and
+     * condition modules (AC5e) / dnd5e's native attack->damage association cannot
+     * recover the attack roll's advantage state.
      *
-     * dnd5e 6.0's MessageRegistry.track() keys entries by `message._source.system.origin`
-     * and `message.type` (registry.mjs). A usage card has neither an `origin` field nor
-     * the "attack" type, so it can never be tracked from its own data; instead a minimal
-     * descriptor `{ id, type: "attack", _source: { system: { origin: id } } }` is tracked.
-     * MessageRegistry.get() maps stored ids back through game.messages.get(), so lookups
-     * return the live card. The entry is in-memory only; processUsageChatMessage re-tracks
-     * processed attack cards on render so it survives reloads.
+     * Exposes the attack roll + self-link on the live document in-memory (updateSource:
+     * no DB write, no re-render) so the registry lookup resolves to a card whose
+     * `.rolls[0]` is the attack D20 and whose `flags.dnd5e.roll.mastery` is set during
+     * the immediately following damage roll. This MUST be the live document, not a
+     * detached copy: dnd5e's MessageRegistry.get() resolves stored ids back through
+     * game.messages.get() (registry.mjs), so condition/mastery modules that read
+     * `attackMessage.rolls[0]` (AC5e advantage recovery) or `roll.mastery` (WM5E auto
+     * masteries) only ever see this live card. runActivityActions persists the final
+     * state afterwards.
      *
-     * Also exposes the attack roll on the live document in-memory (updateSource: no DB
-     * write, no re-render) so consumers reading `attackMessage.rolls[0]` (AC5e advantage
-     * recovery, AttackActivity's native damage button reading `rolls[0].isCritical`) see
-     * it during the immediately following damage roll. runActivityActions persists the
-     * final state afterwards and restores the raw roll source first (DSN, #32).
+     * Dice So Nice consequence: preloading the attack here would make modern DSN treat
+     * it as pre-existing and animate only later-appended damage. The caller snapshots
+     * and restores the card's raw roll source after all dependent hooks have run, so
+     * DSN observes the complete attack-and-damage batch in the final message update.
      *
+     * Safe despite the self-referential originatingMessage: chat.js _injectContent
+     * guards against treating a self-referencing card as its own merge parent.
      * @param {ChatMessage} message The activation card.
      * @param {Array<Roll|object>} currentRolls Rolls gathered so far (must include the attack).
      * @returns {Boolean} Whether the card was registered (and its rolls preloaded).
@@ -711,62 +585,78 @@ export class ActivityUtility {
         const attackRoll = (currentRolls ?? []).find(r => RollUtility.isRollOfType(r, CONFIG.Dice.D20Roll));
         if (!attackRoll || !message?.id) return false;
 
-        ActivityUtility._updateSourcePreservingState(message, {
-            rolls: CoreUtility.serializeRolls(currentRolls)
+        const rollFlag = {
+            ...(message.flags?.dnd5e?.roll ?? {}),
+            type: ROLL_TYPE.ATTACK,
+            ...(attackRoll.options?.mastery ? { mastery: attackRoll.options.mastery } : {})
+        };
+
+        // In-memory only: expose the attack roll + self-link on the live document so
+        // both the registry lookup and AC5e's rolls[0] / WM5E's roll.mastery reads
+        // resolve during the immediately following damage roll. runActivityActions
+        // persists the final state afterwards.
+        //
+        // updateSource() re-initialises the document and rebuilds message.flags from
+        // _source, which DROPS any in-memory-only RSR flag writes (e.g. isCritical, and
+        // render flags set at render time on the preCreate-retry path) — they were never
+        // persisted to source. Capture the live RSR flags first and restore them after,
+        // so the crit state and render flags survive into the damage roll below. Without
+        // this, a crit's damage dice were never doubled (#25, #28).
+        //
+        // `flags.dnd5e.targets` is in-memory-only for exactly the same reason and needs
+        // the same treatment: the roll workflow's target descriptors are written onto the
+        // live card by _applyRollCapture (quick-roll capture) or _syncAttackTargets just
+        // before this call, while source still holds the stale pre-roll set Activity#use
+        // stamped. Without carrying them across, the rebuild reverts every roll-time AC
+        // adjustment and the final persisted update saves the stale set — the exact
+        // symptom of issue #38, on the path that was supposed to fix it.
+        const moduleFlags = message.flags?.[MODULE_SHORT];
+        const targetDescriptors = message.flags?.dnd5e?.targets;
+        message.updateSource({
+            rolls: CoreUtility.serializeRolls(currentRolls),
+            "flags.dnd5e.roll": rollFlag,
+            "flags.dnd5e.originatingMessage": message.id
         });
-        ActivityUtility.trackCardAsAttack(message);
+        if (moduleFlags) {
+            message.flags ??= {};
+            message.flags[MODULE_SHORT] = moduleFlags;
+        }
+        if (targetDescriptors !== undefined) {
+            message.flags ??= {};
+            message.flags.dnd5e ??= {};
+            message.flags.dnd5e.targets = targetDescriptors;
+        }
+
+        try {
+            dnd5e.registry?.messages?.track?.(message);
+        } catch (err) {
+            console.warn("RSReforged | failed to register card as attack roll message:", err);
+        }
+
         return true;
     }
 
     /**
-     * Track a card under its own id with the "attack" type in dnd5e's MessageRegistry.
-     * See _registerCardAsAttack. Idempotent (the registry stores ids in a Set).
-     * @param {ChatMessage} message
-     */
-    static trackCardAsAttack(message) {
-        if (!message?.id) return;
-        try {
-            dnd5e.registry?.messages?.track?.({
-                id: message.id,
-                type: ROLL_TYPE.ATTACK,
-                _source: { system: { origin: message.id } }
-            });
-        } catch (err) {
-            console.warn("RSReforged | failed to register card as attack roll message:", err);
-        }
-    }
-
-    /**
-     * `message.updateSource()` re-initialises the document from `_source`, which DROPS any
-     * in-memory-only writes: RSR's flags (isCritical, render flags set on the
-     * preCreate-retry path — #25, #28) and target descriptors decided this pass (#38).
-     * Snapshot the live flags, apply the change, then restore the snapshot exactly (a
-     * namespace deleted by a hook is not resurrected) and re-apply pending targets.
-     * @param {ChatMessage} message
-     * @param {object} changes Source changes to apply.
-     */
-    static _updateSourcePreservingState(message, changes) {
-        const liveFlags = foundry.utils.deepClone(message.flags ?? {});
-        message.updateSource(changes);
-        message.flags ??= {};
-        for (const key of Object.keys(message.flags)) delete message.flags[key];
-        Object.assign(message.flags, liveFlags);
-        ActivityUtility._applyPendingTargetsInMemory(message);
-    }
-
-    /**
-     * Undo only the temporary native-roll preload performed by _registerCardAsAttack,
-     * keeping the live flags / pending targets and the prepared Roll instances, so
-     * registry consumers can still read the attack d20 while the immediately-following
-     * persisted update is pending, even though toObject().rolls exposes the restored
-     * raw source to DSN.
+     * Undo only the temporary native-roll preload performed by
+     * _registerCardAsAttack. The dnd5e registry flags written by that method remain in
+     * source, while an exact snapshot of the live flags and the prepared Roll instances
+     * are retained across Foundry's updateSource re-initialisation. This keeps registry consumers
+     * able to read the attack d20 while the immediately-following persisted update is
+     * pending, even though toObject().rolls exposes the restored raw source to DSN.
      *
      * @param {ChatMessage} message The activation card whose raw rolls should be restored.
      * @param {object[]} sourceRolls Deep-cloned raw roll data captured before registration.
      */
     static _restoreRollSource(message, sourceRolls) {
+        const liveFlags = foundry.utils.deepClone(message.flags);
         const liveRolls = message.rolls;
-        ActivityUtility._updateSourcePreservingState(message, { rolls: foundry.utils.deepClone(sourceRolls) });
+        message.updateSource({ rolls: foundry.utils.deepClone(sourceRolls) });
+
+        // updateSource rebuilds flags from source. Clear that rebuilt object before
+        // restoring the snapshot so a namespace deleted by a damage hook is not
+        // resurrected and persisted by the immediately-following update.
+        for (const key of Object.keys(message.flags)) delete message.flags[key];
+        Object.assign(message.flags, liveFlags);
         message.rolls = liveRolls;
     }
 
@@ -817,7 +707,7 @@ export class ActivityUtility {
      * rollAttack() looks up the resolved ammunition item internally; passing its ID
      * in config means it reaches roll.options.ammunition for damage and card state.
      */
-    static getAttackFromMessage(message, { configure = false } = {}) {
+    static getAttackFromMessage(message) {
         const activity = ActivityUtility._getActivityFromMessage(message);
         if (!activity || typeof activity.rollAttack !== "function") return null;
 
@@ -841,11 +731,8 @@ export class ActivityUtility {
         // roll message itself, and RSR's internal bookkeeping has no business there.
         const captureId = ActivityUtility._nextRollCaptureId();
 
-        // dnd5e 6.0 links follow-up rolls to their card through `data.system.origin`
-        // (AttackActivity#_triggerSubsequentActions); BasicRoll.buildPost copies it into
-        // every roll's options.originatingMessage.
-        const dialogConfig  = { configure: !!configure };
-        const messageConfig = { create: false, data: { flags: {}, system: { origin: message.id } }, flags: {} };
+        const dialogConfig  = { configure: false };
+        const messageConfig = { create: false, data: { flags: {} }, flags: {} };
         messageConfig.data.flags[MODULE_SHORT] = { quickRoll: true, captureId };
         messageConfig.flags[MODULE_SHORT]      = { quickRoll: true };
 
@@ -862,7 +749,9 @@ export class ActivityUtility {
         return Promise.resolve(attackResult)
             .then(rolls => {
                 if (ammunitionData && !actor?.items?.get(ammunition)) {
-                    message.flags[MODULE_SHORT].ammunitionData = ammunitionData;
+                    message.flags.dnd5e ??= {};
+                    message.flags.dnd5e.roll ??= {};
+                    message.flags.dnd5e.roll.ammunitionData = ammunitionData;
                 }
                 // Carry the roll workflow's own view of the targets onto the card, and
                 // record that it happened. runActivityActions calls _syncAttackTargets
@@ -911,28 +800,25 @@ export class ActivityUtility {
      * midiOptions is not part of the dnd5e 5.3.0 API but is read by midi-qol from the
      * config object when that module is active; it is left in place.
      */
-    static getDamageFromMessage(message, { configure = false } = {}) {
-        // Resolve scaling from system data with the legacy flag as a fallback.
-        const scaling = message.system?.scaling ?? message.flags?.dnd5e?.scaling ?? 0;
-
-        // dnd5e 6: getAssociatedActivity({ scaled: true }) resolves against
-        // item.scaledClone(system.scaling), so the live item is never mutated.
-        const activity = ActivityUtility._getActivityFromMessage(message, { scaled: scaling > 0 });
+    static getDamageFromMessage(message) {
+        const activity = ActivityUtility._getActivityFromMessage(message);
         const actor    = ActivityUtility._getActorFromMessage(message);
 
         if (!activity || !actor || typeof activity.rollDamage !== "function") return null;
 
-        // Only when the scaled clone could not be produced: stamp scaling onto the item
-        // so rollData.scaling is populated for formula resolution.
-        if (scaling > 0 && activity.item?.flags) {
-            activity.item.flags.dnd5e ??= {};
-            if (activity.item.flags.dnd5e.scaling !== scaling) activity.item.flags.dnd5e.scaling = scaling;
+        // Resolve scaling from system data (5.3.0 canonical) with flags fallback.
+        const scaling = message.system?.scaling ?? message.flags?.dnd5e?.scaling ?? 0;
+
+        // Stamp scaling onto the item clone so rollData.scaling is populated correctly
+        // for formula resolution (see getDamageConfig → getRollData path).
+        activity.item.flags.dnd5e ??= {};
+        if (scaling > 0 && activity.item.flags.dnd5e.scaling !== scaling) {
+            activity.item.flags.dnd5e.scaling = scaling;
         }
 
         const attackMode = message.flags[MODULE_SHORT].attackMode;
         const ammunitionId = message.flags[MODULE_SHORT].ammunition;
-        const storedAmmunition = message.flags[MODULE_SHORT].ammunitionData
-            ?? message.flags?.dnd5e?.roll?.ammunitionData;
+        const storedAmmunition = message.flags?.dnd5e?.roll?.ammunitionData;
         const storedAmmunitionId = storedAmmunition?._id ?? storedAmmunition?.id;
         const ammunition = actor.items?.get(ammunitionId)
             ?? (ammunitionId && storedAmmunitionId === ammunitionId && globalThis.Item?.implementation
@@ -973,17 +859,17 @@ export class ActivityUtility {
         // false-negative on weapons whose damage comes entirely from the ammo.
         if (typeof activity.getDamageConfig === "function" && !activity.getDamageConfig(config).rolls?.length) return null;
 
-        // Anchor this damage roll to its card. dnd5e 6.0 links damage to its origin via
-        // `data.system.origin` (DamageActivity/HealActivity#_triggerSubsequentActions);
-        // BasicRoll.buildPost copies it into roll.options.originatingMessage, and
-        // condition modules (AC5e) resolve the originating attack through
-        // dnd5e.registry.messages.get(<cardId>, "attack").
-        const dialogConfig  = { configure: !!configure };
-        // Like dnd5e's own damage button after a critical attack (AttackActivity #rollDamage).
-        if (configure && config.isCritical) dialogConfig.options = { defaultButton: "critical" };
-        const messageConfig = { create: false, data: { flags: {}, system: { origin: message.id } }, flags: {} };
+        const dialogConfig  = { configure: false };
+        const messageConfig = { create: false, data: { flags: {} }, flags: {} };
         messageConfig.data.flags[MODULE_SHORT] = { quickRoll: true };
         messageConfig.flags[MODULE_SHORT]      = { quickRoll: true };
+        // Anchor this damage roll to its card so condition modules (AC5e) resolve the
+        // originating attack via dnd5e.registry.messages.get(<cardId>, "attack"). AC5e
+        // reads flags.dnd5e.originatingMessage off the message config's `data` (the
+        // dot-notation key first, then the nested object), so set both shapes.
+        messageConfig.data["flags.dnd5e.originatingMessage"] = message.id;
+        messageConfig.data.flags.dnd5e = { originatingMessage: message.id };
+        messageConfig.flags.dnd5e      = { originatingMessage: message.id };
 
         // Chained rather than awaited so the guards above stay synchronous — marking this
         // method async would turn each of their early `null` returns into a Promise.
@@ -1032,21 +918,22 @@ export class ActivityUtility {
      * getRollData / scaledFormula) but does not explicitly consume a scaling field from
      * config the way rollDamage does. Passing it anyway is harmless and future-proof.
      */
-    static getFormulaFromMessage(message, { configure = false } = {}) {
-        const scaling = message.system?.scaling ?? message.flags?.dnd5e?.scaling ?? 0;
-        const activity = ActivityUtility._getActivityFromMessage(message, { scaled: scaling > 0 });
+    static getFormulaFromMessage(message) {
+        const activity = ActivityUtility._getActivityFromMessage(message);
         if (!activity || typeof activity.rollFormula !== "function") return null;
 
-        if (scaling > 0 && activity.item?.flags) {
-            activity.item.flags.dnd5e ??= {};
-            if (activity.item.flags.dnd5e.scaling !== scaling) activity.item.flags.dnd5e.scaling = scaling;
+        const scaling = message.system?.scaling ?? message.flags?.dnd5e?.scaling ?? 0;
+
+        activity.item.flags.dnd5e ??= {};
+        if (scaling > 0 && activity.item.flags.dnd5e.scaling !== scaling) {
+            activity.item.flags.dnd5e.scaling = scaling;
         }
 
         // See getDamageFromMessage for rationale — only pass scaling when > 0 so
         // cantrips fall through to rollData.scaling for auto-computation.
         const config        = scaling > 0 ? { scaling } : {};
-        const dialogConfig  = { configure: !!configure };
-        const messageConfig = { create: false, data: { flags: {}, system: { origin: message.id } }, flags: {} };
+        const dialogConfig  = { configure: false };
+        const messageConfig = { create: false, data: { flags: {} }, flags: {} };
         messageConfig.data.flags[MODULE_SHORT] = { quickRoll: true };
         messageConfig.flags[MODULE_SHORT]      = { quickRoll: true };
 

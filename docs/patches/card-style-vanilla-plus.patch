@@ -1,0 +1,1152 @@
+From 98fb68e3c0cd3b023c7651660d9215083b40d004 Mon Sep 17 00:00:00 2001
+From: Max <maxobremer@gmail.com>
+Date: Fri, 2 Oct 2026 23:43:55 +0200
+Subject: [PATCH] feat: Card Style setting with a Vanilla+ card, and the wide
+ save button on Classic cards
+
+Adds a world setting, Card Style, for dnd5e 6 cards:
+
+- Classic RSReforged (default): unchanged, plus the 4.x full-width saving
+  throw button under the roll sections. The button forwards its click to
+  dnd5e's own rollSave button.
+- Vanilla+: dnd5e's own compact roll rows are moved from each native child
+  message onto the usage card (native-vanilla.js). RSReforged draws no roll
+  there; it adds Disadvantage / Advantage / Critical Hit / Bonus buttons to
+  each breakdown, stamps the breakdown's dice so click-to-reroll and GM
+  fudging work, and applies Hide NPC Roll Results and the Always Roll
+  Multiple Dice extra d20.
+
+The retroactive advantage and critical edits are extracted from the classic
+overlay closures in native-card.js (retroAdvantage, retroCritical) so both
+styles run the same code, and damageDieSources exposes the die-to-roll
+mapping the classic damage breakdown already used. No change to the
+workflow, the messages, or the classic rendering.
+
+Tests: 23 new (native-vanilla, native-card-style, native-card); suite 440 passing.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017wKoNNHQkHRMGJVpmsBo1W
+---
+ CHANGELOG.md                     |   5 +
+ css/rsreforged.css               |  67 ++++++++-
+ lang/en.json                     |  15 +-
+ src/utils/native-card.js         | 130 +++++++++++------
+ src/utils/native-render.js       |  75 +++++++++-
+ src/utils/native-vanilla.js      | 206 +++++++++++++++++++++++++++
+ src/utils/settings.js            |  36 ++++-
+ tests/native-card-style.test.mjs | 107 ++++++++++++++
+ tests/native-card.test.mjs       |  21 +++
+ tests/native-vanilla.test.mjs    | 233 +++++++++++++++++++++++++++++++
+ 10 files changed, 844 insertions(+), 51 deletions(-)
+ create mode 100644 src/utils/native-vanilla.js
+ create mode 100644 tests/native-card-style.test.mjs
+ create mode 100644 tests/native-vanilla.test.mjs
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 1358b4e..0739d0a 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ 
+ ## [Unreleased]
+ 
++### Added
++
++- **Card Style setting (dnd5e 6).** *Classic RSReforged* (the default) is the card as it is in 6.0.0. *Vanilla+* keeps dnd5e 6's own compact roll rows and folds them onto the usage card: RSReforged asks dnd5e to render each attack, damage, healing or formula message and moves its rows (roll button, breakdown popover, targets, damage tray) under the item card, so the look follows the system and other modules' changes to those rows carry over. Each roll's breakdown gets Disadvantage / Advantage, Critical Hit and Bonus buttons that run the same edits as the classic overlays, on quick-roll cards, standalone checks and saves, and the save lines summarised on a usage card. *Hide NPC Roll Results*, the *Always Roll Multiple Dice* extra d20 (shown faded beside the real one), and click-to-reroll / GM fudging apply in both styles; in Vanilla+ the dice in dnd5e's breakdown are matched to the roll's dice and left inert if they do not correspond exactly. Not in Vanilla+ yet: damage-type cycling and the RSReforged quick apply buttons (it always uses dnd5e's tray).
++- **Wide saving throw button on Classic cards.** dnd5e 6 shows a save as a small shield icon among the card's action icons. Classic cards now also get the 4.x full-width "DC 15 Dexterity Saving Throw" button under the damage section, one per save ability. It forwards the click (with Shift/Ctrl/Alt) to dnd5e's own button, and leaves the DC off for viewers dnd5e hides it from.
++
+ ## [6.0.0] — 2026-10-02
+ 
+ > **Experimental support for the D&D 5e system version 6.** We're still working out some bugs, but we want to get a release out for early testers. Please report problems on the [issue tracker](https://github.com/arrowedisgaming/RSReforged/issues) with your Foundry, dnd5e, and RSReforged versions. If you are on dnd5e 5.3, stay on RSReforged 4.13.4 (see below).
+diff --git a/css/rsreforged.css b/css/rsreforged.css
+index 9c3c721..2129358 100755
+--- a/css/rsreforged.css
++++ b/css/rsreforged.css
+@@ -380,8 +380,8 @@
+ /* dnd5e 6's compact card justifies the description, which stretches word gaps in a
+    narrow chat column, and pushes each row's pills to the far edge. RSR cards read
+    left to right, as the 4.x card did. */
+-:is(.chat-log, .chat-popout) .message.compact.rsr-native-card .card-description { text-align: start; }
+-:is(.chat-log, .chat-popout) .message.compact.rsr-native-card .icon-row > ul {
++:is(.chat-log, .chat-popout) .message.compact.rsr-native-card:not(.rsr-vanilla-card) .card-description { text-align: start; }
++:is(.chat-log, .chat-popout) .message.compact.rsr-native-card:not(.rsr-vanilla-card) .icon-row > ul {
+     justify-content: start;
+     margin-inline-start: 0;
+ }
+@@ -402,3 +402,66 @@
+     transform: none;
+ }
+ .rsr-native-card .message-header:has(> .rsr-addon-bonus-btn) > .flavor-text { padding-inline-end: 22px; }
++
++/* Classic: the 4.x wide saving throw button, under the roll sections. */
++.rsr-wide-buttons {
++    display: flex;
++    flex-direction: column;
++    gap: 4px;
++    margin-block: 6px 2px;
++}
++.rsr-wide-buttons > button.rsr-wide-save {
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    gap: 6px;
++    width: 100%;
++    min-height: 28px;
++    padding: 2px 8px;
++    font-family: var(--dnd5e-font-roboto);
++    font-size: var(--font-size-12);
++    font-weight: bold;
++    line-height: 1.2;
++    white-space: normal;
++}
++.rsr-wide-buttons > button.rsr-wide-save > i { margin: 0; }
++
++/* Card Style "Vanilla+": dnd5e 6's own compact roll rows, folded onto the usage card.
++   The rows keep the system's styling; only the fold and RSR's additions are styled here. */
++.rsr-native-combined.rsr-vanilla { gap: 0; }
++.rsr-vanilla-section + .rsr-vanilla-section.rsr-vanilla-damage,
++.rsr-vanilla-section + .rsr-vanilla-section.rsr-vanilla-healing {
++    margin-top: 0.5rem;
++    padding-top: 0.5rem;
++    border-top: var(--dnd5e-border-dotted, 1px dotted var(--color-border-light-2, #9f9275));
++}
++
++/* Always Roll Multiple Dice: the unused d20, faded, beside the one that counts. */
++.message.compact button.dice-roll .d20die.rsr-d20die-alt {
++    inset-inline-end: calc(8px + var(--rsr-alt-index, 1) * 22px);
++    opacity: 0.4;
++    filter: grayscale(1);
++}
++
++/* Advantage / critical / bonus buttons inside a roll's breakdown. */
++.roll-breakdown .rsr-roll-actions {
++    display: flex;
++    flex-wrap: wrap;
++    justify-content: center;
++    gap: 4px;
++    padding: 4px 6px;
++    border-top: 1px dashed var(--dnd5e-color-blue-gray-3, #888);
++}
++.roll-breakdown .rsr-roll-actions button.rsr-roll-action {
++    display: inline-flex;
++    align-items: center;
++    gap: 3px;
++    width: auto;
++    min-width: 26px;
++    height: 22px;
++    padding: 0 6px;
++    font-size: var(--font-size-11);
++    line-height: 1;
++    flex: 0 0 auto;
++}
++.roll-breakdown .rsr-roll-actions button.rsr-roll-action > i { margin: 0; }
+diff --git a/lang/en.json b/lang/en.json
+index ffb2605..b65aba4 100755
+--- a/lang/en.json
++++ b/lang/en.json
+@@ -50,7 +50,9 @@
+             "rerollSoundEnabled.name": "Reroll Sound & Dice So Nice",
+             "rerollSoundEnabled.hint": "When a die is rerolled, play the configured dice sound and animate the rerolled die in 3D via Dice So Nice if installed. If Dice So Nice is not available, the dice sound is still played as a fallback.",
+             "rerollLogChat.name": "Log Rerolls to Chat",
+-            "rerollLogChat.hint": "When a die is rerolled, post a public chat message announcing the reroll (e.g. \"Alice rerolled a d20: 7 → 14\"). The message respects the current roll mode (public/whisper/blind/self)."
++            "rerollLogChat.hint": "When a die is rerolled, post a public chat message announcing the reroll (e.g. \"Alice rerolled a d20: 7 → 14\"). The message respects the current roll mode (public/whisper/blind/self).",
++            "cardStyle.name": "Card Style",
++            "cardStyle.hint": "How quick-roll results are drawn on the chat card (dnd5e 6). Classic shows RSReforged's boxed Attack / Damage sections with the large total and a wide saving throw button. Vanilla+ keeps dnd5e's own compact roll rows and folds them onto the one card; advantage, critical and bonus buttons are in each roll's breakdown. Rolling, targeting and damage application are identical in both."
+         },
+         "choices": {
+             "rollModifierMode": {
+@@ -81,6 +83,10 @@
+             "hideNpcRollStyle": {
+                 "total": "Hide Total (show natural d20)",
+                 "breakdown": "Hide Breakdown (show final total)"
++            },
++            "cardStyle": {
++                "classic": "Classic RSReforged",
++                "vanilla": "Vanilla+ (dnd5e compact rows)"
+             }
+         },
+         "sheet": {
+@@ -118,7 +124,9 @@
+                 "rollAdvantage": "Click to roll with advantage.",
+                 "rollDisadvantage": "Click to roll with disadvantage.",
+                 "repeat": "Click to repeat the quick roll.",
+-                "damageType": "Click to change the damage type."
++                "damageType": "Click to change the damage type.",
++                "bonus": "Add a bonus to this roll.",
++                "bonusShort": "Bonus"
+             },
+             "prompts": {
+                 "retroCrit": "Upgrade to Crit?",
+@@ -129,7 +137,8 @@
+                 "log": "<strong>{user}</strong> rerolled a d{faces}: <span class=\"rsr-reroll-old\">{old}</span> &rarr; <span class=\"rsr-reroll-new\">{new}</span>",
+                 "flavor": "Reroll",
+                 "notification": "Rerolled die: New result is {new}"
+-            }
++            },
++            "ignoredDie": "Unused d20"
+         },
+         "messages": {
+             "error": {
+diff --git a/src/utils/native-card.js b/src/utils/native-card.js
+index 61310cc..6575067 100644
+--- a/src/utils/native-card.js
++++ b/src/utils/native-card.js
+@@ -156,32 +156,67 @@ async function _formulaSection(parent, child) {
+  * The 4.x hover overlays. Each edit rewrites the child document's own rolls; its update
+  * refreshes the usage card, which rebuilds these sections from the new rolls.
+  */
+-function _canEdit(child) {
++export function canEditRolls(child) {
+     return SettingsUtility.getSettingValue(SETTING_NAMES.OVERLAY_BUTTONS_ENABLED)
+         && (game.user.isGM || child.isAuthor === true);
+ }
++const _canEdit = canEditRolls;
++
++/**
++ * Retroactively give a message's d20 roll advantage or disadvantage. Shared by the classic
++ * overlay and the Vanilla+ breakdown buttons.
++ * @param {ChatMessage} child The message that owns the roll.
++ * @param {string} state ROLL_STATE.ADV or ROLL_STATE.DIS.
++ * @param {object} [options]
++ * @param {boolean} [options.flavor] Also write the new mode into the message flavor (checks and saves).
++ * @param {Event} [options.event] Positions the confirmation dialog.
++ */
++export async function retroAdvantage(child, state, { flavor = false, event } = {}) {
++    const target = CoreUtility.localize(state === ROLL_STATE.ADV ? 'DND5E.Advantage' : 'DND5E.Disadvantage');
++    if (!await _confirm(SETTING_NAMES.CONFIRM_RETRO_ADV, CoreUtility.localize(`${MODULE_SHORT}.chat.prompts.retroAdv`, { target }), event)) return;
++    const before = _rollsState(child);
++    const rolls = _cloneRolls(child);
++    const index = rolls.findIndex(r => r instanceof CONFIG.Dice.D20Roll);
++    if (index < 0) return;
++    // Adds the extra d20 (a stored Always Roll Multiple Dice alternate, or one rolled
++    // and thrown now for this message's audience), keeping the original result.
++    rolls[index] = await RollUtility.upgradeRoll(rolls[index], state, { message: child });
++    if (!_unchangedSince(child, before)) return;
++    const update = { rolls: CoreUtility.serializeRolls(rolls) };
++    if (flavor) update.flavor = `${child.flavor ?? ''} (${target})`.trim();
++    await child.update(update);
++}
++
++/**
++ * Retroactively promote a damage message's rolls to a critical hit. Shared by the classic
++ * overlay and the Vanilla+ breakdown buttons.
++ * @param {ChatMessage} child The damage message.
++ * @param {Event} [event] Positions the confirmation dialog.
++ */
++export async function retroCritical(child, event) {
++    if (!await _confirm(SETTING_NAMES.CONFIRM_RETRO_CRIT, CoreUtility.localize(`${MODULE_SHORT}.chat.prompts.retroCrit`), event)) return;
++    const before = _rollsState(child);
++    const rolls = _cloneRolls(child);
++    const promoted = [];
++    for (const [index, roll] of rolls.entries()) {
++        if (!(roll instanceof CONFIG.Dice.DamageRoll)) continue;
++        // dnd5e builds the critical expression; the original dice keep their results.
++        rolls[index] = await setNativeCritical(roll, true);
++        promoted.push(rolls[index]);
++    }
++    if (!promoted.length) return;
++    await _showDice(child, promoted);
++    if (!_unchangedSince(child, before)) return;
++    await child.update({ rolls: CoreUtility.serializeRolls(rolls) });
++}
+ 
+ async function _addAdvantageOverlay(section, child, roll, { flavor = false } = {}) {
+     if (!_canEdit(child) || roll.hasAdvantage || roll.hasDisadvantage) return;
+     const total = section.querySelector('.rsr-multiroll .dice-total');
+     if (!total) return;
+     total.append(_fragment(await RenderUtility.render(TEMPLATE.OVERLAY_MULTIROLL, {})));
+-    _onOverlayClick(total.querySelectorAll('.rsr-overlay-multiroll [data-action="rsr-retro"]'), async (event, button) => {
+-        const state = button.dataset.state;
+-        const target = CoreUtility.localize(state === ROLL_STATE.ADV ? 'DND5E.Advantage' : 'DND5E.Disadvantage');
+-        if (!await _confirm(SETTING_NAMES.CONFIRM_RETRO_ADV, CoreUtility.localize(`${MODULE_SHORT}.chat.prompts.retroAdv`, { target }), event)) return;
+-        const before = _rollsState(child);
+-        const rolls = _cloneRolls(child);
+-        const index = rolls.findIndex(r => r instanceof CONFIG.Dice.D20Roll);
+-        if (index < 0) return;
+-        // Adds the extra d20 (a stored Always Roll Multiple Dice alternate, or one rolled
+-        // and thrown now for this message's audience), keeping the original result.
+-        rolls[index] = await RollUtility.upgradeRoll(rolls[index], state, { message: child });
+-        if (!_unchangedSince(child, before)) return;
+-        const update = { rolls: CoreUtility.serializeRolls(rolls) };
+-        if (flavor) update.flavor = `${child.flavor ?? ''} (${target})`.trim();
+-        await child.update(update);
+-    });
++    _onOverlayClick(total.querySelectorAll('.rsr-overlay-multiroll [data-action="rsr-retro"]'),
++        (event, button) => retroAdvantage(child, button.dataset.state, { flavor, event }));
+ }
+ 
+ async function _addCriticalOverlay(section, child) {
+@@ -189,22 +224,7 @@ async function _addCriticalOverlay(section, child) {
+     const total = section.querySelector('.rsr-damage > .dice-total');
+     if (!total) return;
+     total.append(_fragment(await RenderUtility.render(TEMPLATE.OVERLAY_CRIT, {})));
+-    _onOverlayClick(total.querySelectorAll('.rsr-overlay-crit [data-action="rsr-retro"]'), async event => {
+-        if (!await _confirm(SETTING_NAMES.CONFIRM_RETRO_CRIT, CoreUtility.localize(`${MODULE_SHORT}.chat.prompts.retroCrit`), event)) return;
+-        const before = _rollsState(child);
+-        const rolls = _cloneRolls(child);
+-        const promoted = [];
+-        for (const [index, roll] of rolls.entries()) {
+-            if (!(roll instanceof CONFIG.Dice.DamageRoll)) continue;
+-            // dnd5e builds the critical expression; the original dice keep their results.
+-            rolls[index] = await setNativeCritical(roll, true);
+-            promoted.push(rolls[index]);
+-        }
+-        if (!promoted.length) return;
+-        await _showDice(child, promoted);
+-        if (!_unchangedSince(child, before)) return;
+-        await child.update({ rolls: CoreUtility.serializeRolls(rolls) });
+-    });
++    _onOverlayClick(total.querySelectorAll('.rsr-overlay-crit [data-action="rsr-retro"]'), event => retroCritical(child, event));
+ }
+ 
+ /** The 4.x header "+": the bonus is added to this child's own roll, as the overlays are. */
+@@ -213,6 +233,10 @@ function _addBonusButton(section, child, type) {
+     BonusManager.injectButton(child, $(section), type, `.rsr-section-${type}`);
+ }
+ 
++export function onEditClick(buttons, handler) {
++    return _onOverlayClick(buttons, handler);
++}
++
+ function _onOverlayClick(buttons, handler) {
+     let busy = false;
+     for (const button of buttons) {
+@@ -318,15 +342,7 @@ async function _renderRoll(roll, rollIndex) {
+  */
+ function _renderDamage(rolls, sources = rolls) {
+     const aggregate = CONFIG.DND5E.aggregateDamageDisplay;
+-    // Display copies whose dice carry their source in options: dnd5e's aggregation
+-    // rebuilds every term from its JSON, which keeps options but not identity.
+-    const display = rolls.map(roll => {
+-        const copy = Roll.fromData(roll.toJSON());
+-        const rollIndex = sources.indexOf(roll);
+-        copy.dice.forEach((die, dieIndex) => { die.options = { ...die.options, rsrSource: [rollIndex, dieIndex] }; });
+-        return copy;
+-    });
+-    const parts = aggregate ? dnd5e.dice.aggregateDamageRolls(display) : display;
++    const parts = _damageParts(rolls, sources, aggregate);
+     // Aggregated parts carry their own leading " + ", which the first part must drop.
+     const formula = parts.map(r => r.formula).join(aggregate ? '' : ' + ').replace(/^\s*\+\s*/, '');
+     const total = parts.reduce((sum, r) => sum + Math.max(0, r.total), 0);
+@@ -361,6 +377,36 @@ function _renderDamage(rolls, sources = rolls) {
+     return root;
+ }
+ 
++/**
++ * The damage rolls as dnd5e lists them in a breakdown, one part per roll or, aggregated,
++ * one per damage type. Display copies whose dice carry their source in options: dnd5e's
++ * aggregation rebuilds every term from its JSON, which keeps options but not identity.
++ */
++function _damageParts(rolls, sources, aggregate) {
++    const display = rolls.map(roll => {
++        const copy = Roll.fromData(roll.toJSON());
++        const rollIndex = sources.indexOf(roll);
++        copy.dice.forEach((die, dieIndex) => { die.options = { ...die.options, rsrSource: [rollIndex, dieIndex] }; });
++        return copy;
++    });
++    return aggregate ? dnd5e.dice.aggregateDamageRolls(display) : display;
++}
++
++/**
++ * Where each die of a damage breakdown comes from, part by part in display order, for a
++ * breakdown RSReforged did not render itself (Vanilla+ stamps dnd5e's own).
++ * @param {Roll[]} rolls The damage rolls shown.
++ * @param {Roll[]} sources The message's rolls, which the indices refer to.
++ * @param {boolean} aggregate Whether the breakdown merges rolls of one damage type.
++ * @returns {{rollIndex: number, dieIndex: number, resultIndex: number, result: string}[][]}
++ */
++export function damageDieSources(rolls, sources, aggregate) {
++    return _damageParts(rolls, sources, aggregate).map(part => _simplifyDamageRoll(part).dice.map(die => {
++        const [rollIndex, dieIndex] = die.term?.options?.rsrSource ?? [];
++        return { rollIndex, dieIndex, resultIndex: die.resultIndex, result: String(die.result) };
++    }));
++}
++
+ /**
+  * A die's place in its message: roll, die term (roll.dice), and result. The reroll and
+  * fudge listener acts only on dice stamped this way; dnd5e's own breakdowns stay inert.
+diff --git a/src/utils/native-render.js b/src/utils/native-render.js
+index d721d81..f10d563 100644
+--- a/src/utils/native-render.js
++++ b/src/utils/native-render.js
+@@ -3,6 +3,7 @@ import { BonusManager } from './bonus.js';
+ import { getOriginId, getRollType } from './dnd5e-compat.js';
+ import { getNativeRollSources } from './native-workflow.js';
+ import { renderRsrCheck, renderRsrSection } from './native-card.js';
++import { decorateVanillaRolls, renderVanillaSection } from './native-vanilla.js';
+ import { HIDE_NPC_ROLL_STYLES, SETTING_NAMES, SettingsUtility } from './settings.js';
+ 
+ const combinedTypes = new Set(['attack', 'damage', 'healing', 'generic']);
+@@ -96,11 +97,15 @@ export async function renderNativeMessage(message, suppliedHtml) {
+     const content = html.querySelector('.message-content');
+     if (!content) return;
+ 
++    const vanilla = SettingsUtility.useVanillaCards;
++    html.classList.toggle('rsr-vanilla-card', vanilla);
+     const token = {};
+     renders.set(html, token);
+     content.querySelector(':scope > .rsr-native-combined')?.remove();
+-    // dnd5e's registry returns children in no guaranteed order; the card reads top-down.
+     maskHiddenSummaries(content);
++    if (vanilla) decorateSummaries(content);
++    else addWideSaveButtons(message, content);
++    // dnd5e's registry returns children in no guaranteed order; the card reads top-down.
+     const sources = getNativeRollSources(message).filter(child =>
+         combinedTypes.has(child.type) && child.visible !== false && child.isContentVisible)
+         .sort((a, b) => (sectionOrder[a.type] - sectionOrder[b.type]) || (a.timestamp - b.timestamp));
+@@ -110,7 +115,7 @@ export async function renderNativeMessage(message, suppliedHtml) {
+     }
+ 
+     const combined = document.createElement('div');
+-    combined.className = 'rsr-native-combined';
++    combined.className = vanilla ? 'rsr-native-combined rsr-vanilla' : 'rsr-native-combined';
+     // Results appear when the dice land, as they do on a plain native card.
+     const throws = pendingThrows(sources);
+     combined.hidden = throws.length > 0;
+@@ -120,7 +125,7 @@ export async function renderNativeMessage(message, suppliedHtml) {
+     else content.append(combined);
+ 
+     for (const child of sources) {
+-        const section = await renderRsrSection(message, child);
++        const section = vanilla ? await renderVanillaSection(message, child) : await renderRsrSection(message, child);
+         if (renders.get(html) !== token) return;
+         if (!section) continue;
+         // The section's data-message-id identifies the real child document, so
+@@ -167,6 +172,12 @@ async function renderNativeCheck(message, html) {
+     const rows = [...(content?.querySelectorAll(':scope > .icon-row') ?? [])].filter(row => row.querySelector('.dice-roll'));
+     if (!rows.length) return;
+ 
++    // Vanilla+: dnd5e's row stays; the edits go into its breakdown.
++    if (SettingsUtility.useVanillaCards) {
++        decorateVanillaRolls(message, content, { flavor: true });
++        return;
++    }
++
+     const section = await renderRsrCheck(message);
+     // dnd5e fires this before ChatLog inserts the card, so ask whether the row is still
+     // part of this render, not whether it is in the document.
+@@ -205,6 +216,64 @@ function maskHiddenSummaries(content) {
+     }
+ }
+ 
++/**
++ * Vanilla+: the save and check lines dnd5e summarises on the usage card get the same
++ * breakdown buttons as a standalone card. Hidden NPC rows were masked just before this
++ * and have no breakdown left to decorate.
++ */
++function decorateSummaries(content) {
++    for (const summary of content.querySelectorAll(':scope > .card-summary[data-message-id]')) {
++        const source = game.messages.get(summary.dataset.messageId);
++        if (!source || !checkTypes.has(source.type) || !source.isContentVisible) continue;
++        decorateVanillaRolls(source, summary, { flavor: true, mask: false });
++    }
++}
++
++/**
++ * Classic: the 4.x wide saving throw button. dnd5e 6 shows a usage card's save as a small
++ * shield icon in its "Item actions" row; this adds one full-width button per save ability
++ * under the roll sections (or under the item card when nothing was rolled) and above the
++ * save results. It carries no data-action of its own: the click is forwarded, with its
++ * modifier keys, to dnd5e's button, so the roll, targets and permissions are dnd5e's.
++ */
++export function addWideSaveButtons(message, content) {
++    content.querySelector(':scope > .rsr-wide-buttons')?.remove();
++    const sources = [...content.querySelectorAll(':scope > .chat-card button[data-action="rollSave"]')];
++    if (!sources.length) return;
++
++    const showDc = message.shouldDisplayChallenge !== false;
++    const row = document.createElement('div');
++    row.className = 'rsr-wide-buttons';
++    for (const source of sources) {
++        const ability = CONFIG.DND5E.abilities?.[source.dataset.ability]?.label ?? '';
++        const dc = source.dataset.dc;
++        const button = document.createElement('button');
++        button.type = 'button';
++        button.className = 'rsr-wide-save';
++        button.disabled = source.disabled;
++        const icon = document.createElement('i');
++        icon.className = 'fa-solid fa-shield-heart';
++        icon.inert = true;
++        const label = document.createElement('span');
++        label.textContent = (showDc && dc)
++            ? game.i18n.format('DND5E.SavingThrowDC', { ability, dc })
++            : game.i18n.format('DND5E.SavePromptTitle', { ability });
++        button.append(icon, label);
++        button.addEventListener('click', event => {
++            event.preventDefault();
++            event.stopPropagation();
++            // The element's own window: chat can live in a detached window.
++            const Click = source.ownerDocument?.defaultView?.MouseEvent ?? MouseEvent;
++            source.dispatchEvent(new Click('click', {
++                bubbles: true, cancelable: true,
++                shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, altKey: event.altKey, metaKey: event.metaKey
++            }));
++        });
++        row.append(button);
++    }
++    content.querySelector(':scope > .chat-card')?.after(row);
++}
++
+ function toggleBreakdown(event) {
+     // The retro overlay covers the whole total while hovered; only its own
+     // controls are exempt, so clicking the number still opens the breakdown.
+diff --git a/src/utils/native-vanilla.js b/src/utils/native-vanilla.js
+new file mode 100644
+index 0000000..f0b2ee5
+--- /dev/null
++++ b/src/utils/native-vanilla.js
+@@ -0,0 +1,206 @@
++import { MODULE_SHORT, ROLL_TYPE } from '../module/const.js';
++import { BonusManager } from './bonus.js';
++import { ChatUtility } from './chat.js';
++import { CoreUtility } from './core.js';
++import { getRollType } from './dnd5e-compat.js';
++import { canEditRolls, damageDieSources, onEditClick, retroAdvantage, retroCritical } from './native-card.js';
++import { ROLL_STATE } from './roll.js';
++import { HIDE_NPC_ROLL_STYLES, SettingsUtility } from './settings.js';
++
++/**
++ * dnd5e 6, Card Style "Vanilla+": the usage card shows dnd5e's own compact roll rows
++ * instead of RSReforged's sections.
++ *
++ * Nothing here draws a roll. dnd5e renders each child message as it always does and its
++ * rows (roll button, breakdown popover, target list, damage tray) are moved onto the usage
++ * card, so the look follows the system and other modules' render hooks have already run
++ * on them. RSReforged only adds a small row of buttons inside each breakdown, which call
++ * the same edits as the classic overlays, stamps each die with its source so click-to-
++ * reroll and GM fudging work on it, and masks hidden NPC rolls.
++ */
++
++/**
++ * The roll rows of a native child message, wrapped so components and controls inside
++ * resolve the child document (as the classic sections do).
++ * @param {ChatMessage} parent The usage card.
++ * @param {ChatMessage} child A native attack, damage, healing or formula message.
++ * @returns {Promise<HTMLElement|null>}
++ */
++export async function renderVanillaSection(parent, child) {
++    const rendered = await child.renderHTML();
++    const content = (rendered instanceof HTMLElement ? rendered : rendered?.[0])?.querySelector('.message-content');
++    if (!content) return null;
++
++    const section = document.createElement('div');
++    section.className = `rsr-vanilla-section rsr-vanilla-${child.type}`;
++    section.dataset.messageId = child.id;
++    section.dataset.rsrMessageId = child.id;
++    for (const node of [...content.children]) {
++        // The usage card already shows the item header and its pills.
++        if (node.classList.contains('chat-card')) continue;
++        section.append(node);
++    }
++    if (!section.childElementCount) return null;
++    decorateVanillaRolls(child, section);
++    return section;
++}
++
++/**
++ * Add RSReforged's controls to dnd5e's compact roll rows inside `scope`, which shows
++ * `message`'s rolls: a folded section, a standalone check or save card, or a save/check
++ * summary line on a usage card.
++ * @param {ChatMessage} message The message that owns the rolls.
++ * @param {HTMLElement} scope The element holding its roll rows.
++ * @param {object} [options]
++ * @param {boolean} [options.flavor] Write a retroactive mode into the flavor (checks and saves).
++ * @param {boolean} [options.mask] Apply Hide NPC Roll Results (false where the caller already did).
++ */
++export function decorateVanillaRolls(message, scope, { flavor = false, mask = true } = {}) {
++    const buttons = [...scope.querySelectorAll('button.dice-roll')];
++    if (!buttons.length) return;
++    const rollType = getRollType(message);
++    const hidden = mask && SettingsUtility.shouldHideNpcRollForActor(ChatUtility.getActorFromMessage(message), rollType);
++
++    buttons.forEach((button, index) => {
++        const roll = message.rolls[index];
++        const breakdown = button.nextElementSibling?.classList.contains('roll-breakdown') ? button.nextElementSibling : null;
++        if (hidden) return maskVanillaRoll(button, breakdown);
++        if (!roll) return;
++        _showAlternates(button, roll);
++        if (breakdown) _addActions(breakdown, message, roll, rollType, flavor);
++    });
++    if (!hidden) _stampDice(message, scope);
++}
++
++/**
++ * Click-to-reroll and GM fudging (reroll.js) act only on dice that carry their source:
++ * roll, die term and result. The classic sections stamp the dice they render; here the
++ * breakdown is dnd5e's, so the source of each die is worked out and then checked against
++ * what the breakdown shows. Any difference in count or value leaves that breakdown
++ * unstamped, and so inert, rather than risk editing the wrong die.
++ */
++function _stampDice(message, scope) {
++    const parts = [...scope.querySelectorAll('.roll-breakdown .tooltip-part')]
++        .map(part => [...part.querySelectorAll('.dice-rolls .roll')])
++        .filter(dice => dice.length);
++    if (!parts.length) return;
++
++    const damage = message.rolls.filter(r => r instanceof CONFIG.Dice.DamageRoll);
++    // dnd5e may list damage per roll or merged per type; take whichever it actually drew.
++    const candidates = damage.length
++        ? [true, false].map(aggregate => _tryDamageSources(damage, message.rolls, aggregate))
++        : [message.rolls.flatMap((roll, rollIndex) => (roll.dice ?? []).map((die, dieIndex) =>
++            die.results.map((result, resultIndex) => ({ rollIndex, dieIndex, resultIndex, result: _label(die, result) }))))
++            .filter(dice => dice.length)];
++
++    const sources = candidates.find(candidate => candidate && _matches(parts, candidate));
++    if (!sources) return;
++    parts.forEach((dice, partIndex) => dice.forEach((node, index) => {
++        const { rollIndex, dieIndex, resultIndex } = sources[partIndex][index];
++        Object.assign(node.dataset, { rsrRoll: rollIndex, rsrDie: dieIndex, rsrResult: resultIndex });
++    }));
++}
++
++function _tryDamageSources(damage, rolls, aggregate) {
++    try {
++        return damageDieSources(damage, rolls, aggregate).filter(dice => dice.length);
++    } catch (error) {
++        return null;
++    }
++}
++
++function _label(die, result) {
++    return String(typeof die.getResultLabel === 'function' ? die.getResultLabel(result) : result.result);
++}
++
++function _matches(parts, sources) {
++    return parts.length === sources.length && parts.every((dice, partIndex) =>
++        dice.length === sources[partIndex].length && dice.every((node, index) => {
++            const source = sources[partIndex][index];
++            return source.rollIndex >= 0 && source.dieIndex >= 0 && node.textContent.trim() === source.result;
++        }));
++}
++
++/**
++ * Hide NPC Roll Results on a compact roll row: the total (keeping the natural d20) or the
++ * d20 and breakdown (keeping the total), and the outcome mark either way.
++ */
++export function maskVanillaRoll(button, breakdown) {
++    button.classList.remove('success', 'failure', 'critical', 'fumble');
++    button.querySelector('.icons')?.replaceChildren();
++    if (SettingsUtility.getHideNpcRollStyle() === HIDE_NPC_ROLL_STYLES.BREAKDOWN) button.querySelector('.d20die')?.remove();
++    else button.querySelector('.result .total')?.replaceChildren(CoreUtility.localize(`${MODULE_SHORT}.chat.hide`));
++    button.popoverTargetElement = null;
++    breakdown?.remove();
++}
++
++/** Always Roll Multiple Dice: the stored extra d20s, faded, beside the one that counts. */
++function _showAlternates(button, roll) {
++    const alternates = roll.options?.rsreforgedAlternates;
++    const die = button.querySelector('.d20die');
++    if (!alternates?.length || !die || button.querySelector('.rsr-d20die-alt')) return;
++    alternates.forEach((result, index) => {
++        const extra = die.cloneNode(true);
++        extra.classList.add('rsr-d20die-alt');
++        extra.style.setProperty('--rsr-alt-index', index + 1);
++        extra.dataset.tooltip = CoreUtility.localize(`${MODULE_SHORT}.chat.ignoredDie`);
++        const value = extra.querySelector('.roll');
++        if (value) value.textContent = result.result;
++        die.after(extra);
++    });
++}
++
++function _addActions(breakdown, message, roll, rollType, flavor) {
++    if (breakdown.querySelector('.rsr-roll-actions')) return;
++    const actions = [];
++    const isD20 = roll instanceof CONFIG.Dice.D20Roll;
++    const isDamage = roll instanceof CONFIG.Dice.DamageRoll;
++
++    if (canEditRolls(message)) {
++        if (isD20 && !roll.hasAdvantage && !roll.hasDisadvantage) {
++            actions.push(_action('fa-solid fa-chevrons-down', 'rollDisadvantage', 'DND5E.Disadvantage',
++                event => retroAdvantage(message, ROLL_STATE.DIS, { flavor, event })));
++            actions.push(_action('fa-solid fa-chevrons-up', 'rollAdvantage', 'DND5E.Advantage',
++                event => retroAdvantage(message, ROLL_STATE.ADV, { flavor, event })));
++        }
++        if (isDamage && message.type === 'damage' && !message.rolls.some(r => r.isCritical)) {
++            actions.push(_action('fa-solid fa-dice', 'rollCrit', 'DND5E.CriticalHit', event => retroCritical(message, event)));
++        }
++    }
++
++    const bonusType = _bonusType(rollType, isD20, isDamage);
++    if (bonusType && (game.user.isGM || message.isAuthor === true)) {
++        actions.push(_action('fa-solid fa-plus', 'bonus', `${MODULE_SHORT}.chat.buttons.bonusShort`,
++            () => BonusManager.openBonusDialog(message, bonusType)));
++    }
++    if (!actions.length) return;
++
++    const row = document.createElement('div');
++    row.className = 'rsr-roll-actions';
++    row.append(...actions);
++    (breakdown.querySelector('.dice-tooltip') ?? breakdown).append(row);
++}
++
++/** The Add Bonus category for a roll, as the classic card uses. */
++function _bonusType(rollType, isD20, isDamage) {
++    if (isDamage) return ROLL_TYPE.DAMAGE;
++    if (!isD20 || !rollType) return null;
++    return rollType === ROLL_TYPE.ABILITY_TEST ? ROLL_TYPE.CHECK : rollType;
++}
++
++function _action(icon, tooltipKey, labelKey, handler) {
++    const button = document.createElement('button');
++    button.type = 'button';
++    button.className = 'rsr-roll-action';
++    const tooltip = CoreUtility.localize(`${MODULE_SHORT}.chat.buttons.${tooltipKey}`);
++    button.dataset.tooltip = tooltip;
++    button.setAttribute('aria-label', tooltip);
++    const glyph = document.createElement('i');
++    glyph.className = icon;
++    glyph.inert = true;
++    const text = document.createElement('span');
++    text.textContent = CoreUtility.localize(labelKey);
++    button.append(glyph, text);
++    onEditClick([button], handler);
++    return button;
++}
+diff --git a/src/utils/settings.js b/src/utils/settings.js
+index 112669b..f834cf8 100755
+--- a/src/utils/settings.js
++++ b/src/utils/settings.js
+@@ -34,7 +34,21 @@ export const SETTING_NAMES = {
+     REROLL_PLAYERS: "rerollPlayers",
+     FUDGE_GM: "fudgeGM",
+     REROLL_SOUND_ENABLED: "rerollSoundEnabled",
+-    REROLL_LOG_CHAT: "rerollLogChat"
++    REROLL_LOG_CHAT: "rerollLogChat",
++
++    // dnd5e 6 card style
++    CARD_STYLE: "cardStyle"
++}
++
++/**
++ * How a quick roll's results are drawn on its usage card (dnd5e 6 only).
++ * The rolls, the messages that hold them, and every edit are the same in both.
++ */
++export const CARD_STYLES = {
++    // RSReforged's boxed Attack / Damage / Formula sections with the big total.
++    CLASSIC: "classic",
++    // dnd5e 6's own compact roll rows, folded onto the usage card.
++    VANILLA: "vanilla"
+ }
+ 
+ export const DAMAGE_APPLY_MODES = {
+@@ -77,6 +91,21 @@ export class SettingsUtility {
+     static registerSettings() {
+         LogUtility.log("Registering module settings");
+ 
++        // CARD STYLE (dnd5e 6)
++        game.settings.register(MODULE_NAME, SETTING_NAMES.CARD_STYLE, {
++            name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.CARD_STYLE}.name`),
++            hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.CARD_STYLE}.hint`),
++            scope: "world",
++            config: true,
++            type: String,
++            default: CARD_STYLES.CLASSIC,
++            requiresReload: true,
++            choices: {
++                [CARD_STYLES.CLASSIC]: CoreUtility.localize(`${MODULE_SHORT}.choices.cardStyle.${CARD_STYLES.CLASSIC}`),
++                [CARD_STYLES.VANILLA]: CoreUtility.localize(`${MODULE_SHORT}.choices.cardStyle.${CARD_STYLES.VANILLA}`)
++            }
++        });
++
+         // QUICK ROLL SETTINGS
+         // QUICK_VANILLA_ENABLED is registered first so it sits at the top of the
+         // settings UI: when it is on, RSReforged falls back to dnd5e's normal roll
+@@ -323,6 +352,11 @@ export class SettingsUtility {
+         return SettingsUtility.getSettingValue(SETTING_NAMES.HIDE_NPC_ROLL_STYLE);
+     }
+ 
++    /** Whether dnd5e 6 cards use dnd5e's own compact roll rows (Vanilla+) instead of RSR sections. */
++    static get useVanillaCards() {
++        return SettingsUtility.getSettingValue(SETTING_NAMES.CARD_STYLE) === CARD_STYLES.VANILLA;
++    }
++
+     static get _useRsrDamageApplyButtons() {
+         return SettingsUtility.getSettingValue(SETTING_NAMES.DAMAGE_APPLY_MODE) === DAMAGE_APPLY_MODES.RSR;
+     }
+diff --git a/tests/native-card-style.test.mjs b/tests/native-card-style.test.mjs
+new file mode 100644
+index 0000000..7990ee8
+--- /dev/null
++++ b/tests/native-card-style.test.mjs
+@@ -0,0 +1,107 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import { setupFoundryEnv } from "./helpers/foundry-env.mjs";
++
++let renderer;
++let sections;
++
++async function load(cardStyle) {
++    vi.resetModules();
++    await setupFoundryEnv({ settings: cardStyle ? { cardStyle } : {} });
++    globalThis.CONFIG.DND5E = { ...(globalThis.CONFIG.DND5E ?? {}), abilities: { con: { label: "Constitution" }, dex: { label: "Dexterity" } } };
++    game.i18n.format = (key, data) => key === "DND5E.SavingThrowDC" ? `DC ${data.dc} ${data.ability} Saving Throw` : `${data.ability} Saving Throw`;
++    const stub = kind => vi.fn(async (parent, child) => {
++        const section = document.createElement("div");
++        section.className = kind;
++        section.dataset.messageId = child.id;
++        section.dataset.rsrMessageId = child.id;
++        return section;
++    });
++    sections = { classic: stub("rsr-card"), vanilla: stub("rsr-vanilla-section") };
++    vi.doMock("../src/utils/native-card.js", () => ({ renderRsrSection: sections.classic, renderRsrCheck: vi.fn(async () => document.createElement("div")) }));
++    const decorate = vi.fn();
++    vi.doMock("../src/utils/native-vanilla.js", () => ({ renderVanillaSection: sections.vanilla, decorateVanillaRolls: decorate }));
++    sections.decorate = decorate;
++    renderer = await import("../src/utils/native-render.js");
++}
++
++function child(id, type) {
++    return { id, type, visible: true, isContentVisible: true, rolls: [], flags: {}, timestamp: 0 };
++}
++
++function parent(children) {
++    return { id: "parent", type: "usage", isContentVisible: true, shouldDisplayChallenge: true, flags: { rsreforged: { workflowVersion: 2, quickRoll: true } }, getAssociatedRolls: () => children };
++}
++
++function saveCard() {
++    const html = document.createElement("li");
++    html.className = "chat-message message";
++    html.dataset.messageId = "parent";
++    html.innerHTML = `<div class="message-content"><div class="chat-card"><section class="icon-row"><ul>
++        <li><button data-action="rollSave" data-dc="22" data-ability="con"></button></li>
++        <li><button data-action="rollDamage"></button></li>
++    </ul></section></div><div class="card-summary" data-message-id="save1"></div></div>`;
++    return html;
++}
++
++describe("card style", () => {
++    beforeEach(() => load());
++
++    it("defaults to the classic sections and adds the wide save button under them", async () => {
++        const html = saveCard();
++        await renderer.renderNativeMessage(parent([child("damage", "damage")]), html);
++
++        expect(sections.classic).toHaveBeenCalledTimes(1);
++        expect(sections.vanilla).not.toHaveBeenCalled();
++        expect(html.classList.contains("rsr-vanilla-card")).toBe(false);
++        const order = [...html.querySelector(".message-content").children].map(n => n.className);
++        expect(order).toEqual(["chat-card", "rsr-native-combined", "rsr-wide-buttons", "card-summary"]);
++        expect(html.querySelector(".rsr-wide-save").textContent).toBe("DC 22 Constitution Saving Throw");
++    });
++
++    it("adds the wide save button to a save with nothing rolled, once, and forwards the click with its modifiers", async () => {
++        const html = saveCard();
++        const clicks = [];
++        html.querySelector('[data-action="rollSave"]').addEventListener("click", event => clicks.push(event.shiftKey));
++        const card = parent([]);
++        await renderer.renderNativeMessage(card, html);
++        await renderer.renderNativeMessage(card, html);
++
++        const wide = html.querySelectorAll(".rsr-wide-buttons button");
++        expect(html.querySelectorAll(".rsr-wide-buttons")).toHaveLength(1);
++        expect(wide).toHaveLength(1);
++        expect(wide[0].dataset.action).toBeUndefined();
++        wide[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, shiftKey: true }));
++        expect(clicks).toEqual([true]);
++    });
++
++    it("leaves the DC off the wide button when the viewer may not see it", async () => {
++        const html = saveCard();
++        await renderer.renderNativeMessage({ ...parent([]), shouldDisplayChallenge: false }, html);
++        expect(html.querySelector(".rsr-wide-save").textContent).toBe("Constitution Saving Throw");
++    });
++
++    it("adds no wide button to a card without a save", async () => {
++        const html = saveCard();
++        html.querySelector('[data-action="rollSave"]').closest("li").remove();
++        await renderer.renderNativeMessage(parent([child("damage", "damage")]), html);
++        expect(html.querySelector(".rsr-wide-buttons")).toBeNull();
++    });
++
++    it("Vanilla+ folds dnd5e's rows instead, keeps dnd5e's save icon, and decorates save summaries", async () => {
++        await load("vanilla");
++        const save = { id: "save1", type: "save", isContentVisible: true, rolls: [] };
++        game.messages.set("save1", save);
++        const html = saveCard();
++        await renderer.renderNativeMessage(parent([child("damage", "damage")]), html);
++
++        expect(sections.vanilla).toHaveBeenCalledTimes(1);
++        expect(sections.classic).not.toHaveBeenCalled();
++        expect(html.classList.contains("rsr-native-card")).toBe(true);
++        expect(html.classList.contains("rsr-vanilla-card")).toBe(true);
++        const combined = html.querySelector(".rsr-native-combined");
++        expect(combined.classList.contains("rsr-vanilla")).toBe(true);
++        expect(combined.firstElementChild.classList.contains("rsr-native-source")).toBe(true);
++        expect(html.querySelector(".rsr-wide-buttons")).toBeNull();
++        expect(sections.decorate).toHaveBeenCalledWith(save, html.querySelector(".card-summary"), { flavor: true, mask: false });
++    });
++});
+diff --git a/tests/native-card.test.mjs b/tests/native-card.test.mjs
+index cb25732..2569a1b 100644
+--- a/tests/native-card.test.mjs
++++ b/tests/native-card.test.mjs
+@@ -527,6 +527,27 @@ describe("Always Roll Multiple Dice display", () => {
+     });
+ });
+ 
++it("reports where each die of a damage breakdown comes from, per roll or merged per type", async () => {
++    const rolls = [damageRoll("slashing", 7, 10, 3), damageRoll("fire", 6, 6)];
++    const attack = { dice: [] };
++
++    // Indices refer to the message's rolls, not to the damage rolls alone.
++    expect(card.damageDieSources(rolls, [attack, ...rolls], false)).toEqual([
++        [{ rollIndex: 1, dieIndex: 0, resultIndex: 0, result: "7" }],
++        [{ rollIndex: 2, dieIndex: 0, resultIndex: 0, result: "6" }]
++    ]);
++
++    // Aggregated: whatever parts dnd5e merges the rolls into, each die keeps its source.
++    dnd5e.dice.aggregateDamageRolls = (display) => {
++        const merged = Object.create(Object.getPrototypeOf(display[0]));
++        Object.assign(merged, display[0]);
++        merged.terms = display.flatMap((roll) => roll.terms);
++        return [merged];
++    };
++    expect(card.damageDieSources(rolls, rolls, true).map((part) => part.map((die) => [die.rollIndex, die.dieIndex, die.result]).sort()))
++        .toEqual([[[0, 0, "7"], [1, 0, "6"]]]);
++});
++
+ describe("review fixes", () => {
+     it("stamps damage dice for rerolls even when dnd5e's aggregation rebuilds every term", async () => {
+         CONFIG.DND5E.aggregateDamageDisplay = true;
+diff --git a/tests/native-vanilla.test.mjs b/tests/native-vanilla.test.mjs
+new file mode 100644
+index 0000000..75dd8a2
+--- /dev/null
++++ b/tests/native-vanilla.test.mjs
+@@ -0,0 +1,233 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import { makeRoll, setupFoundryEnv } from "./helpers/foundry-env.mjs";
++
++let env;
++let vanilla;
++let edits;
++let bonus;
++let damageSources = () => [];
++
++async function load(settings = {}) {
++    vi.resetModules();
++    env = await setupFoundryEnv({ settings: { enableOverlayButtons: true, ...settings } });
++    game.user.isGM = true;
++    edits = { retroAdvantage: vi.fn(), retroCritical: vi.fn() };
++    // The edits have their own tests (native-card); here only the wiring is checked.
++    vi.doMock("../src/utils/native-card.js", () => ({
++        canEditRolls: child => env.settings.enableOverlayButtons && (game.user.isGM || child.isAuthor === true),
++        onEditClick: (buttons, handler) => buttons.forEach(b => b.addEventListener("click", event => handler(event, b))),
++        retroAdvantage: edits.retroAdvantage,
++        retroCritical: edits.retroCritical,
++        damageDieSources: (...args) => damageSources(...args)
++    }));
++    damageSources = () => [];
++    bonus = vi.fn();
++    vi.doMock("../src/utils/bonus.js", () => ({ BonusManager: { openBonusDialog: bonus } }));
++    vanilla = await import("../src/utils/native-vanilla.js");
++}
++
++beforeEach(() => load());
++
++/** dnd5e 6's compact roll row: the roll button followed by its breakdown popover. */
++function row({ total = 12, d20 = null, outcome = "" } = {}) {
++    return `<section class="icon-row"><button type="button" class="dice-roll ${outcome}">
++        <span class="icons">${outcome ? "<i></i>" : ""}</span><span class="result"><strong class="total">${total}</strong></span>
++        ${d20 === null ? "" : `<span class="d20die"><i></i><span class="roll">${d20}</span></span>`}
++    </button><div class="roll-breakdown" popover><div class="dice-tooltip-collapser"><div class="dice-tooltip"></div></div></div></section>`;
++}
++
++function message(type, rolls, content, extra = {}) {
++    const node = document.createElement("li");
++    node.className = "chat-message message";
++    node.dataset.messageId = type;
++    node.innerHTML = `<div class="message-content">${content}</div>`;
++    return { id: type, type, rolls, isAuthor: true, flags: {}, system: {}, renderHTML: async () => node, ...extra };
++}
++
++const d20 = (rollOptions = {}) => makeRoll(env.classes.D20Roll, { formula: "1d20 + 5", total: 12, faces: 20, results: [7], rollOptions });
++const damage = () => makeRoll(env.classes.DamageRoll, { formula: "1d8", total: 5, faces: 8, results: [5], type: "slashing" });
++const labels = scope => [...scope.querySelectorAll(".rsr-roll-action")].map(b => b.textContent);
++
++describe("Vanilla+ sections", () => {
++    it("moves dnd5e's roll rows onto the card, leaves the item header behind, and keeps the child's identity", async () => {
++        const child = message("attack", [d20()], `<div class="chat-card">header</div>${row({ d20: 7 })}<recorded-targets></recorded-targets>`);
++        const section = await vanilla.renderVanillaSection({}, child);
++
++        expect(section.className).toBe("rsr-vanilla-section rsr-vanilla-attack");
++        expect(section.dataset.messageId).toBe("attack");
++        expect(section.dataset.rsrMessageId).toBe("attack");
++        expect([...section.children].map(n => n.tagName.toLowerCase())).toEqual(["section", "recorded-targets"]);
++        expect(section.querySelector(".chat-card")).toBeNull();
++    });
++
++    it("returns nothing for a child with no rows to show", async () => {
++        expect(await vanilla.renderVanillaSection({}, message("attack", [d20()], `<div class="chat-card"></div>`))).toBeNull();
++    });
++});
++
++describe("Vanilla+ breakdown buttons", () => {
++    it("offers disadvantage, advantage and bonus on a normal d20 roll and routes them to the shared edits", async () => {
++        const child = message("attack", [d20()], row({ d20: 7 }));
++        const section = await vanilla.renderVanillaSection({}, child);
++        const buttons = section.querySelectorAll(".roll-breakdown .dice-tooltip .rsr-roll-action");
++        expect(buttons).toHaveLength(3);
++
++        buttons[0].click();
++        expect(edits.retroAdvantage).toHaveBeenLastCalledWith(child, "kl", expect.objectContaining({ flavor: false }));
++        buttons[1].click();
++        expect(edits.retroAdvantage).toHaveBeenLastCalledWith(child, "kh", expect.objectContaining({ flavor: false }));
++        buttons[2].click();
++        expect(bonus).toHaveBeenCalledWith(child, "attack");
++    });
++
++    it("drops the mode buttons once the roll has advantage or disadvantage", async () => {
++        const roll = d20();
++        Object.defineProperty(roll, "hasAdvantage", { get: () => true });
++        const section = await vanilla.renderVanillaSection({}, message("attack", [roll], row({ d20: 7 })));
++        expect(section.querySelectorAll(".rsr-roll-action")).toHaveLength(1);
++    });
++
++    it("offers critical on damage only, and never on healing or an already critical roll", async () => {
++        const hit = message("damage", [damage()], row());
++        const section = await vanilla.renderVanillaSection({}, hit);
++        expect(section.querySelectorAll(".rsr-roll-action")).toHaveLength(2);
++        section.querySelector(".rsr-roll-action").click();
++        expect(edits.retroCritical).toHaveBeenCalledWith(hit, expect.anything());
++        section.querySelectorAll(".rsr-roll-action")[1].click();
++        expect(bonus).toHaveBeenCalledWith(hit, "damage");
++
++        const heal = await vanilla.renderVanillaSection({}, message("healing", [damage()], row()));
++        expect(heal.querySelectorAll(".rsr-roll-action")).toHaveLength(1);
++
++        const crit = damage();
++        Object.defineProperty(crit, "isCritical", { get: () => true });
++        const already = await vanilla.renderVanillaSection({}, message("damage", [crit], row()));
++        expect(already.querySelectorAll(".rsr-roll-action")).toHaveLength(1);
++    });
++
++    it("shows nothing to a player who did not make the roll", async () => {
++        game.user.isGM = false;
++        const section = await vanilla.renderVanillaSection({}, message("attack", [d20()], row({ d20: 7 }), { isAuthor: false, getAssociatedActor: () => ({ isOwner: true }) }));
++        expect(section.querySelector(".rsr-roll-actions")).toBeNull();
++    });
++
++    it("keeps Add Bonus when the overlay buttons are switched off", async () => {
++        await load({ enableOverlayButtons: false });
++        const section = await vanilla.renderVanillaSection({}, message("attack", [d20()], row({ d20: 7 })));
++        expect(section.querySelectorAll(".rsr-roll-action")).toHaveLength(1);
++    });
++
++    it("writes a retroactive mode into the flavor of a check or save, and uses the check bonus category", async () => {
++        const check = message("check", [d20()], row({ d20: 7 }));
++        const scope = (await check.renderHTML()).querySelector(".message-content");
++        vanilla.decorateVanillaRolls(check, scope, { flavor: true });
++        vanilla.decorateVanillaRolls(check, scope, { flavor: true }); // a second pass adds nothing
++        const buttons = scope.querySelectorAll(".rsr-roll-action");
++        expect(buttons).toHaveLength(3);
++        buttons[1].click();
++        expect(edits.retroAdvantage).toHaveBeenLastCalledWith(check, "kh", expect.objectContaining({ flavor: true }));
++        buttons[2].click();
++        expect(bonus).toHaveBeenCalledWith(check, "check");
++    });
++});
++
++describe("Vanilla+ display", () => {
++    it("shows a stored extra d20 as a faded die beside the real one", async () => {
++        const roll = d20({ rsreforgedAlternates: [{ result: 15, active: true }] });
++        const section = await vanilla.renderVanillaSection({}, message("attack", [roll], row({ d20: 7 })));
++        const dice = section.querySelectorAll(".d20die");
++        expect(dice).toHaveLength(2);
++        expect(dice[0].classList.contains("rsr-d20die-alt")).toBe(false);
++        expect(dice[0].querySelector(".roll").textContent).toBe("7");
++        expect(dice[1].classList.contains("rsr-d20die-alt")).toBe(true);
++        expect(dice[1].querySelector(".roll").textContent).toBe("15");
++    });
++
++    it("Hide NPC Roll Results masks the total, keeps the d20, and removes the breakdown and outcome", async () => {
++        await load({ hideNpcRollMode: "all", hideNpcRollStyle: "total" });
++        game.user.isGM = false;
++        const npc = { getAssociatedActor: () => ({ isOwner: false }), isAuthor: false };
++        const roll = d20({ rsreforgedAlternates: [{ result: 15, active: true }] });
++        const section = await vanilla.renderVanillaSection({}, message("attack", [roll], row({ d20: 7, outcome: "success" }), npc));
++
++        const button = section.querySelector("button.dice-roll");
++        expect(button.querySelector(".total").textContent).toBe("rsreforged.chat.hide");
++        expect(button.querySelectorAll(".d20die")).toHaveLength(1);
++        expect(button.classList.contains("success")).toBe(false);
++        expect(button.querySelector(".icons").childElementCount).toBe(0);
++        expect(section.querySelector(".roll-breakdown")).toBeNull();
++    });
++
++    it("Hide NPC Roll Results in breakdown style keeps the total and removes the d20", async () => {
++        await load({ hideNpcRollMode: "all", hideNpcRollStyle: "breakdown" });
++        game.user.isGM = false;
++        const npc = { getAssociatedActor: () => ({ isOwner: false }), isAuthor: false };
++        const section = await vanilla.renderVanillaSection({}, message("attack", [d20()], row({ d20: 7 }), npc));
++        expect(section.querySelector(".total").textContent).toBe("12");
++        expect(section.querySelector(".d20die")).toBeNull();
++        expect(section.querySelector(".roll-breakdown")).toBeNull();
++    });
++
++    it("never masks damage", async () => {
++        await load({ hideNpcRollMode: "all", hideNpcRollStyle: "total" });
++        game.user.isGM = false;
++        const npc = { getAssociatedActor: () => ({ isOwner: false }), isAuthor: false };
++        const section = await vanilla.renderVanillaSection({}, message("damage", [damage()], row({ total: 5 }), npc));
++        expect(section.querySelector(".total").textContent).toBe("5");
++        expect(section.querySelector(".roll-breakdown")).not.toBeNull();
++    });
++});
++
++describe("Vanilla+ reroll and fudge stamps", () => {
++    /** A breakdown part as dnd5e lists it: one <li class="roll"> per die result. */
++    const part = (...values) => `<section class="tooltip-part"><div class="dice"><ol class="dice-rolls">${values.map(v => `<li class="roll">${v}</li>`).join("")}<li class="constant">+3</li></ol></div></section>`;
++    const withParts = (html, ...parts) => html.replace('<div class="dice-tooltip"></div>', `<div class="dice-tooltip">${parts.join("")}<section class="tooltip-part constant-term"></section></div>`);
++    const stamps = scope => [...scope.querySelectorAll(".dice-rolls .roll")].map(n => [n.dataset.rsrRoll, n.dataset.rsrDie, n.dataset.rsrResult]);
++
++    it("stamps a d20 roll's dice with their roll, die and result so the reroll listener can act on them", async () => {
++        const roll = makeRoll(env.classes.D20Roll, { formula: "2d20kh + 5", total: 20, faces: 20, results: [15, { result: 4, active: false, discarded: true }] });
++        const section = await vanilla.renderVanillaSection({}, message("attack", [roll], withParts(row({ d20: 15 }), part(15, 4))));
++        expect(stamps(section)).toEqual([["0", "0", "0"], ["0", "0", "1"]]);
++        // The listener resolves the message from the nearest data-message-id.
++        expect(section.querySelector(".roll").closest("[data-message-id]").dataset.messageId).toBe("attack");
++    });
++
++    it("leaves the breakdown inert when it does not show the dice the roll holds", async () => {
++        const roll = makeRoll(env.classes.D20Roll, { formula: "1d20", total: 15, faces: 20, results: [15] });
++        const wrongValue = await vanilla.renderVanillaSection({}, message("attack", [roll], withParts(row({ d20: 15 }), part(14))));
++        expect(stamps(wrongValue)).toEqual([[undefined, undefined, undefined]]);
++        const wrongCount = await vanilla.renderVanillaSection({}, message("attack", [roll], withParts(row({ d20: 15 }), part(15, 15))));
++        expect(stamps(wrongCount).flat().every(v => v === undefined)).toBe(true);
++    });
++
++    it("stamps damage in whichever layout dnd5e drew: merged by type, or one part per roll", async () => {
++        const rolls = [damage(), damage()];
++        const perRoll = [[{ rollIndex: 0, dieIndex: 0, resultIndex: 0, result: "5" }], [{ rollIndex: 1, dieIndex: 0, resultIndex: 0, result: "2" }]];
++        const merged = [[{ rollIndex: 1, dieIndex: 0, resultIndex: 0, result: "2" }, { rollIndex: 0, dieIndex: 0, resultIndex: 0, result: "5" }]];
++        damageSources = (shown, sources, aggregate) => aggregate ? merged : perRoll;
++
++        const one = await vanilla.renderVanillaSection({}, message("damage", rolls, withParts(row(), part(2, 5))));
++        expect(stamps(one)).toEqual([["1", "0", "0"], ["0", "0", "0"]]);
++        const two = await vanilla.renderVanillaSection({}, message("damage", rolls, withParts(row(), part(5), part(2))));
++        expect(stamps(two)).toEqual([["0", "0", "0"], ["1", "0", "0"]]);
++    });
++
++    it("stamps nothing on damage it cannot place, or when working it out fails", async () => {
++        damageSources = () => [[{ rollIndex: 0, dieIndex: 0, resultIndex: 0, result: "9" }]];
++        const mismatch = await vanilla.renderVanillaSection({}, message("damage", [damage()], withParts(row(), part(5))));
++        expect(stamps(mismatch)).toEqual([[undefined, undefined, undefined]]);
++        damageSources = () => { throw new Error("no aggregation"); };
++        const failed = await vanilla.renderVanillaSection({}, message("damage", [damage()], withParts(row(), part(5))));
++        expect(stamps(failed)).toEqual([[undefined, undefined, undefined]]);
++        expect(failed.querySelector(".rsr-roll-actions")).not.toBeNull();
++    });
++
++    it("stamps nothing on a hidden NPC roll", async () => {
++        await load({ hideNpcRollMode: "all", hideNpcRollStyle: "total" });
++        game.user.isGM = false;
++        const roll = makeRoll(env.classes.D20Roll, { formula: "1d20", total: 15, faces: 20, results: [15] });
++        const npc = { getAssociatedActor: () => ({ isOwner: false }), isAuthor: false };
++        const section = await vanilla.renderVanillaSection({}, message("attack", [roll], withParts(row({ d20: 15 }), part(15)), npc));
++        expect(section.querySelector(".dice-rolls")).toBeNull();
++    });
++});
+-- 
+2.43.0
+

@@ -4,6 +4,8 @@ RSReforged rewrites chat-message DOM and triggers full re-renders to deliver its
 
 This document describes the `rsreforged.*` hook surface RSR emits so third-party modules can decorate RSR-rendered cards at deterministic points in the lifecycle.
 
+> **dnd5e 6 status (RSReforged 6.0).** On dnd5e 6 each roll is dnd5e's own attack, damage, check, or save message, and RSReforged renders its Attack, Damage, and Formula sections into the usage card from them. So far only **`rsreforged.renderApplyDamageButtons`** fires on dnd5e 6 cards: `message` is the damage (or healing) message the section shows, and `html` is that section. The other hooks below are emitted only for legacy dnd5e 5.3 cards. Each section carries the real child message's `data-message-id`, so `element.closest("[data-message-id]")` resolves the attack or damage message from anywhere inside it; otherwise decorate dnd5e 6 cards from `dnd5e.renderChatMessage`. The remaining hooks will return with the same names and signatures.
+
 The hooks listed here are **public API**. They follow [Semantic Versioning](https://semver.org/) — breaking changes require a major-version bump and a changelog entry. See the [Versioning](#versioning) section below for the full bump-rule table.
 
 ---

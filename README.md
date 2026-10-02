@@ -1,223 +1,134 @@
-# RSReforged
-
-> **GMC fork 6.x** — fork of [arrowedisgaming/RSReforged](https://github.com/arrowedisgaming/RSReforged) for Foundry V14 (14.367+) and dnd5e 6.0.x.
-> Install / update with the manifest URL
-> `https://raw.githubusercontent.com/maxobremer/RSReforged/master/module.json` — "Update All" follows this fork, not upstream.
->
-> What differs from upstream RSReforged:
-> - **Look:** every card RSR produces uses dnd5e 6's compact chat style. Attack, damage and formula rows on a usage card are rendered with dnd5e's own `attack-card`, `damage-card`, `roll-compact` and `card-rows` templates, and damage uses dnd5e's native `<damage-application>` tray. Standalone checks, saves, death saves, damage and healing stay dnd5e's native cards; RSR only decorates them.
-> - **Multiroll (default on):** normal d20 rolls are evaluated as `2d20kf` (keep first; `kf` is a die modifier RSR registers on dnd5e's `D20Die`). The ignored die is shown dimmed next to the natural d20 and in the breakdown.
-> - **Roll breakdown actions:** click a roll total to open its breakdown; the owner/GM gets **+ Bonus** on every roll, **Disadvantage / Normal / Advantage** on d20 rolls (uses the second d20; updates total, crit/fumble and hit/miss pills), and **Critical** on RSR card damage.
-> - **Fast-forward:** rolls skip their configuration dialog unless the dnd5e "Skip Dialog" key (Shift) is held; Alt/Ctrl keep their dnd5e meaning. dnd5e 6.0.3 has no built-in setting for this, so RSR sets `dialog.configure` in `dnd5e.preRoll*V2` / `dnd5e.preUseActivity` (explicit values from macros or other modules win). Client setting *Fast-Forward Rolls (Shift to Configure)*.
-> - **One card when configured:** Shift-using an activity shows the usage, attack and damage dialogs one after another, but every result lands on the single usage card. A cancelled dialog leaves dnd5e's button on the card; clicking it rolls onto the same card.
-> - **Private rolls:** GM/blind/self rolls are hidden completely from players who may not see them (no "???" card, no summary line in a usage card). On save/check results inside a usage card the GM gets an eye button: it reveals the roll to everyone, then stays (faded) to make it private again.
-> - **Damage tray:** the multiplier row reads heart (healing), hourglass (temp HP mode: the target pills preview the temp HP and Apply grants it), 0, ¼, ½, 1, and 2 with a faded burst behind it. Works on every dnd5e damage tray.
-> - Debug helpers: `game.modules.get("rsreforged").api.debug` (`inspect(messageId?)`, `settings()`, `enable(true)`, `trayPatched()`, `multirollModifier()`, `itemUseWrapped()`).
-> - Integration hooks now pass plain `HTMLElement`s (no jQuery); `rsreforged.renderRoll` passes an array of the inserted elements; `rsreforged.renderApplyDamageButtons` no longer fires.
+# RSReforged — GMC fork (6.2.0)
 
 > Quality-of-life roll automation for Foundry VTT's D&D 5e system.
+> This fork is **[arrowedisgaming/RSReforged](https://github.com/arrowedisgaming/RSReforged) 6.0.0 plus one feature commit** (a *Card Style* setting with a new "Vanilla+" card, and the wide save button back on Classic cards), **plus three optional extras** kept in their own folder.
 
-![Latest Release](https://img.shields.io/badge/dynamic/json.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmaxobremer%2FRSReforged%2Fmaster%2Fmodule.json&label=Latest%20Release&prefix=v&query=$.version&colorB=blue&style=for-the-badge)
-![Foundry Versions](https://img.shields.io/endpoint?url=https%3A%2F%2Ffoundryshields.com%2Fversion%3Fstyle%3Dfor-the-badge%26url%3Dhttps%3A%2F%2Fraw.githubusercontent.com%2Fmaxobremer%2FRSReforged%2Fmaster%2Fmodule.json&color=ff601e&label=Foundry)
-![dnd5e](https://img.shields.io/badge/dnd5e-6.0%2B-red?style=for-the-badge)
-![License](https://img.shields.io/badge/license-GPL--3.0-green?style=for-the-badge)
+Requires Foundry VTT 14 and dnd5e 6.x. Like upstream 6.0.0, dnd5e 6 support is experimental.
 
-<p align="center">
-  <a href="https://ko-fi.com/arrowedisgaming">
-    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi">
-  </a>
-</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/maxobremer/RSReforged/master/assets/screenshots/attack-card.png"
-       alt="An Ancient Green Dragon's Rend attack as one RSReforged card in dnd5e 6's compact style: targets, attack roll with both d20s, damage and the damage tray"
-       width="100%">
-</p>
-
-<p align="center"><em>One card per attack in dnd5e 6's own style: targets, attack (both d20s shown), damage and the apply tray.</em></p>
-
-<table>
-  <tr>
-    <td width="50%" align="center">
-      <img src="https://raw.githubusercontent.com/maxobremer/RSReforged/master/assets/screenshots/roll-breakdown.png"
-           alt="Roll breakdown popover with + Bonus and Disadvantage / Normal / Advantage buttons, next to the retroactive bonus dialog">
-      <br><sub>Click a roll: add a bonus, or switch to disadvantage / advantage without rerolling.</sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="https://raw.githubusercontent.com/maxobremer/RSReforged/master/assets/screenshots/save-card.png"
-           alt="Poison Breath save card with the targets' saving throws summarized on the card and the damage tray">
-      <br><sub>Saves land on the card; the tray reads heart, temp HP, 0, ¼, ½, 1, 2.</sub>
-    </td>
-  </tr>
-</table>
-
-## What it does
-
-RSReforged removes clicks from D&D 5e rolls in Foundry VTT.
-
-- **One-click rolls.** Skill checks, saves, attacks, and damage go to chat without the usual dnd5e dialog.
-- **Damage split by type.** If an attack deals fire and cold, apply each to different tokens.
-- **Edit rolls after they land.** Turn a flat roll into advantage, promote a hit to a crit, or add a Bless die you forgot.
-
-## Compatibility
-
-| | Minimum | Verified |
-|---|---|---|
-| Foundry VTT | **14.367** | 14.368 |
-| dnd5e system | **6.0.0** | 6.0.3 |
-
-This build (4.13.4-dnd5e6.x) is ported to dnd5e 6's typed chat messages and does not support dnd5e 5.x; use RSReforged 4.13.4 with dnd5e 5.3. **RSReforged does not work on Foundry v13** or **dnd5e 5.0–5.2**. If you're on those versions, stay on [upstream RSR v3.5.0](https://github.com/MangoFVTT/fvtt-ready-set-roll-5e/releases/tag/release-3.5.0) until you upgrade.
-
-RSReforged also conflicts with other modules that overhaul the dnd5e roll pipeline, most notably [Midi-QOL](https://gitlab.com/tposney/midi-qol). They will fight each other in unpredictable ways. Pick one.
-
-Modules that **decorate** chat cards (rather than rewriting the roll pipeline) — Automated Conditions 5e, Automated Weapon Masteries 5e, and similar — can coexist with RSReforged by listening to the [Integration API](#integration-api-for-module-authors) hooks instead of Foundry's `renderChatMessageHTML`. Upstream support depends on those modules adopting the hooks.
-
-## Install
-
-In Foundry's *Add-on Modules → Install Module* dialog, paste this into the **Manifest URL** field:
+**Install by manifest URL**
 
 ```
 https://raw.githubusercontent.com/maxobremer/RSReforged/master/module.json
 ```
 
-Click *Install*. Foundry downloads the latest release and adds RSReforged to your module list.
+The package id is `rsreforged`, the same as upstream, so install one or the other.
 
-## Features
-
-### Quick rolls
-
-Skill checks, ability checks, saving throws, tool checks, and item activities all roll straight to chat without the standard dnd5e dialog. Each category can be toggled independently in the module settings, or disable everything in one place with the *Use Vanilla Rolls with RSReforged Styling* master switch at the top — when that's on, dnd5e's normal roll dialogs are used everywhere and the per-category toggles are ignored. Hold the dnd5e *Skip Dialog* modifier (Shift by default) to invert RSReforged's quick-roll default and use the normal dnd5e dialog for one roll.
-
-For weapons with the Ammunition property, quick rolls prefer the first available equipped ammunition item. When no ammunition is equipped, RSReforged reuses the last usable ammunition used for that weapon's attack, then falls back to the first available option. Hold the **Skip Dialog** modifier (Shift by default) to choose a different ammunition type for one attack; dnd5e records it as the last-used option.
-
-Hold the *Advantage* or *Disadvantage* modifier while clicking to roll in that mode, including any extra dice from features like Elven Accuracy. The chat card highlights the kept die.
-
-### Always roll two dice
-
-A setting shows two d20s on every roll (three with Elven Accuracy), even without advantage or disadvantage. Hold a modifier to designate which die is kept.
-
-### Edit rolls after they land
-
-Upgrade a quick roll after it's been made: turn a flat roll into advantage or disadvantage, promote a hit to a critical, or change which die is kept. The chat card updates in place and shows the new state next to the old.
-
-### Apply damage per target
-
-Each damage and healing field in a quick-roll chat card has its own apply button (overlay on hover, or always-on per setting). Apply each damage type to selected or targeted tokens independently. Useful for "this 1d8 is fire and that 1d4 is cold and only one of them resists."
-
-### Add a bonus after the roll
-
-A `+` icon on every rolled card opens a dialog to add a bonus to the check, save, attack, or damage after it's rolled. You can type a **custom formula** (e.g. `1d4`, `+2`, `1d6 + @prof`), or pick a **pre-defined bonus** you've registered on an Active Effect.
-
-See [Setting up pre-defined bonuses](#setting-up-pre-defined-bonuses) below for how to register them.
-
-### Clickable dice in chat
-
-With this feature enabled, you can click any die shown in a chat tooltip:
-
-- **Left-click** a die in a roll you made to reroll that die in place. The chat card recalculates. If Dice So Nice is installed, the rerolled die is animated in 3D; otherwise the configured dice sound plays as a fallback. A public chat message logs the reroll (e.g. *"Alice rerolled a d20: 7 → 14"*), respecting the current roll mode.
-- **Right-click** a die (GM only, when *Allow GM Dice Fudging* is on) to set its value via a prompt. Useful for narrative course-correction. Fudging is intentionally silent.
-
-Settings that gate the feature:
-
-- **Enable Interactive Dice (Master Switch)** — kill switch for the whole feature
-- **Allow Players to Reroll Their Own Dice** — players can left-click their own dice
-- **Allow GM Dice Fudging** — GM gets the right-click "set value" option
-- **Reroll Sound & Dice So Nice** — play sound + animate rerolled die in 3D when Dice So Nice is installed
-- **Log Rerolls to Chat** — post a public chat message announcing each reroll
-
-## Configuration
-
-All settings live under *Configure Settings → Module Settings → RSReforged*. The ones worth knowing:
-
-- **Quick Roll for {Skills, Abilities, Tools, Activities}** — toggle each category independently
-- **Always Roll Multiple Dice** — show two d20s on every roll, not just advantage or disadvantage
-- **Hide NPC Roll Results** — for actors players don't own, hide modified totals on d20 rolls so only the natural die shows; choose Off, NPC attacks only, or all NPC d20 rolls (damage always visible)
-- **Hidden Roll Style** — when a roll is hidden (see above), choose whether to mask the total and show the natural d20 (**Hide Total**, default) or show the final total while masking the die value and modifiers (**Hide Breakdown**)
-- **Manual Damage Mode** — require an explicit click to roll damage, instead of auto-rolling on hit
-- **Damage Apply UI** — choose dnd5e's per-target tray or RSReforged's quick apply buttons
-- **RSReforged Apply Button Targets** — selected vs. targeted tokens, with priority modes for the RSReforged quick-button UI
-- **Confirm Retroactive {Advantage, Crits}** — gate retroactive edits behind a confirm dialog
-
-## Setting up pre-defined bonuses
-
-This is optional. Use it when you want Bless, Bardic Inspiration, Guidance, and similar to appear as one-click options in the Bonus Manager instead of typing the formula each time.
-
-Add an Active Effect change on the actor (or on an item that grants the effect) with:
-
-| Field | Value |
-|---|---|
-| Attribute Key | `flags.rsreforged.bonus` |
-| Change Mode | *Custom* |
-| Effect Value | A semicolon-delimited string (see below) |
-
-Effect Value format:
-
-```
-<formula>; type:<roll-type[,roll-type...]>; random:<type,type,...>; consume:<origin|item-id|item-name>; once
-```
-
-| Token | Meaning |
-|---|---|
-| `<formula>` | A Roll formula. May reference `@actor.system.*` etc. Omit it alongside a damage-type token to add `0` of that type — a pure type tag. |
-| `type:check` | Ability, skill, tool, and initiative checks |
-| `type:save` | Saves, including death saves and concentration |
-| `type:attack`, `type:damage`, `type:initiative` | That roll type only |
-| `type:any` (default) | Any roll type |
-| `<damageType>` | A bare dnd5e damage type (e.g. `fire`). Fixes the bonus to that type on damage rolls — no dialog, no randomness. |
-| `random:<type,type,...>` | On a damage roll, pick one of the listed types at random each time the bonus is applied. |
-| `choice:<type,type,...>` | On a damage roll, show a dropdown of the listed types in the bonus dialog so the player picks. |
-| `consume:origin` | Consume one charge of the originating item when applied |
-| `consume:<id-or-name>` | Consume one charge of a different item |
-| `once` | Delete the effect after a single use |
-
-Damage-type tokens accept dnd5e damage type keys (`acid`, `cold`, `fire`, `force`, `lightning`, `necrotic`, `poison`, `psychic`, `radiant`, `thunder`, `bludgeoning`, `piercing`, `slashing`). They apply only to damage rolls; on any other roll type the bonus is added untyped. (For example, `2d6; type:check, damage; lightning` adds 2d6 to a skill check, or 2d6 lightning damage to a damage roll.)
-
-Examples:
-
-- **Bless:** `1d4; type:check, save, attack` (no consumption, since Bless is a duration spell)
-- **Bardic Inspiration (d8):** `1d8; type:check, save, attack; consume:origin; once`
-- **Guidance:** `1d4; type:check; consume:origin; once`
-- **Fixed type — extra necrotic:** `1d6; type:damage; necrotic` (always adds 1d6 necrotic to damage rolls)
-- **Player choice — elemental weapon:** `1d8; type:damage; choice:acid, cold, fire, lightning, thunder` (dropdown in the bonus dialog; the player picks the type)
-- **Random type — wild surge:** `1d6; type:damage; random:fire, cold, lightning` (a different one of the three each time it's applied)
-- **Type-only tag (no dice):** `type:damage; fire` (adds `0` fire — tags the roll as fire damage without changing the total)
-
-## Known issues
-
-- **Typed damage splitting** (separate visual chips for `1d8[fire] + 1d4[cold]`) isn't in the current release. It was intended to ship when the fork started, but the implementation file was missing from the source PR. It may land in a future release.
-- See the [issue tracker](https://github.com/arrowedisgaming/RSReforged/issues) for everything else.
-
-## Integration API (for module authors)
-
-RSReforged emits a small set of public hooks so other modules can decorate its chat cards without racing Foundry's render lifecycle. Full reference, contract rules, and worked examples in [`docs/INTEGRATION.md`](https://github.com/arrowedisgaming/RSReforged/blob/master/docs/INTEGRATION.md).
-
-| Hook | When it fires | Args |
+| Vanilla+ card | Roll breakdown | Classic card with the wide save button |
 |---|---|---|
-| `rsreforged.preRenderChatMessageContent` | Before RSR strips the dnd5e card | `(message, html, type)` |
-| `rsreforged.renderChatMessageContent` | After RSR finishes its DOM rewrite — primary decoration point | `(message, html, type)` |
-| `rsreforged.renderRoll` | After each attack / damage / formula section is inserted | `(message, html, type, sectionHtml)` |
-| `rsreforged.renderApplyDamageButtons` | After the damage-apply UI is wired up | `(message, html, buttonsHtml)` |
+| ![Vanilla+ attack card](assets/screenshots/attack-card.png) | ![Breakdown with Disadvantage, Advantage and Bonus](assets/screenshots/roll-breakdown.png) | ![Classic save card with the wide saving throw button](assets/screenshots/classic-save.png) |
 
-Three rules: hooks are **synchronous** (no awaiting), listeners must be **idempotent** (re-renders re-fire the chain), and `preRender` may fire without a matching `render` (RSR sometimes merges child rolls into a parent and deletes the child).
+---
 
-```js
-// Minimal example: annotate save buttons with a custom tooltip after every render.
-Hooks.on("rsreforged.renderChatMessageContent", (message, html, type) => {
-    html.find('button[data-action=rollSave]')
-        .attr('data-tooltip', myTooltipFor(message));
-});
-```
+## For the upstream author
 
-## Contributing
+Everything below is offered for you to take, in part or in full, or to ignore. It is one commit on top of your `release-6.0.0`:
 
-Issues and PRs welcome at [github.com/arrowedisgaming/RSReforged](https://github.com/arrowedisgaming/RSReforged). If a fix is also relevant upstream, consider opening it against [MangoFVTT/fvtt-ready-set-roll-5e](https://github.com/MangoFVTT/fvtt-ready-set-roll-5e) too. Keeping the codebases close benefits everyone.
+- **Patch:** [`docs/patches/card-style-vanilla-plus.patch`](docs/patches/card-style-vanilla-plus.patch), a `git format-patch` file. On a checkout of `release-6.0.0`: `git am card-style-vanilla-plus.patch`, then `npm test`.
+- **Size:** 10 files, +844 / −51. 322 of those lines are tests. Your suite plus the new tests: 440 passing.
+- **Not included in that patch:** anything under `src/gmc/`, this README, and this fork's `module.json` and workflows. Those are fork-only (see [GMC extras](#gmc-extras-fork-only)).
+- **About this repository's history:** `master` here is this fork's older dnd5e 6 port with the 6.2.0 tree committed on top, so a diff against your `master` is noisy. The patch file is the clean view. Everything in `src/utils/`, `src/module/`, `templates/`, `lang/`, `tests/` and `css/rsreforged.css` at 6.2.0 is byte-for-byte your 6.0.0 with that patch applied.
 
-## Credits
+### 1. Card Style setting
 
-RSReforged is a maintained fork of [Ready Set Roll for D&D5e](https://github.com/MangoFVTT/fvtt-ready-set-roll-5e) by [MangoFVTT](https://github.com/MangoFVTT), itself a rewrite of [Better Rolls for 5e](https://github.com/RedReign/FoundryVTT-BetterRolls5e) by [RedReign](https://github.com/RedReign). The fork started in early 2026 to keep the module working on Foundry v14 and dnd5e 5.3; the compatibility work came from [PR #619](https://github.com/MangoFVTT/fvtt-ready-set-roll-5e/pull/619) by [maxobremer](https://github.com/maxobremer). Huge thanks to all three.
+**What:** a world setting, `cardStyle`, registered first in `settings.js`. Choices: `classic` (default) and `vanilla`. `SettingsUtility.useVanillaCards` reads it. It only affects dnd5e 6 cards.
 
-For reference and diffing against the source the fork is based on, see the upstream [`release-3.5.0` tag](https://github.com/MangoFVTT/fvtt-ready-set-roll-5e/releases/tag/release-3.5.0).
+**Why:** some tables prefer dnd5e 6's own compact roll rows to the 4.x sections, but still want what RSReforged adds: one card per use, quick rolls, and the after-the-roll edits. A setting lets both looks live in one module without a second workflow. The default is `classic`, so nothing changes for existing users.
 
-## License
+### 2. Vanilla+ card (`src/utils/native-vanilla.js`, new, 206 lines)
 
-RSReforged is licensed under **GPL-3.0**, inherited from upstream RSR. Any derivative works must remain GPL-3.0. See [`LICENSE`](LICENSE) for the full text.
+| Attack | Damage breakdown | Save |
+|---|---|---|
+| ![Vanilla+ attack](assets/screenshots/attack-card.png) | ![Damage breakdown with Critical Hit and Bonus](assets/screenshots/damage-breakdown.png) | ![Vanilla+ save card with a summarised save](assets/screenshots/save-card.png) |
+
+**What it does**
+
+- For each native attack / damage / healing / formula child of a usage card it calls `child.renderHTML()` and **moves** every element except the `.chat-card` header into a wrapper that carries the child's `data-message-id` and `data-rsr-message-id`, exactly as your classic sections do. That wrapper goes where your sections go, in `.rsr-native-combined`. The fold-in, ordering, hiding of the originals, hiding of represented buttons, and the Dice So Nice reveal are all your existing code in `native-render.js`; only the section renderer is swapped.
+- Inside each `.roll-breakdown` it appends a row of buttons: **Disadvantage / Advantage** (normal d20 only), **Critical Hit** (damage that is not yet critical), **Bonus**. They call the same functions as your overlays (see 3).
+- The same buttons are added to standalone check and save cards that RSReforged rolled, and to the save / check lines dnd5e summarises on a usage card.
+- **Hide NPC Roll Results** is applied to the row (total or d20 + breakdown, by *Hidden Roll Style*), and the **Always Roll Multiple Dice** spare d20 is shown as a faded die beside the real one.
+- **Click-to-reroll and GM fudge** work: the dice in dnd5e's breakdown are stamped with `data-rsr-roll / -die / -result` so `reroll.js` acts on them unchanged.
+
+**Why it is built this way**
+
+- **RSReforged draws no roll in this style.** The markup is whatever dnd5e renders, so a dnd5e template change does not need a matching change here, and anything another module does to a native attack or damage message in `dnd5e.renderChatMessage` is already on the row when it is moved.
+- **No template paths and no private dnd5e APIs.** It depends on: `ChatMessage#renderHTML`; a `button.dice-roll` followed by its `.roll-breakdown`; `.chat-card` as the header to leave behind.
+- **Dice are stamped only when they can be verified.** dnd5e may list damage per roll or merged per type, so both layouts are computed (through `damageDieSources`, see 3) and each die's shown value is compared with the roll's. Any difference in count or value leaves that breakdown unstamped and therefore inert, rather than risk rerolling the wrong die.
+
+**Not in Vanilla+ (still Classic-only):** click-to-cycle damage types, and the RSReforged quick apply buttons (Vanilla+ always shows dnd5e's tray). After an edit the card redraws and the breakdown popover closes; Classic re-opens its breakdown, Vanilla+ does not yet.
+
+### 3. Small refactor in `native-card.js`
+
+**What:** the bodies of the two overlay click handlers are now exported functions, and the overlays call them:
+
+- `retroAdvantage(child, state, { flavor, event })`
+- `retroCritical(child, event)`
+- `canEditRolls(child)` (was `_canEdit`), `onEditClick(buttons, handler)` (wraps `_onOverlayClick`)
+- `damageDieSources(rolls, sources, aggregate)`: the die-to-roll mapping `_renderDamage` already built (display copies tagged with `options.rsrSource`, passed through `dnd5e.dice.aggregateDamageRolls`, read back with `_simplifyDamageRoll`), returned as data. `_renderDamage` now uses the same helper (`_damageParts`).
+
+**Why:** so both card styles run one implementation of each edit, including your confirmation settings, the "roll changed meanwhile" guard and the dice throw. No behaviour change is intended for Classic; your existing `native-card` tests pass unmodified.
+
+### 4. Wide saving throw button on Classic cards
+
+![Classic save card](assets/screenshots/classic-save.png)
+
+**What:** `addWideSaveButtons(message, content)` in `native-render.js`. For every `button[data-action="rollSave"]` on the usage card it adds one full-width button under the roll sections (or under the item card when nothing was rolled) and above the save results. The label is dnd5e's own (`DND5E.SavingThrowDC`, or `DND5E.SavePromptTitle` when `message.shouldDisplayChallenge` is false).
+
+**Why:** dnd5e 6 shows the save as a small shield among the card's action icons, which is easy to miss at the table; 4.x users know the wide button.
+
+**How it stays safe:** the wide button has no `data-action`. Its click is forwarded, with Shift / Ctrl / Alt / Meta, to dnd5e's own button, so the roll, targets, dialog rules and permissions are dnd5e's. dnd5e's icon stays where it is.
+
+### 5. Supporting changes
+
+| File | Change |
+|---|---|
+| `src/utils/settings.js` | `CARD_STYLES`, `SETTING_NAMES.CARD_STYLE`, registration, `useVanillaCards` |
+| `src/utils/native-render.js` | pick the section renderer by style; `rsr-vanilla-card` / `rsr-vanilla` classes; decorate summaries (Vanilla+) or add the wide save button (Classic); Vanilla+ branch in `renderNativeCheck` |
+| `css/rsreforged.css` | new rules for the wide button, the breakdown buttons, the faded spare d20 and the section divider. Two existing selectors gained `:not(.rsr-vanilla-card)` so the left-aligned description and pills stay a Classic-only adjustment |
+| `lang/en.json` | `settings.cardStyle.*`, `choices.cardStyle.*`, `chat.buttons.bonus`, `chat.buttons.bonusShort`, `chat.ignoredDie` |
+| `tests/native-vanilla.test.mjs`, `tests/native-card-style.test.mjs`, `tests/native-card.test.mjs` | 23 new tests |
+| `CHANGELOG.md` | entry under *Unreleased* |
+
+### What was checked
+
+- `npm test`: 440 passing.
+- Live on Foundry 14.368 / dnd5e 6.0.5, as GM: quick attack and save-with-damage cards in both styles; retroactive advantage on attacks, standalone checks and summarised saves; critical promotion; bonus on a check and on damage; click-to-reroll on damage and on a summarised save; GM fudge; the wide save button rolling for a target and surviving the card redraw; dnd5e's tray applying full, half and temp HP from a Vanilla+ card.
+- **Not checked:** a player's view of Hide NPC Roll Results in Vanilla+ (unit-tested only), Dice So Nice, healing and utility-formula activities, non-English clients, a detached chat window.
+
+### Taking only part of it
+
+- **Only the wide save button:** `addWideSaveButtons` and its one call in `renderNativeMessage`, the `.rsr-wide-*` CSS, and the tests in `native-card-style.test.mjs` that mention it. It does not need the setting; drop the `vanilla` condition around the call.
+- **Only Vanilla+:** everything except `addWideSaveButtons` and its CSS.
+- **Only the refactor:** the `native-card.js` hunk stands alone.
+
+---
+
+## GMC extras (fork only)
+
+Three additions that are not part of the commit above. They live in `src/gmc/`, are loaded as a separate `esmodules` entry, import nothing from `src/utils/`, and each is wrapped so a failure cannot stop RSReforged.
+
+| Extra | What it does | File |
+|---|---|---|
+| Damage tray facelift | On dnd5e's `<damage-application>` tray: a heart for "apply as healing", a ×2 burst, tooltips, and an hourglass **temp HP mode** that previews and applies the total as temporary hit points | `src/gmc/tray.js` |
+| Hide Private Rolls Completely | GM, blind and self rolls are hidden entirely from players who may not see them (no "???" card, no summary line). The GM gets an eye on the summary line to reveal the roll, and to make it private again | `src/gmc/privacy.js` |
+| Fast-Forward Rolls | Rolls with no dialog choice of their own (card buttons, save requests, hit dice) skip the configuration dialog unless Shift is held | `src/gmc/extras.js` |
+
+`tray.js` wraps prototype methods of dnd5e's tray element, which is the kind of dependency upstream avoids; that is the main reason these are kept apart.
+
+Their strings are merged in on `i18nInit` from `src/gmc/strings.js`, and their styles are `css/gmc-extras.css`, so upstream's `lang/` and `css/rsreforged.css` stay upstream's files.
+
+## Settings added by this fork
+
+- **Card Style** (world): Classic RSReforged, or Vanilla+ (dnd5e compact rows).
+- **Fast-Forward Rolls (Shift to Configure)** (client) and **Hide Private Rolls Completely** (world), from the GMC extras.
+
+All of upstream's settings are unchanged. In particular, a Shift-click still means "use dnd5e's normal dialogs and messages": the roll is not quick-rolled and is not folded onto the card, in either style.
+
+## Updating this fork to a new upstream release
+
+1. Check out the new upstream tag and `git am docs/patches/card-style-vanilla-plus.patch`. Conflicts, if any, will be in `native-card.js` and `native-render.js`.
+2. `npm ci && npm test`.
+3. Keep `src/gmc/`, `css/gmc-extras.css`, and the third `esmodules` and second `styles` entries in `module.json`.
+
+## Credits and license
+
+RSReforged is maintained by [arrowedisgaming](https://github.com/arrowedisgaming); it is a fork of Ready Set Roll for D&D5e by MangoFVTT, itself a rewrite of Better Rolls for 5e by RedReign. See upstream's [README](https://github.com/arrowedisgaming/RSReforged#readme) for the full feature list, and [`CHANGELOG.md`](CHANGELOG.md) for history. Licensed under GPL-3.0, see [`LICENSE`](LICENSE).

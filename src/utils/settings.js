@@ -25,6 +25,7 @@ export const SETTING_NAMES = {
     DICE_REROLL_ENABLED: "enableDiceReroll",
     AGGREGATE_DAMAGE: "aggregateDamage",
     APPLY_DAMAGE_TO: "applyDamageTo",
+    ALWAYS_ROLL_MULTIROLL: "alwaysRollMulti",
     CONFIRM_RETRO_ADV: "confirmRetroAdv",
     CONFIRM_RETRO_CRIT: "confirmRetroCrit",
 
@@ -35,18 +36,20 @@ export const SETTING_NAMES = {
     REROLL_SOUND_ENABLED: "rerollSoundEnabled",
     REROLL_LOG_CHAT: "rerollLogChat",
 
-    // GMC fork (5.0.0)
-    FAST_FORWARD_ROLLS: "fastForwardRolls",
-    HIDE_PRIVATE_ROLLS: "hidePrivateRolls",
-    DEBUG: "debug",
-    MIGRATION_VERSION: "forkMigration",
-    CLIENT_MIGRATION_VERSION: "forkClientMigration"
+    // dnd5e 6 card style
+    CARD_STYLE: "cardStyle"
 }
 
 /**
- * Current fork migration marker (see HooksUtility._migrateForkSettings).
+ * How a quick roll's results are drawn on its usage card (dnd5e 6 only).
+ * The rolls, the messages that hold them, and every edit are the same in both.
  */
-export const FORK_MIGRATION_VERSION = "5.0.0";
+export const CARD_STYLES = {
+    // RSReforged's boxed Attack / Damage / Formula sections with the big total.
+    CLASSIC: "classic",
+    // dnd5e 6's own compact roll rows, folded onto the usage card.
+    VANILLA: "vanilla"
+}
 
 export const DAMAGE_APPLY_MODES = {
     DND5E: "dnd5e",
@@ -88,30 +91,28 @@ export class SettingsUtility {
     static registerSettings() {
         LogUtility.log("Registering module settings");
 
-        // ROLL DIALOG BEHAVIOUR (GMC fork)
-        game.settings.register(MODULE_NAME, SETTING_NAMES.FAST_FORWARD_ROLLS, {
-            name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.FAST_FORWARD_ROLLS}.name`),
-            hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.FAST_FORWARD_ROLLS}.hint`),
-            scope: "client",
+        // CARD STYLE (dnd5e 6)
+        game.settings.register(MODULE_NAME, SETTING_NAMES.CARD_STYLE, {
+            name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.CARD_STYLE}.name`),
+            hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.CARD_STYLE}.hint`),
+            scope: "world",
             config: true,
-            type: Boolean,
-            default: true
+            type: String,
+            default: CARD_STYLES.CLASSIC,
+            requiresReload: true,
+            choices: {
+                [CARD_STYLES.CLASSIC]: CoreUtility.localize(`${MODULE_SHORT}.choices.cardStyle.${CARD_STYLES.CLASSIC}`),
+                [CARD_STYLES.VANILLA]: CoreUtility.localize(`${MODULE_SHORT}.choices.cardStyle.${CARD_STYLES.VANILLA}`)
+            }
         });
 
         // QUICK ROLL SETTINGS
-        // QUICK_VANILLA_ENABLED is retired in the GMC fork (Shift-click now opens the dnd5e
-        // dialogs while keeping the one-card result). It stays registered, hidden, so stored
-        // values do not error; RSR ignores it.
-        game.settings.register(MODULE_NAME, SETTING_NAMES.QUICK_VANILLA_ENABLED, {
-            name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.QUICK_VANILLA_ENABLED}.name`),
-            hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.QUICK_VANILLA_ENABLED}.hint`),
-            scope: "world",
-            config: false,
-            type: Boolean,
-            default: false
-        });
-
-        const quickRollOptions = [
+        // QUICK_VANILLA_ENABLED is registered first so it sits at the top of the
+        // settings UI: when it is on, RSReforged falls back to dnd5e's normal roll
+        // dialogs across the board, which makes it the master switch that gates the
+        // per-category toggles below.
+		const quickRollOptions = [
+            { name: SETTING_NAMES.QUICK_VANILLA_ENABLED, default: false },
             { name: SETTING_NAMES.QUICK_ABILITY_ENABLED, default: true },
             { name: SETTING_NAMES.QUICK_SKILL_ENABLED, default: true },
             { name: SETTING_NAMES.QUICK_TOOL_ENABLED, default: true },
@@ -130,15 +131,19 @@ export class SettingsUtility {
         });
 
         // ADDITIONAL ROLL SETTINGS
-        // Multiroll is the default in the GMC fork; existing clients are migrated to true once
-        // (HooksUtility._migrateForkSettings) and may switch it off again afterwards.
-        game.settings.register(MODULE_NAME, SETTING_NAMES.ALWAYS_ROLL_MULTIROLL, {
-            name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.ALWAYS_ROLL_MULTIROLL}.name`),
-            hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.ALWAYS_ROLL_MULTIROLL}.hint`),
-            scope: "client",
-            config: true,
-            type: Boolean,
-            default: true
+        const extraRollOptions = [
+            { name: SETTING_NAMES.ALWAYS_ROLL_MULTIROLL, default: false, scope: "client" }
+        ];
+
+        extraRollOptions.forEach(option => {
+            game.settings.register(MODULE_NAME, option.name, {
+                name: CoreUtility.localize(`${MODULE_SHORT}.settings.${option.name}.name`),
+                hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${option.name}.hint`),
+                scope: option.scope,
+                config: true,
+                type: Boolean,
+                default: option.default,
+            });
         });
 
         game.settings.register(MODULE_NAME, SETTING_NAMES.MANUAL_DAMAGE_MODE, {
@@ -155,46 +160,42 @@ export class SettingsUtility {
             }
         });
 
-        // RETIRED (GMC fork): all damage is applied through dnd5e's native <damage-application>
-        // tray now (with RSR's facelift, see tray.js). Kept registered and hidden so stored
-        // world values load; the one-shot migration rewrites "rsr" to "dnd5e".
         game.settings.register(MODULE_NAME, SETTING_NAMES.DAMAGE_APPLY_MODE, {
             name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.DAMAGE_APPLY_MODE}.name`),
             hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.DAMAGE_APPLY_MODE}.hint`),
             scope: "world",
-            config: false,
+            config: true,
             type: String,
-            default: DAMAGE_APPLY_MODES.DND5E,
+            default: DAMAGE_APPLY_MODES.RSR,
+            requiresReload: true,
             choices: {
                 [DAMAGE_APPLY_MODES.DND5E]: CoreUtility.localize(`${MODULE_SHORT}.choices.damageApplyMode.${DAMAGE_APPLY_MODES.DND5E}`),
                 [DAMAGE_APPLY_MODES.RSR]: CoreUtility.localize(`${MODULE_SHORT}.choices.damageApplyMode.${DAMAGE_APPLY_MODES.RSR}`)
             }
         });
 
-        const retiredWorldBooleans = [
-            { name: SETTING_NAMES.DAMAGE_BUTTONS_ENABLED, default: true },
-            { name: SETTING_NAMES.ALWAYS_SHOW_BUTTONS, default: true }
-        ];
-        retiredWorldBooleans.forEach(option => {
-            game.settings.register(MODULE_NAME, option.name, {
-                name: CoreUtility.localize(`${MODULE_SHORT}.settings.${option.name}.name`),
-                hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${option.name}.hint`),
-                scope: "world",
-                config: false,
-                type: Boolean,
-                default: option.default
-            });
+        game.settings.register(MODULE_NAME, SETTING_NAMES.DAMAGE_BUTTONS_ENABLED, {
+            // Preserve the old world setting key so existing worlds do not lose stored data.
+            // New behavior is controlled by DAMAGE_APPLY_MODE.
+            name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.DAMAGE_BUTTONS_ENABLED}.name`),
+            hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.DAMAGE_BUTTONS_ENABLED}.hint`),
+            scope: "world",
+            config: false,
+            type: Boolean,
+            default: true,
+            requiresReload: true
         });
 
         // CHAT CARD OPTIONS
         const chatCardOptions = [
-            { name: SETTING_NAMES.AGGREGATE_DAMAGE, default: false, requiresReload: true },
+            { name: SETTING_NAMES.AGGREGATE_DAMAGE, default: false },
             { name: SETTING_NAMES.D20_ICONS_ENABLED, default: true },
+            //{ name: SETTING_NAMES.DICE_REROLL_ENABLED, default: true },
             { name: SETTING_NAMES.OVERLAY_BUTTONS_ENABLED, default: true },
+            { name: SETTING_NAMES.ALWAYS_SHOW_BUTTONS, default: true },
             { name: SETTING_NAMES.CONFIRM_RETRO_ADV, default: false },
             { name: SETTING_NAMES.CONFIRM_RETRO_CRIT, default: false },
-            { name: SETTING_NAMES.HIDE_PRIVATE_ROLLS, default: true }
-        ];
+        ]        
 
         chatCardOptions.forEach(option => {
             game.settings.register(MODULE_NAME, option.name, {
@@ -204,8 +205,7 @@ export class SettingsUtility {
                 config: true,
                 type: Boolean,
                 default: option.default,
-                requiresReload: option.requiresReload ?? false,
-                onChange: () => ui.chat?.render?.()
+                requiresReload: true
             });
         });
 
@@ -216,7 +216,7 @@ export class SettingsUtility {
             config: true,
             type: String,
             default: HIDE_NPC_ROLL_MODES.NONE,
-            onChange: () => ui.chat?.render?.(),
+            requiresReload: true,
             choices: {
                 [HIDE_NPC_ROLL_MODES.NONE]: CoreUtility.localize(`${MODULE_SHORT}.choices.hideNpcRollMode.${HIDE_NPC_ROLL_MODES.NONE}`),
                 [HIDE_NPC_ROLL_MODES.ATTACKS]: CoreUtility.localize(`${MODULE_SHORT}.choices.hideNpcRollMode.${HIDE_NPC_ROLL_MODES.ATTACKS}`),
@@ -231,7 +231,7 @@ export class SettingsUtility {
             config: true,
             type: String,
             default: HIDE_NPC_ROLL_STYLES.TOTAL,
-            onChange: () => ui.chat?.render?.(),
+            requiresReload: true,
             choices: {
                 [HIDE_NPC_ROLL_STYLES.TOTAL]: CoreUtility.localize(`${MODULE_SHORT}.choices.hideNpcRollStyle.${HIDE_NPC_ROLL_STYLES.TOTAL}`),
                 [HIDE_NPC_ROLL_STYLES.BREAKDOWN]: CoreUtility.localize(`${MODULE_SHORT}.choices.hideNpcRollStyle.${HIDE_NPC_ROLL_STYLES.BREAKDOWN}`)
@@ -254,15 +254,14 @@ export class SettingsUtility {
             requiresReload: false
         });
         
-        // RETIRED (GMC fork): only RSR's classic apply buttons used this; the native tray has
-        // its own selected/targeted toggle.
         game.settings.register(MODULE_NAME, SETTING_NAMES.APPLY_DAMAGE_TO, {
             name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.APPLY_DAMAGE_TO}.name`),
             hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.APPLY_DAMAGE_TO}.hint`),
             scope: "world",
-            config: false,
+            config: true,
             type: Number,
             default: 0,
+            requiresReload: true,
             choices: {
                 0: CoreUtility.localize(`${MODULE_SHORT}.choices.apply.0`),
                 1: CoreUtility.localize(`${MODULE_SHORT}.choices.apply.1`),
@@ -290,23 +289,6 @@ export class SettingsUtility {
                 type: Boolean,
                 default: option.default
             });
-        });
-
-        game.settings.register(MODULE_NAME, SETTING_NAMES.DEBUG, {
-            name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.DEBUG}.name`),
-            hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.DEBUG}.hint`),
-            scope: "client",
-            config: true,
-            type: Boolean,
-            default: false
-        });
-
-        // Internal one-shot migration markers.
-        game.settings.register(MODULE_NAME, SETTING_NAMES.MIGRATION_VERSION, {
-            scope: "world", config: false, type: String, default: ""
-        });
-        game.settings.register(MODULE_NAME, SETTING_NAMES.CLIENT_MIGRATION_VERSION, {
-            scope: "client", config: false, type: String, default: ""
         });
     }
     
@@ -370,26 +352,32 @@ export class SettingsUtility {
         return SettingsUtility.getSettingValue(SETTING_NAMES.HIDE_NPC_ROLL_STYLE);
     }
 
-    /**
-     * Whether the fork's inverted dialog rule applies to a roll with the given dnd5e hook
-     * names (fast-forward by default, Shift = configure). Gated by the client setting and by
-     * the per-category quick roll toggles.
-     * @param {string[]} [hookNames]
-     * @returns {boolean}
-     */
-    static fastForwardAppliesTo(hookNames = []) {
-        if (!SettingsUtility.getSettingValue(SETTING_NAMES.FAST_FORWARD_ROLLS)) return false;
-        const has = name => hookNames.includes(name);
-        if (has("skill")) return SettingsUtility.getSettingValue(SETTING_NAMES.QUICK_SKILL_ENABLED);
-        if (has("tool")) return SettingsUtility.getSettingValue(SETTING_NAMES.QUICK_TOOL_ENABLED);
-        if (has("abilityCheck") || has("savingThrow") || has("deathSave") || has("concentration")
-            || has("initiativeDialog")) {
-            return SettingsUtility.getSettingValue(SETTING_NAMES.QUICK_ABILITY_ENABLED);
-        }
-        return SettingsUtility.getSettingValue(SETTING_NAMES.QUICK_ACTIVITY_ENABLED);
+    /** Whether dnd5e 6 cards use dnd5e's own compact roll rows (Vanilla+) instead of RSR sections. */
+    static get useVanillaCards() {
+        return SettingsUtility.getSettingValue(SETTING_NAMES.CARD_STYLE) === CARD_STYLES.VANILLA;
     }
 
-    static get debug() {
-        try { return !!SettingsUtility.getSettingValue(SETTING_NAMES.DEBUG); } catch (err) { return false; }
+    static get _useRsrDamageApplyButtons() {
+        return SettingsUtility.getSettingValue(SETTING_NAMES.DAMAGE_APPLY_MODE) === DAMAGE_APPLY_MODES.RSR;
+    }
+    
+    static get _applyDamageToTargeted() {
+        const applyDamageOption = SettingsUtility.getSettingValue(SETTING_NAMES.APPLY_DAMAGE_TO);
+        return applyDamageOption === 1 || applyDamageOption >= 2;
+    }
+
+    static get _applyDamageToSelected() {
+        const applyDamageOption = SettingsUtility.getSettingValue(SETTING_NAMES.APPLY_DAMAGE_TO);
+        return applyDamageOption === 0 || applyDamageOption >= 2;
+    }
+
+    static get _prioritiseDamageTargeted() {
+        const applyDamageOption = SettingsUtility.getSettingValue(SETTING_NAMES.APPLY_DAMAGE_TO);
+        return applyDamageOption === 4;
+    }
+
+    static  get _prioritiseDamageSelected() {
+        const applyDamageOption = SettingsUtility.getSettingValue(SETTING_NAMES.APPLY_DAMAGE_TO);
+        return applyDamageOption === 3;
     }
 }

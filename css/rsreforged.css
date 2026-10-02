@@ -1,181 +1,467 @@
-/* ==========================================
-   RSReforged (GMC fork) — dnd5e 6 compact style
-   ========================================== */
-
-.rsr-hide,
-.rsr-private-hidden {
-	display: none !important;
+.rsr-multiroll {
+    display: flex;
 }
 
-/* ---------- Multiroll: ignored d20s next to the kept one ---------- */
-
-.chat-log .message.compact button.dice-roll .d20die.rsr-d20die-alt,
-.chat-popout .message.compact button.dice-roll .d20die.rsr-d20die-alt,
-#chat-notifications .message.compact button.dice-roll .d20die.rsr-d20die-alt {
-	inset-inline-end: calc(8px + var(--rsr-alt-index, 1) * 22px);
-	opacity: 0.4;
-	filter: grayscale(1);
+.rsr-multiroll .dice-total.ignored {
+	opacity: .4;
+	border: 1px solid #888888;
 }
 
-.chat-log .message.compact button.dice-roll .d20die.rsr-d20die-alt > i,
-.chat-popout .message.compact button.dice-roll .d20die.rsr-d20die-alt > i,
-#chat-notifications .message.compact button.dice-roll .d20die.rsr-d20die-alt > i {
-	color: var(--dnd5e-chat-color-die);
-}
-
-/* ---------- Action row inside a roll's breakdown popover ---------- */
-
-.roll-breakdown .rsr-roll-actions {
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: center;
-	gap: 4px;
-	padding: 4px 6px;
-	border-block-start: 1px dashed var(--dnd5e-color-blue-gray-3, #888);
-}
-
-.roll-breakdown .rsr-roll-actions button.rsr-roll-action {
-	--button-size: 22px;
-	display: inline-flex;
-	align-items: center;
-	gap: 3px;
-	inline-size: auto;
-	min-inline-size: 26px;
-	block-size: 22px;
-	padding: 0 6px;
-	font-size: var(--font-size-11);
-	line-height: 1;
-	flex: 0 0 auto;
-}
-
-.roll-breakdown .rsr-roll-actions button.rsr-roll-action > i {
-	margin: 0;
-}
-
-.roll-breakdown .rsr-roll-actions button.rsr-roll-action[aria-pressed="true"] {
-	border-color: var(--dnd5e-color-gold, #9f9275);
-	box-shadow: 0 0 4px var(--dnd5e-color-gold, #9f9275);
+.rsr-multiroll .die-icon {
+	background-image: url(../../../icons/svg/d20-grey.svg);
+	width: 22px;
+	line-height: 22px;
+	background-size: 22px;
+	background-repeat: no-repeat;
+	float: left;
 	font-weight: bold;
+	font-size: 13px;
+	text-align: center;
+	opacity: 0.95;
+
+	position: absolute;
+	top: 50%;
+	right: 5px;
+	transform: translate(0, -50%);
 }
 
-/* ---------- Damage type cycling (issue #27) ---------- */
+.rsr-multiroll .success .die-icon,
+.rsr-multiroll .critical .die-icon {
+	filter: sepia(0.5) hue-rotate(60deg);
+}
 
-.roll-breakdown .rsr-damage-type-toggle .total .label,
-.roll-breakdown .rsr-damage-type-toggle .total img {
+.rsr-multiroll .failure .die-icon,
+.rsr-multiroll .fumble .die-icon {
+	filter: sepia(0.5) hue-rotate(-60deg);
+}
+
+.dice-result .rsr-multiroll .dice-total::before,
+.dice-result .rsr-multiroll .dice-total::after {
+	display: none;
+}
+
+.rsr-header {
+	margin-bottom: 0.25rem;
+}
+
+.rsr-supplement {
+	font-size: var(--font-size-11);
+	color: var(--color-text-dark-5);
+	margin: 0.25rem 0 0;
+	text-align: center;
+}
+
+.rsr-supplement > strong {
+	color: var(--color-text-dark-primary);
+	text-transform: uppercase;
+	font-size: var(--font-size-10);
+}
+
+.rsr-title {
+	font-family: var(--dnd5e-font-roboto);
+	font-weight: bold;
+	font-size: var(--font-size-13);
+	text-transform: uppercase;
+	display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+	margin-bottom: 0.1rem;
+}
+
+.rsr-subtitle {
+	font-family: var(--dnd5e-font-roboto);
+	font-style: italic;
+	font-size: var(--font-size-12);
+	display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.rsr-context {
+	font-family: var(--dnd5e-font-roboto);
+    font-size: var(--font-size-11);
+    color: var(--color-text-dark-5);
+	text-align: center;
+	border: 1px solid var(--color-border-light-1);
+	border-radius: 3px;
+	background: var(--dnd5e-background-10);
+	padding: 0.125rem;
+	margin-top: 0.125rem;
+	margin-bottom: 0.125rem;
+}
+
+.rsr-damage .dice-tooltip .tooltip-part {
+	position: relative;
+}
+
+/* Only parts with an alternative damage type get .rsr-damage-type-toggle, so a
+   fixed-type label stays inert while a changeable one reads as clickable. */
+.rsr-damage-type-toggle .total .label,
+.rsr-damage-type-toggle .total img {
 	cursor: pointer;
 }
 
-.roll-breakdown .rsr-damage-type-toggle .total .label:hover {
-	text-shadow: 0 0 6px var(--color-shadow-primary);
+.rsr-damage-type-toggle .total .label:hover {
+	text-shadow: 0 0 10px var(--color-shadow-primary);
 }
 
-.roll-breakdown .rsr-damage-type-toggle .total img:hover {
+.rsr-damage-type-toggle .total img:hover {
 	filter: drop-shadow(0 0 4px var(--color-shadow-primary));
 }
 
-/* ---------- Interactive dice (reroll / fudge) ---------- */
-
-.dice-tooltip .dice-rolls .roll[data-rsr-path] {
-	cursor: pointer;
-	transition: transform 0.15s;
-	position: relative;
-	pointer-events: auto;
-}
-
-.dice-tooltip .dice-rolls .roll[data-rsr-path]:hover {
-	text-shadow: 0 0 5px red;
-	transform: scale(1.2);
-	z-index: 100;
-	font-weight: bold;
-}
-
-/* ---------- Native damage tray facelift ---------- */
-
-damage-application .damage-multipliers .multiplier-button.rsr-mult-double {
-	position: relative;
-}
-
-damage-application .damage-multipliers .multiplier-button.rsr-mult-double > .rsr-mult-bg {
-	position: absolute;
-	inset: 0;
+.rsr-damage-buttons,
+.rsr-damage-buttons-xl {
+	text-align: right!important;
 	display: flex;
-	align-items: center;
+}
+
+.rsr-damage-buttons {
 	justify-content: center;
-	margin: 0;
-	inline-size: 100%;
-	font-size: var(--font-size-14);
-	opacity: 0.35;
-	pointer-events: none;
+	align-items: center;
+	padding-right: 8%;
 }
 
-damage-application .damage-multipliers .multiplier-button.rsr-mult-double > span {
-	position: relative;
-	z-index: 1;
-	font-weight: bold;
-}
-
-damage-application .damage-multipliers .multiplier-button.rsr-mult-healing > i {
-	margin: 0;
-	font-size: var(--font-size-11);
-}
-
-damage-application .damage-multipliers .rsr-temphp-button > i {
-	margin: 0;
-	font-size: var(--font-size-11);
-}
-
-/* ---------- Supplements on RSR cards ---------- */
-
-.chat-card p.supplement.rsr-supplement {
-	margin-block: 0.25rem 0;
-}
-
-/* ---------- GM reveal control ---------- */
-
-.message .message-metadata .rsr-reveal,
-.card-summary .rsr-reveal {
-	background: none;
-	border: none;
-	box-shadow: none;
+.rsr-damage-buttons button {
+	width: 22px;
+	height: 22px;
+	font-size: var(--font-size-12);
+	line-height: 22px;
 	padding: 0;
-	inline-size: auto;
-	block-size: auto;
-	color: var(--color-text-secondary, inherit);
+	gap: 0;
+}
+
+.rsr-damage-buttons-xl {
+	justify-content: space-between;
+	align-items: center;
+	padding-right: 0;
+	padding-top: 5px;
+}
+
+.rsr-damage-buttons-xl button {
+	width: 32px;
+	height: 26px;
+	font-size: var(--font-size-14);
+	line-height: 26px;
+	padding: 0;
+	gap: 0;
+}
+
+.rsr-damage-buttons button.rsr-wide,
+.rsr-damage-buttons-xl button.rsr-wide {
+	width: auto;
+	padding: 0 3px;
+}
+
+.rsr-damage-buttons button > i,
+.rsr-damage-buttons-xl button > i {
+	margin: 0;
+}
+
+.rsr-damage-buttons div {
+	height: 22px;
+	font-size: var(--font-size-14);
+	line-height: 18px;
+	padding: 0;
+	color: var(--color-text-light-4);
+	margin-left: 3px
+}
+
+.rsr-concentration-buttons {
+	margin-top: 3px;
+	line-height: 24px;
+}
+
+.rsr-indicator i:hover {
+	cursor: default;
+	text-shadow: none;
+}
+
+.rsr-overlay {
+	text-align: center!important;
+	flex-grow: 1;
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	padding: 0 30%;
+
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	z-index: 1;
+}
+
+.rsr-overlay div {
+	width: 24px;
+	height: 24px;
+	font-size: var(--font-size-14);
+	line-height: 26px;
+	padding: 0;
+	color: var(--color-text-dark-5);
+}
+
+.rsr-overlay i:hover {
 	cursor: pointer;
+	text-shadow: 0 0 10px var(--color-shadow-primary);
 }
 
-.message .message-metadata .rsr-reveal:hover,
-.card-summary .rsr-reveal:hover {
-	color: var(--dnd5e-color-gold, #ff6400);
-	text-shadow: 0 0 6px var(--color-shadow-primary);
+.rsr-overlay-header {
+	left: auto;
+	justify-content: right;
 }
 
-/* Revealed: the eye stays (click to make private again), faded out. */
-.message .message-metadata .rsr-reveal.rsr-revealed,
-.card-summary .rsr-reveal.rsr-revealed {
-	opacity: 0.35;
+.rsr-overlay-header button {
+	width: 30px;
+	height: 30px;
+	font-size: 14px;
 }
 
-.message .message-metadata .rsr-reveal.rsr-revealed:hover,
-.card-summary .rsr-reveal.rsr-revealed:hover {
-	opacity: 0.8;
+.dnd5e.item form .rsr-item {
+	padding: 8px 8px 0;
+	overflow-y: auto;
 }
 
-/* ---------- Retroactive bonus window ---------- */
+.dnd5e.sheet.item .rsr-item input[type="text"],
+.dnd5e.sheet.item .rsr-item input[type="number"],
+.dnd5e.sheet.item .rsr-item select {
+	border: 1px solid #7a7971;
+	background: rgba(0, 0, 0, 0.05);
+}
 
+.dnd5e.sheet.item .rsr-item label.checkbox {
+		display: inline-table;
+		padding: 0px 8px;
+}
+
+.rsr-options-subsection {
+	align-items: center;
+    padding: 0 2px;
+	border-bottom: 0px;
+}
+
+.rsr-options-title {
+	padding-left: 6px;
+	padding-top: 4px;
+	font-size: 12px;
+}
+
+.rsr-options-box {
+	background: rgba(0, 0, 0, 0.05);
+	border: 1px solid #999;
+	border-radius: 4px;
+	box-shadow: 0 0 2px #fff inset;
+	display: flex;
+	flex-flow: row wrap;
+	justify-content: space-between;
+}
+
+.rsr-options-spacer {
+	padding-bottom: 8px;
+}
+
+.rsr-hide {
+    display: none !important;
+}
+
+/* ==========================================
+   ADDON STYLES (Reroll, Bonuses, Splitting)
+   ========================================== */
+
+/* Reroll Styling - Target the structure directly */
+.dice-tooltip .dice-rolls .roll {
+    cursor: pointer !important; /* Changed from context-menu to pointer for better UX */
+    transition: all 0.2s;
+    position: relative;
+    /* CRITICAL FIX: Forces the die to receive mouse clicks */
+    pointer-events: auto !important; 
+}
+
+.dice-tooltip .dice-rolls .roll:hover {
+    text-shadow: 0 0 5px red; /* Updated to match your JS injection style */
+    transform: scale(1.2);    /* Updated scale to match your JS injection */
+    color: white;             /* Updated color to match your JS injection */
+    z-index: 100;
+    font-weight: bold;
+}
+
+.dice-tooltip .dice-rolls .roll.rsr-ready {
+    /* Marker class to ensure styles apply if needed specifically */
+}
+
+/* Retroactive Bonus Button in Headers */
+.rsr-addon-bonus-btn {
+    display: inline-block;
+    margin-left: 8px; /* Standardized margin */
+    cursor: pointer;
+    font-size: 0.9em; /* Matching JS injection */
+    opacity: 0.6;     /* Matching JS injection */
+    transition: opacity 0.2s;
+}
+
+.rsr-addon-bonus-btn:hover {
+    opacity: 1;
+    color: var(--color-text-hyperlink, #ff6400); /* Fallback color added */
+    text-shadow: 0 0 8px var(--color-shadow-highlight, #ff0000);
+}
+
+/* Application V2 Window Styles */
 .rsr-bonus-window .form-group {
-	transition: background 0.2s;
+    transition: background 0.2s;
 }
-
 .rsr-bonus-window .form-group:hover {
-	background: var(--color-bg-light-2) !important;
+    background: var(--color-bg-light-2) !important;
+}
+/* Ensure RSR titles have enough space for the addon buttons */
+.rsr-title {
+    position: relative;
+    padding-right: 25px; /* Creates a gutter for the button */
 }
 
-/* ---------- Attack / damage separation on usage cards ---------- */
-
-/* A divider (like an <hr>) between the attack rows and the first damage row. */
-.chat-message .message-content > section.icon-row.rsr-attack + section.icon-row.rsr-damage {
-	margin-block-start: 0.5rem;
-	padding-block-start: 0.5rem;
-	border-block-start: var(--dnd5e-border-dotted, 1px dotted var(--color-border-light-2, #9f9275));
+.rsr-addon-bonus-btn {
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
 }
+
+/* Versatile tag — appended to the dnd5e native damage card's formula row
+   when the V keybind was held during the roll. Mirrors the "(Versatile)"
+   suffix the RSR-mode damage card builds into its section title. */
+.rsr-versatile-tag {
+    margin-left: 0.3em;
+    font-style: italic;
+    opacity: 0.75;
+    font-size: 0.9em;
+}
+
+/* dnd5e 6: RSReforged sections rendered from the native roll messages folded
+   into their usage card. The standalone originals are hidden while represented. */
+.rsr-native-combined { display: flex; flex-direction: column; gap: 6px; }
+.rsr-native-combined[hidden] { display: none; }
+.rsr-native-combined-original,
+.rsr-native-hidden { display: none !important; }
+
+/* The 5.3 card's section box: dnd5e 6 styles only the compact roll button, so the
+   legacy section and big total are restated here. */
+.rsr-card {
+    background: var(--dnd5e-background-card, var(--dnd5e-color-card));
+    border: var(--dnd5e-border-gold, 1px solid var(--dnd5e-color-gold));
+    border-radius: 5px;
+    padding: 6px 8px 8px;
+}
+.rsr-card > .card-header {
+    display: block;
+    padding: 0;
+    border: none;
+    background: none;
+}
+.rsr-card .rsr-title dnd5e-icon { width: 18px; height: 18px; }
+.rsr-card .dice-roll .dice-result .dice-total {
+    font-size: var(--font-size-28);
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.rsr-card .rsr-multiroll { gap: 4px; }
+.rsr-card .rsr-multiroll .dice-total { flex: 1; }
+/* dnd5e 6's compact roll rule draws gold rules beside any wrapped total. */
+.rsr-card .dice-total > .total::before,
+.rsr-card .dice-total > .total::after { display: none; }
+.rsr-card .dice-formula { text-align: center; margin-bottom: 4px; }
+.rsr-card .supplement { margin: 4px 0 0; }
+.rsr-card damage-application { margin-top: 6px; }
+/* The 5.3 supplement colours assumed a light card; follow dnd5e 6's theme tokens. */
+.rsr-card .rsr-supplement { color: var(--color-text-secondary); }
+.rsr-card .rsr-supplement > strong { color: var(--color-text-primary); }
+
+/* dnd5e 6's compact card justifies the description, which stretches word gaps in a
+   narrow chat column, and pushes each row's pills to the far edge. RSR cards read
+   left to right, as the 4.x card did. */
+:is(.chat-log, .chat-popout) .message.compact.rsr-native-card:not(.rsr-vanilla-card) .card-description { text-align: start; }
+:is(.chat-log, .chat-popout) .message.compact.rsr-native-card:not(.rsr-vanilla-card) .icon-row > ul {
+    justify-content: start;
+    margin-inline-start: 0;
+}
+
+/* The 4.x retroactive overlays sit over a section's total and show on hover. */
+.rsr-card .rsr-overlay { display: none; }
+.rsr-card:hover .rsr-overlay { display: flex; }
+
+/* The header "+" on a dnd5e 6 check/save card: anchored to the end of the flavor line.
+   The global .rsr-addon-bonus-btn rule positions it for section titles, which would
+   otherwise send it to the nearest positioned ancestor far up the chat log. */
+.rsr-native-card .message-header { position: relative; }
+.rsr-native-card .message-header > .rsr-addon-bonus-btn {
+    position: absolute;
+    top: auto;
+    bottom: 3px;
+    right: 0;
+    transform: none;
+}
+.rsr-native-card .message-header:has(> .rsr-addon-bonus-btn) > .flavor-text { padding-inline-end: 22px; }
+
+/* Classic: the 4.x wide saving throw button, under the roll sections. */
+.rsr-wide-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-block: 6px 2px;
+}
+.rsr-wide-buttons > button.rsr-wide-save {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 28px;
+    padding: 2px 8px;
+    font-family: var(--dnd5e-font-roboto);
+    font-size: var(--font-size-12);
+    font-weight: bold;
+    line-height: 1.2;
+    white-space: normal;
+}
+.rsr-wide-buttons > button.rsr-wide-save > i { margin: 0; }
+
+/* Card Style "Vanilla+": dnd5e 6's own compact roll rows, folded onto the usage card.
+   The rows keep the system's styling; only the fold and RSR's additions are styled here. */
+.rsr-native-combined.rsr-vanilla { gap: 0; }
+.rsr-vanilla-section + .rsr-vanilla-section.rsr-vanilla-damage,
+.rsr-vanilla-section + .rsr-vanilla-section.rsr-vanilla-healing {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: var(--dnd5e-border-dotted, 1px dotted var(--color-border-light-2, #9f9275));
+}
+
+/* Always Roll Multiple Dice: the unused d20, faded, beside the one that counts. */
+.message.compact button.dice-roll .d20die.rsr-d20die-alt {
+    inset-inline-end: calc(8px + var(--rsr-alt-index, 1) * 22px);
+    opacity: 0.4;
+    filter: grayscale(1);
+}
+
+/* Advantage / critical / bonus buttons inside a roll's breakdown. */
+.roll-breakdown .rsr-roll-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px 6px;
+    border-top: 1px dashed var(--dnd5e-color-blue-gray-3, #888);
+}
+.roll-breakdown .rsr-roll-actions button.rsr-roll-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    width: auto;
+    min-width: 26px;
+    height: 22px;
+    padding: 0 6px;
+    font-size: var(--font-size-11);
+    line-height: 1;
+    flex: 0 0 auto;
+}
+.roll-breakdown .rsr-roll-actions button.rsr-roll-action > i { margin: 0; }

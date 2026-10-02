@@ -1,15 +1,9 @@
 import { MODULE_NAME, MODULE_SHORT, ROLL_TYPE } from "../module/const.js";
+import { usesNativeWorkflow } from "./dnd5e-compat.js";
 import { CoreUtility } from "./core.js";
-import { LogUtility } from "./log.js";
 import { SETTING_NAMES, SettingsUtility } from "./settings.js";
 
 export const KEYBIND_VERSATILE_TWO_HANDED = "versatileTwoHanded";
-
-/**
- * Activity types whose dnd5e follow-up rolls (Activity#_triggerSubsequentActions) RSR performs
- * itself onto the usage card.
- */
-const ROLLING_ACTIVITY_TYPES = new Set(["attack", "damage", "heal", "save", "utility"]);
 
 // ROLL_TYPE is defined in const.js (so settings.js can use it without an import
 // cycle) but re-exported here to preserve the established import path.
@@ -41,85 +35,46 @@ export const CRIT_TYPE = {
  */
 export class RollUtility {
     static processRoll(config, dialog, message) {
-        // dnd5e 6.0 builds check/save message data as `{ flavor, speaker, system, type }`
-        // (actor.mjs rollSkillTool / #rollD20Test) and no longer pre-seeds `data.flags`, so
-        // the namespace has to be created before RSR writes into it.
-        const flags = RollUtility.ensureMessageFlags(message);
-        if (!flags) return;
-        if (flags[MODULE_SHORT]?.processed) return;
+        message.data ??= {};
+        message.data.flags ??= {};
+        message.data.flags[MODULE_SHORT] ??= {};
 
-        const keys = RollUtility.readRollKeys(config.event);
+        if (message.data.flags[MODULE_SHORT]?.processed) return;
 
-        // GMC fork: fast-forward by default, the dnd5e "skip dialog" key (Shift) asks for the
-        // configuration dialog instead. An explicit `dialog.configure` from the caller (a macro,
-        // AC5e, Codex GMC, ...) always wins.
-        if (dialog.configure === undefined) dialog.configure = keys.normal || !!config.vanilla;
+        const keys = _readSkipDialogKeys(config.event);
+        const vanillaWorkflow = SettingsUtility.getSettingValue(SETTING_NAMES.QUICK_VANILLA_ENABLED);
+
+        dialog.configure = vanillaWorkflow || keys.normal || (config.vanilla ?? false);
+
+        if (usesNativeWorkflow()) {
+            for (const roll of config.rolls ?? []) {
+                roll.options ??= {};
+                if (keys.advantage) roll.options.advantage = true;
+                if (keys.disadvantage) roll.options.disadvantage = true;
+            }
+        }
 
         if (config.isConcentration) {
             config.flavor = `${CoreUtility.localize("DND5E.ToolPromptTitle", { tool: CoreUtility.localize("DND5E.Concentration") })}`;
         }
 
-        flags[MODULE_SHORT] = {
-            quickRoll: !dialog.configure,
+        Object.assign(message.data.flags[MODULE_SHORT], {
+            quickRoll: vanillaWorkflow || !dialog.configure,
             advantage: keys.advantage,
             disadvantage: keys.disadvantage,
             isConcentration: config.isConcentration,
             processed: true
-        };
-    }
-
-    /**
-     * Read the dnd5e roll modifier keys from an event, falling back to the live keyboard
-     * state when there is no event (hotbar macros, programmatic rolls from a click handler).
-     * `normal` is the dnd5e "Skip Dialog" binding (Shift by default), which this fork uses as
-     * the "show the configuration dialog" key.
-     * @param {Event} [event]
-     * @returns {{normal: boolean, advantage: boolean, disadvantage: boolean}}
-     */
-    static readRollKeys(event) {
-        if (event) return _readSkipDialogKeys(event);
-        const held = action => {
-            try {
-                return game.keybindings.get("dnd5e", action).some(b => game.keyboard.downKeys.has(b.key)
-                    && b.modifiers.every(m => game.keyboard.isModifierActive(m)));
-            } catch (err) {
-                return false;
-            }
-        };
-        return {
-            normal: held("skipDialogNormal"),
-            advantage: held("skipDialogAdvantage"),
-            disadvantage: held("skipDialogDisadvantage")
-        };
-    }
-
-    /**
-     * Whether a roll going through dnd5e's pipeline should show its configuration dialog under
-     * the fork's inverted rule (fast-forward unless the "Skip Dialog" key, Shift, is held).
-     * @param {Event} [event]
-     * @returns {boolean}
-     */
-    static wantsConfigure(event) {
-        return RollUtility.readRollKeys(event).normal;
+        });
     }
 
     static processActivity(activity, usageConfig, dialogConfig, messageConfig) {
-        // RSR always drives the follow-up rolls (attack, damage, healing, formula) itself and
-        // puts them on the usage card, in quick AND configure mode, so dnd5e must never
-        // trigger its own. Done FIRST, before anything below that could throw: dnd5e calls
-        // this hook with Hooks.call, which swallows listener errors and carries on with the
-        // activation, and a throw here would otherwise double every roll. Only for the
-        // activity types whose follow-ups RSR replaces: enchant (self), transform, etc. keep
-        // dnd5e's own subsequent actions.
-        if (ROLLING_ACTIVITY_TYPES.has(activity?.type)) usageConfig.subsequentActions = false;
+        messageConfig.data ??= {};
+        messageConfig.data.flags ??= {};
+        messageConfig.data.flags[MODULE_SHORT] ??= {};
 
-        const keys = RollUtility.readRollKeys(usageConfig.event);
+        const keys = _readSkipDialogKeys(usageConfig.event);
 
-        // Configure mode: Shift held (dnd5e "Skip Dialog" key, inverted in this fork), or
-        // Item#use was Shift-clicked on a multi-activity item (see HooksUtility item wrapper).
-        const configure = !!usageConfig.rsrConfigure || keys.normal || !!usageConfig.vanilla;
-        delete usageConfig.rsrConfigure;
-
+        const fastForward = !(keys.normal || (usageConfig.vanilla ?? false))
         // Preserve dnd5e's usage dialog for leveled spells so the player can
         // choose an upcast slot; cantrips skip it and use automatic scaling.
         // Note: dnd5e seeds usageConfig.scaling = 0 for any scalable activity
@@ -130,44 +85,57 @@ export class RollUtility {
         // Preserve OrderActivity dialogs because they populate costs/craft/trade
         // flags that dnd5e later expects during bastion order resolution.
         const isOrderActivity = activity?.type === "order";
-        // Summon / transform profiles and enchantment choices are picked in the usage dialog.
-        const choosesInDialog = ["summon", "transform", "enchant"].includes(activity?.type);
         // Smite-like features (Divine Smite et al.) need the dialog so the player can
-        // pick which slot to spend (a spellSlots-typed consumption target).
+        // pick which slot to spend. The reliable signal is a spellSlots-typed entry in
+        // the activity's consumption.targets — the bare consumption.spellSlot boolean
+        // can't be used because dnd5e's schema initialises it to `true` on every
+        // activity (dnd5e.mjs:11857) and only honors it when `requiresSpellSlot`
+        // returns true, which is false for non-spell items. Reading the targets list
+        // distinguishes "configured spell-slot consumer" from "scaffolded default".
+        // Spell-type activities (cantrips, leveled spells) use a different consumption
+        // path and are handled by isLeveledSpell above.
         const consumesSpellSlot = !!activity?.consumption?.targets?.some?.(t => t?.type === "spellSlots");
-        // Lay on Hands-style features: consumption.scaling.allowed means the player must
-        // choose how much of a resource to spend.
+        // Lay on Hands-style features: consumption.scaling.allowed is the flag dnd5e's
+        // own canScale/canConfigureScaling getters read (dnd5e.mjs) when an item's
+        // consumption is configured with "Allow Scaling" — it means the player must
+        // choose how much of a resource to spend. usageConfig.scaling can't be used
+        // here for the same reason noted above (dnd5e seeds it to 0 for every
+        // scalable activity, including ones where scaling isn't actually allowed).
         const hasConsumptionScaling = !!activity?.consumption?.scaling?.allowed;
         // Nonzero scaling means an upcast delta has already been seeded (e.g.
-        // drag-to-slot, macro). Preserve the dialog so the player can confirm or adjust.
+        // drag-to-slot, macro). Preserve the dialog so the player can confirm or
+        // adjust. scaling = 0 is dnd5e's noisy default for any scalable activity
+        // (cantrips included), so check strictly > 0.
         const hasUpcastScaling = (usageConfig.scaling ?? 0) > 0;
 
-        if (configure) {
-            // Shift-use: show dnd5e's usage dialog (when the activity has anything to configure).
-            dialogConfig.configure = true;
-        } else if (dialogConfig.configure !== false) {
-            dialogConfig.configure = isLeveledSpell
-                || isOrderActivity
-                || choosesInDialog
-                || consumesSpellSlot
-                || hasConsumptionScaling
-                || hasUpcastScaling;
-        }
+        dialogConfig.configure = isLeveledSpell
+            || isOrderActivity
+            || consumesSpellSlot
+            || hasConsumptionScaling
+            || hasUpcastScaling
+            || !fastForward;
 
         const flagSeed = {
-            quickRoll: true,
-            configure,
+            quickRoll: fastForward,
             advantage: keys.advantage,
             disadvantage: keys.disadvantage,
-            processed: false
+            processed: !fastForward
         };
 
         // Versatile shortcut. On a quick-roll click of a Versatile weapon, stamp
         // attackMode explicitly so dnd5e doesn't fall back to whatever it last
-        // persisted on the item. Holding the rsreforged.versatileTwoHanded key
-        // (KeyV by default) flips this roll to twoHanded; releasing it falls back to
-        // oneHanded. In configure mode dnd5e's attack dialog offers the attack mode.
-        if (!configure && activity?.item?.system?.isVersatile) {
+        // persisted on the item. dnd5e's rollAttack writes
+        // flags.dnd5e.last.<id>.attackMode after every roll, so without an
+        // explicit choice here a single V-held click would pin the weapon to
+        // twoHanded for all subsequent plain clicks. Holding the
+        // rsreforged.versatileTwoHanded key (KeyV by default, matches Midi-QOL's
+        // convention) flips this roll to twoHanded; releasing it falls back to
+        // oneHanded. Both modes also surface in the chat-card label via
+        // flags.rsreforged.versatile.
+        //
+        // No event = no keystroke. fastForward only — slow-roll uses dnd5e's own
+        // attack-mode dropdown which writes the same last.attackMode item flag.
+        if (fastForward && activity?.item?.system?.isVersatile) {
             const versatileHeld = !!usageConfig.event && CoreUtility.areKeysPressed(
                 usageConfig.event,
                 KEYBIND_VERSATILE_TWO_HANDED,
@@ -177,180 +145,130 @@ export class RollUtility {
             flagSeed.versatile = versatileHeld;
         }
 
-        // dnd5e 6.0 seeds activity usage message data as
-        // `{ system: { targets } }` (activity/mixin.mjs Activity#use) — no `flags` key.
-        const flags = RollUtility.ensureMessageFlags(messageConfig);
-        if (flags) flags[MODULE_SHORT] = flagSeed;
+        Object.assign(messageConfig.data.flags[MODULE_SHORT], flagSeed);
+
+        // Only suppress dnd5e's follow-up rolls when RSR will fire them itself
+        // on the quick-roll path. On a slow roll, leave subsequentActions alone
+        // so dnd5e's _triggerSubsequentActions can drive attack/damage/healing/
+        // formula rolls after the usage dialog closes.
+        if (fastForward) {
+            usageConfig.subsequentActions = false;
+        } else {
+            // RSR inverts dnd5e's skipDialog keybind: holding shift/ctrl/alt at
+            // activity click means "give me the full vanilla flow" (RSR shows the
+            // usage dialog, dnd5e then shows attack/damage/healing/formula dialogs).
+            // dnd5e's _triggerSubsequentActions forwards usageConfig.event into
+            // rollAttack/rollDamage, where applyKeybindings reads its modifier flags
+            // and interprets shift as "skip dialog" — the opposite of what the user
+            // just asked for. Strip the event so dnd5e's downstream keybinding
+            // checks see no modifier and default to showing their dialogs. All
+            // dnd5e call sites that read config.event after this point are
+            // null-safe (positional `event ? event.clientY - 80 : null`, `?.target`
+            // chains, `if (!event) return false` in areKeysPressed).
+            usageConfig.event = null;
+        }
     }
 
     /**
-     * Return the (created if missing) `data.flags` object of a dnd5e roll/usage message
-     * configuration. dnd5e 6.0 no longer pre-seeds `data.flags` anywhere, so every writer
-     * must go through this. Returns null for a missing configuration.
-     * @param {object} messageConfig A dnd5e BasicRollMessageConfiguration / ActivityMessageConfiguration.
-     * @returns {object|null}
+     * Checks if the roll needs to be forced to multi roll and returns the updated roll if needed.
+     * @param {Roll} roll The roll to check.
+     * @returns {Promise<Roll>} The version of the roll with multi roll enforced if needed, or the original roll otherwise.
      */
-    static ensureMessageFlags(messageConfig) {
-        if (!messageConfig || typeof messageConfig !== "object") return null;
-        messageConfig.data ??= {};
-        messageConfig.data.flags ??= {};
-        return messageConfig.data.flags;
-    }
+    static async ensureMultiRoll(roll, { message } = {}) {
+        if (!roll) {
+			LogUtility.logError(CoreUtility.localize(`${MODULE_SHORT}.messages.error.rollIsNullOrUndefined`));
+            return null;
+        }
 
-    /**
-     * Register the "kf" (keep first) die modifier used by RSR's multiroll. A normal-mode d20
-     * roll is evaluated as `2d20kf`: both dice are rolled (and animated) up-front so the roll
-     * can later be switched to advantage/disadvantage without rolling again, while the total
-     * keeps the FIRST die exactly like a single d20 would.
-     */
-    static registerDiceModifiers() {
-        const D20Die = CONFIG.Dice?.D20Die;
-        if (!D20Die) return;
-        if (!Object.hasOwn(D20Die, "MODIFIERS")) D20Die.MODIFIERS = { ...D20Die.MODIFIERS };
-        D20Die.MODIFIERS.kf = "rsrKeepFirst";
-        D20Die.prototype.rsrKeepFirst = function (modifier) {
-            const count = parseInt(String(modifier).match(/\d+/)?.[0] ?? "1") || 1;
-            let kept = 0;
-            for (const result of this.results) {
-                if (!result.active || result.rerolled) continue;
-                if (kept < count) kept += 1;
-                else {
-                    result.active = false;
-                    result.discarded = true;
-                }
+        if (!(roll.hasAdvantage || roll.hasDisadvantage)) {
+            const forcedDiceCount = roll.options.elvenAccuracy ? 3 : 2;
+            const d20BaseTerm = roll.terms.find(d => d.faces === 20);
+            const needed = forcedDiceCount - d20BaseTerm.number;
+            // Always Roll Multiple Dice already rolled, threw, and showed these with the
+            // roll (dnd5e 6); adopt them instead of rolling dice the table never saw.
+            // A stored die can carry its reroll history (e.g. Halfling Lucky's replaced 1), so
+            // take whole dice: results up to and including the needed number of final ones.
+            const saved = [];
+            let complete = 0;
+            for (const result of foundry.utils.deepClone(roll.options.rsreforgedAlternates ?? [])) {
+                if (complete >= needed) break;
+                saved.push(result);
+                if (!result.rerolled) complete++;
             }
-        };
-    }
+            delete roll.options.rsreforgedAlternates;
+            const d20Additional = { dice: [{ results: saved }] };
+            if (complete < needed) {
+                const fresh = await new Roll(`${needed - complete}d20${d20BaseTerm.modifiers.join('')}`).evaluate();
+                await RollUtility._showExtraDice(fresh, message);
+                d20Additional.dice[0].results.push(...fresh.dice[0].results);
+            }
 
-    /**
-     * dnd5e.postRollConfiguration: turn every normal-mode d20 roll into a two-die "keep first"
-     * roll so advantage/disadvantage can be applied retroactively (RSR multiroll).
-     * @param {Roll[]} rolls Constructed, unevaluated rolls.
-     * @param {object} config The roll process configuration.
-     */
-    static applyMultiRoll(rolls, config) {
-        if (!SettingsUtility.getSettingValue(SETTING_NAMES.ALWAYS_ROLL_MULTIROLL)) return;
-        const hookNames = config?.hookNames ?? [];
-        if (hookNames.includes("initiativeDialog") || hookNames.includes("initiative")) return;
-        const D20Roll = CONFIG.Dice.D20Roll;
-        for (const roll of rolls ?? []) {
-            if (!(roll instanceof D20Roll) || roll._evaluated || !roll.validD20Roll) continue;
-            const d20 = roll.d20;
-            if (d20.number !== 1) continue;
-            if (d20.modifiers.some(m => /^(adv|dis|kh|kl|kf|dh|dl)/i.test(m))) continue;
-            const mode = roll.options?.advantageMode;
-            if (mode !== undefined && mode !== D20Roll.ADV_MODE.NORMAL) continue;
-            d20.number = 2;
-            d20.modifiers.push("kf");
-            roll.options.rsrMulti = true;
-            roll.resetFormula();
-        }
-    }
+            // Keep the term's own class and options: dnd5e 6's D20Roll finds its d20
+            // through D20Die, which a plain Die would not satisfy.
+            const d20Forced = new d20BaseTerm.constructor({
+                ...(d20BaseTerm.toJSON?.() ?? {}),
+                number: forcedDiceCount,
+                faces: 20,
+                results: [...d20BaseTerm.results, ...d20Additional.dice[0].results],
+                modifiers: d20BaseTerm.modifiers
+            });
 
-    /**
-     * The leading d20 term of a d20 roll (live or deserialized), or null.
-     * @param {Roll} roll
-     * @returns {DiceTerm|null}
-     */
-    static getD20Term(roll) {
-        const term = roll?.terms?.[0];
-        return (term && term.faces === 20 && Array.isArray(term.results)) ? term : null;
-    }
+            roll.terms[roll.terms.indexOf(d20BaseTerm)] = d20Forced;
 
-    /**
-     * The d20 results that are candidates for selection (every die rolled, minus results that
-     * a reroll modifier such as Halfling Lucky replaced).
-     * @param {DiceTerm} d20
-     * @returns {object[]}
-     */
-    static getD20Candidates(d20) {
-        return (d20?.results ?? []).filter(r => !r.rerolled);
-    }
-
-    /**
-     * The current advantage mode of a d20 roll as "adv" | "dis" | "normal".
-     * @param {Roll} roll
-     * @returns {string}
-     */
-    static getD20Mode(roll) {
-        const ADV = CONFIG.Dice.D20Roll.ADV_MODE;
-        const mode = roll?.options?.advantageMode;
-        if (mode === ADV.ADVANTAGE) return "adv";
-        if (mode === ADV.DISADVANTAGE) return "dis";
-        const modifiers = RollUtility.getD20Term(roll)?.modifiers ?? [];
-        if (modifiers.some(m => /^(adv|kh)/i.test(m))) return "adv";
-        if (modifiers.some(m => /^(dis|kl)/i.test(m))) return "dis";
-        return "normal";
-    }
-
-    /**
-     * Re-select which of the already-rolled d20s counts, without rolling anything:
-     * normal keeps the first die, advantage the highest, disadvantage the lowest.
-     * Updates modifiers, advantage options and the cached total.
-     * @param {Roll} roll A d20 roll.
-     * @param {string} [mode] "adv" | "dis" | "normal" (defaults to the roll's current mode).
-     * @returns {boolean} Whether the roll was changed.
-     */
-    static applyD20Selection(roll, mode = RollUtility.getD20Mode(roll)) {
-        const d20 = RollUtility.getD20Term(roll);
-        if (!d20) return false;
-        const candidates = RollUtility.getD20Candidates(d20);
-        if (!candidates.length) return false;
-
-        let kept = candidates[0];
-        if (mode === "adv") kept = candidates.reduce((best, r) => (r.result > best.result ? r : best), candidates[0]);
-        else if (mode === "dis") kept = candidates.reduce((best, r) => (r.result < best.result ? r : best), candidates[0]);
-
-        for (const result of candidates) {
-            const keep = result === kept;
-            result.active = keep;
-            result.discarded = !keep;
+            RollUtility.resetRollGetters(roll);
         }
 
-        d20.modifiers = (d20.modifiers ?? []).filter(m => !/^(adv|dis|kh|kl|kf|dh|dl)\d*$/i.test(m) && !/^k\d*$/i.test(m));
-        if (candidates.length > 1) d20.modifiers.push(mode === "adv" ? "kh" : mode === "dis" ? "kl" : "kf");
-        d20.number = candidates.length;
-        if (d20.options?.pending?.advantage) delete d20.options.pending.advantage;
-
-        const ADV = CONFIG.Dice.D20Roll.ADV_MODE;
-        const advantageMode = mode === "adv" ? ADV.ADVANTAGE : mode === "dis" ? ADV.DISADVANTAGE : ADV.NORMAL;
-        roll.options ??= {};
-        roll.options.advantageMode = advantageMode;
-        roll.options.advantage = mode === "adv";
-        roll.options.disadvantage = mode === "dis";
-        d20.options ??= {};
-        d20.options.advantageMode = advantageMode;
-
-        RollUtility.resetRollGetters(roll);
-        return true;
+        return roll;
     }
 
     /**
-     * Retroactively switch a d20 roll to advantage / disadvantage / normal, using the second
-     * d20 already rolled by multiroll. Rolls the missing die (or dice, for Elven Accuracy) only
-     * when the roll was made with a single d20.
-     * @param {Roll} roll A d20 roll (mutated in place).
-     * @param {string} mode "adv" | "dis" | "normal".
-     * @returns {Promise<Roll|null>}
+     * Upgrades a roll into a multi roll with the given target state (advantage/disadvantage).
+     * @param {Roll} roll The roll to upgrade.
+     * @param {ROLL_STATE} targetState The target state of the roll.
+     * @returns {Promise<Roll>} The upgraded multi roll from the provided roll.
      */
-    static async setD20Mode(roll, mode) {
+    static async upgradeRoll(roll, targetState, { message } = {}) {
         if (!roll) {
             LogUtility.logError(CoreUtility.localize(`${MODULE_SHORT}.messages.error.rollIsNullOrUndefined`));
             return null;
         }
-        const d20 = RollUtility.getD20Term(roll);
-        if (!d20) return null;
 
-        const wanted = (mode === "adv" && roll.options?.elvenAccuracy) ? 3 : 2;
-        const missing = mode === "normal" ? 0 : wanted - RollUtility.getD20Candidates(d20).length;
-        if (missing > 0) {
-            const extra = await new Roll(`${missing}d20`).evaluate();
-            await CoreUtility.tryRollDice3D(extra);
-            for (const result of extra.dice[0].results) d20.results.push({ result: result.result, active: true });
+		if (targetState !== ROLL_STATE.ADV && targetState !== ROLL_STATE.DIS) {
+			LogUtility.logError(CoreUtility.localize(`${MODULE_SHORT}.messages.error.incorrectTargetState`, { state: targetState }));
+			return roll;
+		}
+
+        if (targetState === ROLL_STATE.DIS) {
+            roll.options.elvenAccuracy = false;
         }
 
-        RollUtility.applyD20Selection(roll, mode);
-        return roll;
+        const upgradedRoll = await RollUtility.ensureMultiRoll(roll, { message });
+        
+        const d20BaseTerm = upgradedRoll.terms.find(d => d.faces === 20);
+        d20BaseTerm.keep(targetState);
+        d20BaseTerm.modifiers.push(targetState);
+        
+        upgradedRoll.options.advantageMode = targetState === ROLL_STATE.ADV 
+            ? CONFIG.Dice.D20Roll.ADV_MODE.ADVANTAGE 
+            : CONFIG.Dice.D20Roll.ADV_MODE.DISADVANTAGE;
+        // dnd5e 6 reads the mode from the d20 term as well as from the roll.
+        if (d20BaseTerm.options) d20BaseTerm.options.advantageMode = upgradedRoll.options.advantageMode;
+
+        RollUtility.resetRollGetters(upgradedRoll);
+        return upgradedRoll;
+    }
+
+    /**
+     * Throw dice added to an existing roll. With the roll's message, they are thrown for
+     * that message's audience (its whisper and blind state); without one, for the current
+     * roll mode, as before.
+     */
+    static async _showExtraDice(roll, message) {
+        if (!message) return CoreUtility.tryRollDice3D(roll);
+        if (!game.dice3d?.isEnabled?.() || !roll.dice?.length) return false;
+        const whisper = message.whisper?.length ? message.whisper : null;
+        await game.dice3d.showForRoll(roll, game.user, true, whisper, message.blind ?? false, message.id, message.speaker);
+        return true;
     }
 
     static resetRollGetters(roll) {
@@ -383,12 +301,6 @@ export class RollUtility {
      */
     static isRollOfType(roll, rollClass) {
         if (!roll || !rollClass) return false;
-        // dnd5e's D20Roll and DamageRoll both extend BasicRoll, so an instanceof test would
-        // treat attack and damage rolls as formula rolls (and mergeRollsByType would evict
-        // them when a formula roll is merged). BasicRoll therefore matches its class exactly.
-        if (rollClass === CONFIG.Dice?.BasicRoll) {
-            return roll.constructor === rollClass || roll.class === rollClass.name;
-        }
         return roll instanceof rollClass || roll.class === rollClass.name || roll.constructor?.name === rollClass.name;
     }
 

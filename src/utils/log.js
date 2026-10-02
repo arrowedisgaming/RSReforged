@@ -1,4 +1,4 @@
-import { MODULE_DEBUG_TAG, MODULE_NAME } from "../module/const.js";
+import { MODULE_DEBUG_TAG } from "../module/const.js";
 
 /**
  * Utility class to handle logging to console with an attached debug tag to identify module logs.
@@ -10,17 +10,6 @@ export class LogUtility {
      */
     static log(logString) {
         console.log(..._processLog(logString));
-    }
-
-    /**
-     * Sends a debug log to the console, only when the client "debug" setting is on.
-     * Accepts any values (objects are logged live, not stringified).
-     * @param {...any} args
-     */
-    static debug(...args) {
-        let enabled = false;
-        try { enabled = !!game.settings.get(MODULE_NAME, "debug"); } catch (err) { enabled = false; }
-        if (enabled) console.log(...MODULE_DEBUG_TAG, ...args);
     }
 
     /**

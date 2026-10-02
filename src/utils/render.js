@@ -1,0 +1,133 @@
+import { MODULE_NAME } from "../module/const.js";
+import { TEMPLATE } from "../module/templates.js";
+import { RollUtility } from "./roll.js";
+import { SETTING_NAMES, SettingsUtility, HIDE_NPC_ROLL_STYLES } from "./settings.js";
+
+/**
+ * Utility class to handle all rendering from provided fields into HTML data.
+ */
+export class RenderUtility {
+    /**
+     * Renders a module template for the specified render type.
+     * @param {TEMPLATE} template The requested template to render.
+     * @param {Object} data Field metadata for rendering.
+     * @returns {Promise<String>} The rendered html data for the field. 
+     */
+    static render(template, data) {
+        switch (template) {
+            case TEMPLATE.MULTIROLL:
+                return _renderMultiRoll(data);
+            case TEMPLATE.DAMAGE:
+                return _renderDamageRoll(data);
+            default:
+                return _renderModuleTemplate(template, data)
+        }
+    }
+}
+
+async function _renderMultiRoll(data = {}) {
+    const { roll, key } = data;
+    const entries = [];
+
+    // Process bonuses beyond the base d20s into a single roll.
+    const bonusTerms = roll.terms.slice(1);
+
+    for (const term of bonusTerms) {
+        if (!term._evaluated) {
+            await term.evaluate();
+        }
+    }
+
+    const bonusRoll = (bonusTerms && bonusTerms.length > 0) ? Roll.fromTerms(bonusTerms) : null;
+
+    const d20Rolls = roll.dice.find(d => d.faces === 20);
+
+    for (let i = 0; i < d20Rolls.results.length; i++) {
+        let tmpResults = [];
+        tmpResults.push(foundry.utils.duplicate(d20Rolls.results[i]));
+
+        while (d20Rolls?.results[i]?.rerolled && !d20Rolls?.results[i]?.count) {
+            if ((i + 1) >= d20Rolls.results.length) {
+                break;
+            }
+
+            i++;
+            tmpResults.push(foundry.utils.duplicate(d20Rolls.results[i]));
+        }
+
+        const critOptions = { 
+            critThreshold: roll.options.criticalSuccess,
+            fumbleThreshold: roll.options.criticalFailure,
+            target: roll.options.target - (bonusRoll?.total ?? 0),
+            displayChallenge: roll.options.displayChallenge,
+            forceSuccess: roll.options.forceSuccess
+        };
+
+        // Die terms must have active results or the base roll total of the generated roll is 0.
+        // This does not apply to dice that have been rerolled (unless they are replaced by a fixer value eg. for reliable talent).
+        tmpResults.forEach(r => {
+            r.active = !(r.rerolled && !r.count);
+        });
+
+        const baseTerm = new foundry.dice.terms.Die({
+            number: 1,
+            faces: 20,
+            results: tmpResults,
+            modifiers: d20Rolls.modifiers
+        });
+        const baseRoll = Roll.fromTerms([baseTerm]);
+
+        const total = baseRoll.total + (bonusRoll?.total ?? 0);
+
+        // Two hidden-roll presentations (issue #23):
+        //  - "total" (default): mask the modified total, reveal the natural d20.
+        //  - "breakdown": reveal the modified total, mask the natural d20 value.
+        const isHidden = roll.options.hideFinalResult;
+        const isBreakdown = isHidden && roll.options.hideRollStyle === HIDE_NPC_ROLL_STYLES.BREAKDOWN;
+        const hideTotal = isHidden && !isBreakdown;
+        const showD20Icon = SettingsUtility.getSettingValue(SETTING_NAMES.D20_ICONS_ENABLED) && !isBreakdown;
+        const isIgnored = tmpResults.some(r => r.discarded);
+
+        // In breakdown style only the final used total is shown. Rendering the
+        // discarded advantage/disadvantage die's total too would leak that
+        // adv/disadv was in play and the gap between the two natural d20s, so
+        // skip discarded entries entirely in this style.
+        if (isBreakdown && isIgnored) continue;
+
+        entries.push({
+			roll: baseRoll,
+			total: total,
+			ignored: isIgnored ? true : undefined,
+            // Hidden rolls already have displayChallenge and forceSuccess cleared
+            // by _configureRollVisibility. In breakdown style the total is visible,
+            // so critType must be dropped too: a natural 20/1 would otherwise tag the
+            // total with a success/failure class and leak the masked die (present in
+            // the DOM even though RSR's crit CSS only colors the now-absent d20 icon).
+            critType: isBreakdown ? undefined : RollUtility.getCritTypeForDie(baseTerm, critOptions),
+            d20Result: showD20Icon ? d20Rolls.results[i].result : null,
+            hideTotal,
+            dcResult: !critOptions.displayChallenge || isNaN(roll.options.target)
+                ? undefined
+                : (roll.options.forceSuccess || total >= roll.options.target ? "fas fa-check" : "fas fa-xmark")
+		});
+    }
+
+    return _renderModuleTemplate(TEMPLATE.MULTIROLL, { entries, key });
+}
+
+async function _renderDamageRoll(data = {}) {
+    const { roll } = data;
+
+    return _renderModuleTemplate(TEMPLATE.DAMAGE, { total: roll.total });
+}
+
+/**
+ * Shortcut function to render a custom template from the templates folder.
+ * @param {String} template Name (or sub path) of the template in the templates folder.
+ * @param {Object} data The template data to render the template with.
+ * @returns {Promise<string>} A rendered html template.
+ * @private
+ */
+function _renderModuleTemplate(template, data) {
+    return foundry.applications.handlebars.renderTemplate(`modules/${MODULE_NAME}/templates/${template}`, data);
+}
