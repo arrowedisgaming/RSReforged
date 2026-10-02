@@ -121,7 +121,10 @@ async function setState(parent, workflowState, extra = {}) {
 }
 
 /** Create every prepared native message in one batch so Dice So Nice animates them together. */
-async function createBatch(datas) {
+async function createBatch(prepared) {
+    // Takes the prepared data out of the list, so the error path can never create
+    // a batch that was already created (e.g. when only the later state update failed).
+    const datas = prepared.splice(0);
     if (!datas.length) return [];
     // Explicit null, not delete: Foundry's ChatMessage#_preCreate restores the dice
     // sound on any roll message whose data has no `sound` key at all.
@@ -184,8 +187,9 @@ export function runNativeUsage(activity, usageConfig, results) {
                 const damage = extractRolls(await resolved.rollDamage(config, { configure: false }, damageMessage));
                 if (!damage.length) {
                     releaseCapture(damageMessage);
+                    const created = prepared.length;
                     await createBatch(prepared);
-                    await setState(parent, prepared.length ? 'partial' : 'cancelled');
+                    await setState(parent, created ? 'partial' : 'cancelled');
                     return;
                 }
                 prepared.push(takePreparedData(damageMessage));
@@ -196,8 +200,9 @@ export function runNativeUsage(activity, usageConfig, results) {
                 const formula = extractRolls(await resolved.rollFormula({}, { configure: false }, formulaMessage));
                 if (!formula.length) {
                     releaseCapture(formulaMessage);
+                    const created = prepared.length;
                     await createBatch(prepared);
-                    await setState(parent, prepared.length ? 'partial' : 'cancelled');
+                    await setState(parent, created ? 'partial' : 'cancelled');
                     return;
                 }
                 prepared.push(takePreparedData(formulaMessage));

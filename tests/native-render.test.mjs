@@ -323,3 +323,26 @@ it("masks an NPC's save summarised on a usage card for players, in either hidden
     await renderer.renderNativeMessage(usageParent([]), gm);
     expect(gm.querySelector(".card-summary .total").textContent).toBe("10");
 });
+
+it("asks dnd5e to refresh a usage card's cached save outcomes when a save's rolls change", async () => {
+    // Any usage card, RSR-managed or not: its damage tray reads these outcomes.
+    const onDescendentRefresh = vi.fn();
+    const parent = { id: "spell", flags: {}, system: { onDescendentRefresh } };
+    game.messages.set("spell", parent);
+    ui.chat.updateMessage = vi.fn();
+    const save = { id: "save", type: "save", system: { origin: parent } };
+
+    renderer.refreshNativeOrigin(save, { rollsChanged: true });
+    await Promise.resolve();
+
+    expect(onDescendentRefresh).toHaveBeenCalledWith(save);
+    expect(ui.chat.updateMessage).toHaveBeenCalledWith(parent);
+
+    // Other changes leave a card RSR does not manage alone, as before.
+    onDescendentRefresh.mockClear();
+    ui.chat.updateMessage.mockClear();
+    renderer.refreshNativeOrigin(save);
+    await Promise.resolve();
+    expect(onDescendentRefresh).not.toHaveBeenCalled();
+    expect(ui.chat.updateMessage).not.toHaveBeenCalled();
+});

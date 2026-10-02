@@ -13,11 +13,17 @@ const renders = new WeakMap();
 const DICE_REVEAL_TIMEOUT_MS = 10000;
 
 /** UI-only refresh: never update a document from its render/update hook. */
-export function refreshNativeOrigin(message) {
+export function refreshNativeOrigin(message, { rollsChanged = false } = {}) {
     const id = getOriginId(message);
     if (!id || refreshing.has(id)) return;
     const parent = game.messages.get(id);
-    if (!parent?.flags?.[MODULE_SHORT]?.workflowVersion) return;
+    if (!parent) return;
+    if (rollsChanged) {
+        // dnd5e refreshes a usage card's cached save outcomes (which its damage tray uses
+        // for half-on-save) only when a child's system data changes. A reroll, bonus, or
+        // advantage edits only the rolls, so ask it to refresh here, on every client.
+        parent.system?.onDescendentRefresh?.(message);
+    } else if (!parent.flags?.[MODULE_SHORT]?.workflowVersion) return;
     refreshing.add(id);
     queueMicrotask(() => {
         refreshing.delete(id);

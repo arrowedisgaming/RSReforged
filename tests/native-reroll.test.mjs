@@ -242,3 +242,20 @@ describe("review fixes", () => {
         expect(logged.blind).toBe(true);
     });
 });
+
+it("keeps 4.x rerolls on a legacy card from before the upgrade to dnd5e 6", () => {
+    useDnd5e("6.0.5");
+    const reroll = vi.spyOn(RerollManager, "_handleReroll").mockImplementation(() => {});
+    const die = nativeBreakdownDie();
+    // A 5.3-era RSR card: its rolls live in RSR's flag cache.
+    game.messages.set("attack", { id: "attack", type: "usage", isAuthor: true, rolls: [], flags: { rsreforged: { rolls: [{}] } } });
+
+    click(die);
+
+    expect(reroll).toHaveBeenCalledOnce();
+    expect(reroll.mock.calls[0][0].id).toBe("attack");
+    // No native path: the handler must get undefined, so its default locates the die
+    // (a null here would skip the default and fail to destructure).
+    expect(reroll.mock.calls[0][2]).toBeUndefined();
+    expect(() => RerollManager._getDiePath($(die))).not.toThrow();
+});

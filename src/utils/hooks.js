@@ -347,7 +347,9 @@ export class HooksUtility {
 
         // Native registry updates do not refresh origins after a rolls-only edit.
         Hooks.on("updateChatMessage", (message, changes) => {
-            if (usesNativeWorkflow() && ("rolls" in changes || "flags" in changes || "whisper" in changes || "blind" in changes)) refreshNativeOrigin(message);
+            if (usesNativeWorkflow() && ("rolls" in changes || "flags" in changes || "whisper" in changes || "blind" in changes)) {
+                refreshNativeOrigin(message, { rollsChanged: "rolls" in changes });
+            }
         });
         Hooks.on("deleteChatMessage", message => {
             if (usesNativeWorkflow()) {

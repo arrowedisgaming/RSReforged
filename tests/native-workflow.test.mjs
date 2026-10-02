@@ -295,3 +295,20 @@ describe("native usage orchestration", () => {
         expect(of(f.calls, "attack")[1]).toHaveProperty("target", null);
     });
 });
+
+describe("release review fixes", () => {
+    it("never creates the batch twice when only the completion update fails", async () => {
+        const f = fixture();
+        const update = f.parent.update;
+        f.parent.update = async (data) => {
+            if (data["flags.rsreforged.workflowState"] === "complete") throw new Error("socket dropped");
+            return update(data);
+        };
+
+        await expect(workflow.runNativeUsage(f.activity, {}, { message: f.parent })).rejects.toThrow("socket dropped");
+
+        // One batch of attack + damage, not a second copy from the error path.
+        expect(created()).toHaveLength(1);
+        expect(created()[0].dataArray.map((d) => d.type)).toEqual(["attack", "damage"]);
+    });
+});

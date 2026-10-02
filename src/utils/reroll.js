@@ -19,11 +19,17 @@ export class RerollManager {
             let message;
             let path;
             if (usesNativeWorkflow()) {
-                // dnd5e 6: only dice RSR rendered carry their source; dnd5e's own
-                // breakdown popovers reuse these classes but are left alone.
-                path = _nativeDiePath(event.currentTarget);
-                if (!path) return;
-                message = game.messages.get(path.messageId);
+                // dnd5e 6: dice RSR rendered carry their source. Unstamped dice are either
+                // in dnd5e's own breakdown popovers, which are left alone, or on a legacy
+                // card from before the upgrade, which keeps its 4.x reroll path.
+                // undefined, not null, so a legacy card's handlers fall back to locating the die.
+                path = _nativeDiePath(event.currentTarget) ?? undefined;
+                if (path) message = game.messages.get(path.messageId);
+                else {
+                    const legacy = game.messages.get(dieElement.closest(".chat-message").data("messageId"));
+                    if (!_isLegacyCard(legacy)) return;
+                    message = legacy;
+                }
             } else {
                 message = game.messages.get(dieElement.closest(".chat-message").data("messageId"));
             }
@@ -232,6 +238,13 @@ function _nativeDiePath(die) {
     const messageId = die.closest("[data-message-id]")?.dataset.messageId;
     if (rsrRoll === undefined || rsrDie === undefined || rsrResult === undefined || !messageId) return null;
     return { messageId, rollIndex: Number(rsrRoll), termIndex: Number(rsrDie), resultIndex: Number(rsrResult) };
+}
+
+/** A 5.3-era RSReforged card: its rolls live in RSR's flag cache or a legacy "roll" message. */
+function _isLegacyCard(message) {
+    const flags = message?.flags?.[MODULE_SHORT];
+    if (!message || ChatUtility.isNativeRollMessage(message) || flags?.workflowVersion === 2) return false;
+    return Array.isArray(flags?.rolls) || ["roll", "dnd5e.roll"].includes(message.type);
 }
 
 /** A native message's rolls are its live document state; edit copies until the update lands. */
