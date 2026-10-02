@@ -526,3 +526,65 @@ describe("Always Roll Multiple Dice display", () => {
         expect(section.querySelectorAll(".rsr-multiroll .dice-total")).toHaveLength(1);
     });
 });
+
+describe("review fixes", () => {
+    it("stamps damage dice for rerolls even when dnd5e's aggregation rebuilds every term", async () => {
+        CONFIG.DND5E.aggregateDamageDisplay = true;
+        // dnd5e's chunkTerms rebuilds each term from its JSON: options survive, identity does not.
+        dnd5e.dice.aggregateDamageRolls = (rolls) => rolls.map((roll) => {
+            const copy = Object.create(Object.getPrototypeOf(roll));
+            Object.assign(copy, roll);
+            copy.terms = roll.terms.map((term) => Object.assign(Object.create(Object.getPrototypeOf(term)), structuredClone({ ...term }), { options: { ...term.options } }));
+            copy.dice = copy.terms.filter((term) => term.faces);
+            copy.formula = ` + ${roll.formula}`;
+            return copy;
+        });
+        const section = await card.renderRsrSection(parent, child("dmg", "damage", [damageRoll("slashing", 7, 10, 3), damageRoll("fire", 6, 6)]));
+
+        expect([...section.querySelectorAll(".dice-rolls .roll")].map((die) => [die.dataset.rsrRoll, die.dataset.rsrDie]))
+            .toEqual([["0", "0"], ["1", "0"]]);
+    });
+
+    it("drops an advantage edit if the roll changed while its dice were thrown", async () => {
+        env.settings.enableOverlayButtons = true;
+        const { RollUtility } = await import("../src/utils/roll.js");
+        const attack = editable(child("atk", "attack", [attackRoll()]));
+        ui.notifications.warn = vi.fn();
+        vi.spyOn(RollUtility, "upgradeRoll").mockImplementation(async (roll) => {
+            // A bonus lands on the message while the extra d20 is in the air.
+            attack.rolls = [attackRoll()];
+            attack.rolls[0].total = 21;
+            return roll;
+        });
+
+        const section = await card.renderRsrSection(parent, attack);
+        section.querySelector('.rsr-overlay-multiroll [data-state="kh"]').click();
+        await vi.waitFor(() => expect(ui.notifications.warn).toHaveBeenCalled());
+
+        expect(attack.update).not.toHaveBeenCalled();
+    });
+});
+
+it("applies a merged part's own type from every roll, including typed terms inside other rolls", async () => {
+    const { ChatUtility } = await import("../src/utils/chat.js");
+    const actor = { applyDamage: vi.fn(async () => {}), applyTempHP: vi.fn(async () => {}) };
+    canvas.tokens.controlled = [{ actor }];
+    // A slashing roll carrying a +4 fire bonus term: dnd5e's aggregation splits it by type.
+    const roll = damageRoll("slashing", 6, 6);
+    dnd5e.dice.aggregateDamageRolls = vi.fn(() => [
+        { total: 6, options: { type: "slashing", properties: [] } },
+        { total: 4, options: { type: "fire", properties: [] } }
+    ]);
+    const message = editable(child("dmg", "damage", [roll]));
+    const html = $(`<div class="dice-roll"><div class="dice-result rsr-damage"><div class="dice-tooltip">
+        <section class="tooltip-part" data-rsr-damage-type="slashing"><div class="dice"><div class="total"><span class="value">6</span></div></div></section>
+        <section class="tooltip-part" data-rsr-damage-type="fire"><div class="dice"><div class="total"><span class="value">4</span></div></div></section>
+    </div><h4 class="dice-total">10</h4></div></div>`);
+    document.body.append(html[0]);
+    await ChatUtility.injectNativeApplyButtons(message, html);
+
+    html.find('.tooltip-part[data-rsr-damage-type="fire"] [data-action="rsr-apply-damage"][data-multiplier="1"]').trigger("click");
+    await vi.waitFor(() => expect(actor.applyDamage).toHaveBeenCalledTimes(1));
+
+    expect(actor.applyDamage.mock.calls[0][0]).toEqual([{ value: 4, type: "fire", properties: new Set() }]);
+});

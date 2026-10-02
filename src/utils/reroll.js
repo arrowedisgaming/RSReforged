@@ -4,6 +4,7 @@ import { CoreUtility } from "./core.js";
 import { LogUtility } from "./log.js";
 import { SETTING_NAMES, SettingsUtility } from "./settings.js";
 import { usesNativeWorkflow } from "./dnd5e-compat.js";
+import { RollUtility } from "./roll.js";
 
 /**
  * Utility class to handle rerolling and fudging individual dice on the canvas.
@@ -86,14 +87,19 @@ export class RerollManager {
         const localize = (key, data) => CoreUtility.localize(`${MODULE_SHORT}.chat.reroll.${key}`, data);
 
         if (SettingsUtility.getSettingValue(SETTING_NAMES.REROLL_SOUND_ENABLED)) {
-            const playedDsn = await CoreUtility.tryRollDice3D(newDieRoll, message?.id ?? null);
+            // Thrown for the edited message's audience, not the user's current roll mode.
+            const playedDsn = await RollUtility._showExtraDice(newDieRoll, message);
             if (!playedDsn) {
                 CoreUtility.playRollSound();
             }
         }
 
         if (SettingsUtility.getSettingValue(SETTING_NAMES.REROLL_LOG_CHAT)) {
-            const { rollMode, whisper, blind } = CoreUtility.getWhisperData();
+            // The log reveals the old and new values, so a whispered or blind roll's log goes
+            // only to that roll's audience; a public roll's log follows the current roll mode.
+            const { rollMode, whisper, blind } = message?.whisper?.length
+                ? { rollMode: undefined, whisper: [...message.whisper], blind: message.blind ?? false }
+                : CoreUtility.getWhisperData();
             // Escape the user's display name before interpolating into HTML — Foundry user names
             // allow characters that would otherwise render as markup in the chat message.
             const safeUser = foundry.utils.escapeHTML(game.user.name);
@@ -160,6 +166,13 @@ export class RerollManager {
     }
 
     static _recalculateModifiers(targetTerm) {
+        // dnd5e 6 marks advantage as adv/dis on its d20, and its handler keeps the best
+        // set using state it deletes after evaluation; reselect the same way here.
+        const advantage = targetTerm.modifiers.map(m => /^(adv|dis)(\d*)$/i.exec(m)).find(Boolean);
+        if (advantage) {
+            _reselectAdvantage(targetTerm, advantage[1].toLowerCase() === "adv", parseInt(advantage[2] || 1));
+            return;
+        }
         if (targetTerm.modifiers.some(m => m.includes("kh") || m.includes("kl"))) {
             targetTerm.results.forEach(r => {
                 r.discarded = false;
@@ -182,6 +195,31 @@ export class RerollManager {
 
         return { rollIndex, termIndex, resultIndex };
     }
+}
+
+/**
+ * dnd5e 6's BasicDie#advantage, rerun after a die changes: partition the term's live
+ * results into count + 1 equal sets and keep the best (adv) or worst (dis) set. Results a
+ * reroll modifier replaced stay inactive; only advantage discards are reconsidered.
+ */
+function _reselectAdvantage(term, adv, count) {
+    for (const result of term.results) {
+        if (result.discarded && !result.rerolled) {
+            result.discarded = false;
+            result.active = true;
+        }
+    }
+    const live = term.results.filter(r => r.active);
+    const size = live.length / (count + 1);
+    if (!Number.isInteger(size) || size < 1) return;
+    const sets = Array.from({ length: count + 1 }, (_, index) => live.slice(index * size, (index + 1) * size));
+    const totals = sets.map(set => set.reduce((total, r) => total + r.result, 0));
+    const target = adv ? Math.max(...totals) : Math.min(...totals);
+    const keep = totals.indexOf(target);
+    sets.forEach((set, index) => {
+        if (index === keep) return;
+        set.forEach(r => { r.discarded = true; r.active = false; });
+    });
 }
 
 /**

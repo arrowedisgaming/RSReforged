@@ -140,6 +140,7 @@
                 "applyDamageNoTokens": "You have no tokens selected or targeted to apply damage to."
             },
             "warning": {
+                "rollChanged": "That roll changed while the edit was in progress, so the edit was not applied. Try it again.",
                 "emptyDamageField": "One or more damage fields on this item are empty! To roll damage, ensure all damage fields are filled."
             }
         },

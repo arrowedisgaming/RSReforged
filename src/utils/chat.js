@@ -1310,15 +1310,20 @@ async function _processNativeApplyEvent(message, event) {
 
     if (targets.size === 0) return;
 
-    let rolls = _getDamageRolls(message);
+    const rolls = _getDamageRolls(message);
     const part = button.closest('.tooltip-part');
+    let applied;
     if (part?.dataset.rsrRollIndex !== undefined) {
-        rolls = [rolls[Number(part.dataset.rsrRollIndex)]].filter(Boolean);
-    } else if (part) {
-        rolls = rolls.filter(roll => (roll.options?.type ?? "") === part.dataset.rsrDamageType);
+        // One roll's part: apply that roll, split by type and properties.
+        applied = dnd5e.dice.aggregateDamageRolls([rolls[Number(part.dataset.rsrRollIndex)]].filter(Boolean), { respectProperties: true });
+    } else {
+        // Aggregation splits typed terms (e.g. a fire bonus inside a slashing roll) out
+        // of their rolls, so a merged part applies its type's portion of every roll.
+        applied = dnd5e.dice.aggregateDamageRolls(rolls, { respectProperties: true });
+        if (part) applied = applied.filter(roll => (roll.options?.type ?? "") === part.dataset.rsrDamageType);
     }
 
-    const damages = dnd5e.dice.aggregateDamageRolls(rolls, { respectProperties: true }).map(roll => {
+    const damages = applied.map(roll => {
         const type = roll.options?.type;
         return {
             value: Math.max(0, roll.total),

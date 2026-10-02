@@ -173,6 +173,17 @@ describe("retroactive advantage's extra d20", () => {
         expect(game.dice3d.showForRoll).not.toHaveBeenCalled();
     });
 
+    it("adopts a whole stored die, reroll history included, rather than a truncated one", async () => {
+        const roll = single();
+        // Halfling Lucky: the stored die's 1 was replaced by an 18.
+        roll.options.rsreforgedAlternates = [{ result: 1, active: false, rerolled: true }, { result: 18, active: true }];
+
+        const upgraded = await RollUtility.ensureMultiRoll(roll, { message: { id: "m", whisper: [] } });
+
+        expect(upgraded.terms[0].results.map((r) => r.result)).toEqual([9, 1, 18]);
+        expect(game.dice3d.showForRoll).not.toHaveBeenCalled();
+    });
+
     it("throws a freshly rolled extra d20 for the message's audience, not the current roll mode", async () => {
         const TestRoll = Roll;
         globalThis.Roll = class extends TestRoll {
@@ -185,5 +196,49 @@ describe("retroactive advantage's extra d20", () => {
 
         expect(game.dice3d.showForRoll).toHaveBeenCalledTimes(1);
         expect(game.dice3d.showForRoll.mock.calls[0].slice(2, 7)).toEqual([true, ["gm"], true, "m", { actor: "a" }]);
+    });
+});
+
+describe("review fixes", () => {
+    it("reselects dnd5e 6 advantage (adv) after a die changes, not only kh/kl", () => {
+        const { TestDie } = env.classes;
+        const die = new TestDie({ number: 2, faces: 20, modifiers: ["adv"], results: [
+            { result: 18, active: true }, { result: 10, active: false, discarded: true }
+        ] });
+        die.results[1].result = 20; // fudged
+
+        RerollManager._recalculateModifiers(die);
+
+        expect(die.results.map((r) => [r.result, r.active])).toEqual([[18, false], [20, true]]);
+    });
+
+    it("keeps a reroll modifier's replaced result out of advantage reselection", () => {
+        const { TestDie } = env.classes;
+        const die = new TestDie({ number: 2, faces: 20, modifiers: ["dis"], results: [
+            { result: 1, active: false, rerolled: true }, { result: 7, active: true },
+            { result: 12, active: false, discarded: true }
+        ] });
+
+        RerollManager._recalculateModifiers(die);
+
+        expect(die.results.map((r) => r.active)).toEqual([false, true, false]);
+    });
+
+    it("announces a reroll of a whispered roll only to that roll's audience", async () => {
+        const { RollUtility } = await import("../src/utils/roll.js");
+        const show = vi.spyOn(RollUtility, "_showExtraDice").mockResolvedValue(true);
+        game.settings.set("rsreforged", "rerollLogChat", true);
+        game.settings.set("rsreforged", "rerollSoundEnabled", true);
+        // The user's current roll mode is public.
+        game.settings.set("core", "rollMode", "publicroll");
+        ChatMessage.create = vi.fn(async () => {});
+        const message = { id: "m", whisper: ["gm"], blind: true };
+
+        await RerollManager._announceReroll(message, { dice: [] }, { faces: 20, oldResult: 3, newResult: 17 });
+
+        expect(show).toHaveBeenCalledWith(expect.anything(), message);
+        const logged = ChatMessage.create.mock.calls[0][0];
+        expect(logged.whisper).toEqual(["gm"]);
+        expect(logged.blind).toBe(true);
     });
 });

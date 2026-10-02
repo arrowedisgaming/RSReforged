@@ -73,6 +73,9 @@ export function claimNativeThrow(messageId, interception) {
     // Workflow children throw together; a lone check or save only when it has extras.
     if (!workflow && !alternates.length) return;
     if (typeof game.dice3d?.showForRoll !== 'function') return;
+    // Visibility "none" or disabled during combat: Dice So Nice throws nothing and keeps
+    // the core dice sound, so leave the message to it.
+    if (game.dice3d.isEnabled?.() === false) return;
     interception.willTrigger3DRoll = false;
 
     const key = workflow ? flags.parentId : message.id;

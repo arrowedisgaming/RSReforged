@@ -177,3 +177,15 @@ describe("Always Roll Multiple Dice", () => {
         expect(pooled[1].dice[0].results.map((r) => r.result)).toEqual([12]);
     });
 });
+
+it("leaves a message to Dice So Nice when it is not throwing dice (visibility none, combat)", () => {
+    game.dice3d = { showForRoll: vi.fn(), isEnabled: () => false };
+    const attack = child("attack", ["d20"], { sound: CONFIG.sounds.dice });
+    const interception = intercepted();
+
+    claimNativeThrow("attack", interception);
+
+    expect(interception.willTrigger3DRoll).toBe(true);
+    expect(attack.sound).toBe(CONFIG.sounds.dice);
+    expect(attack._rsrNativeThrow).toBeUndefined();
+});

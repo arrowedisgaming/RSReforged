@@ -170,12 +170,14 @@ async function _addAdvantageOverlay(section, child, roll, { flavor = false } = {
         const state = button.dataset.state;
         const target = CoreUtility.localize(state === ROLL_STATE.ADV ? 'DND5E.Advantage' : 'DND5E.Disadvantage');
         if (!await _confirm(SETTING_NAMES.CONFIRM_RETRO_ADV, CoreUtility.localize(`${MODULE_SHORT}.chat.prompts.retroAdv`, { target }), event)) return;
+        const before = _rollsState(child);
         const rolls = _cloneRolls(child);
         const index = rolls.findIndex(r => r instanceof CONFIG.Dice.D20Roll);
         if (index < 0) return;
         // Adds the extra d20 (a stored Always Roll Multiple Dice alternate, or one rolled
         // and thrown now for this message's audience), keeping the original result.
         rolls[index] = await RollUtility.upgradeRoll(rolls[index], state, { message: child });
+        if (!_unchangedSince(child, before)) return;
         const update = { rolls: CoreUtility.serializeRolls(rolls) };
         if (flavor) update.flavor = `${child.flavor ?? ''} (${target})`.trim();
         await child.update(update);
@@ -189,6 +191,7 @@ async function _addCriticalOverlay(section, child) {
     total.append(_fragment(await RenderUtility.render(TEMPLATE.OVERLAY_CRIT, {})));
     _onOverlayClick(total.querySelectorAll('.rsr-overlay-crit [data-action="rsr-retro"]'), async event => {
         if (!await _confirm(SETTING_NAMES.CONFIRM_RETRO_CRIT, CoreUtility.localize(`${MODULE_SHORT}.chat.prompts.retroCrit`), event)) return;
+        const before = _rollsState(child);
         const rolls = _cloneRolls(child);
         const promoted = [];
         for (const [index, roll] of rolls.entries()) {
@@ -199,6 +202,7 @@ async function _addCriticalOverlay(section, child) {
         }
         if (!promoted.length) return;
         await _showDice(child, promoted);
+        if (!_unchangedSince(child, before)) return;
         await child.update({ rolls: CoreUtility.serializeRolls(rolls) });
     });
 }
@@ -237,6 +241,21 @@ async function _confirm(setting, prompt, event) {
         top: event ? event.clientY - 50 : null,
         left: window.innerWidth - 510
     });
+}
+
+/**
+ * An overlay edit waits on dice (rolling and showing them) before it writes. If anything
+ * else changed the rolls meanwhile (a bonus, a reroll, another client), writing the edit's
+ * earlier copy would silently undo that change, so the edit is dropped instead.
+ */
+function _rollsState(message) {
+    return JSON.stringify(CoreUtility.serializeRolls(message.rolls));
+}
+
+function _unchangedSince(message, before) {
+    if (_rollsState(message) === before) return true;
+    ui.notifications?.warn(CoreUtility.localize(`${MODULE_SHORT}.messages.warning.rollChanged`));
+    return false;
 }
 
 function _cloneRolls(child) {
@@ -299,7 +318,15 @@ async function _renderRoll(roll, rollIndex) {
  */
 function _renderDamage(rolls, sources = rolls) {
     const aggregate = CONFIG.DND5E.aggregateDamageDisplay;
-    const parts = aggregate ? dnd5e.dice.aggregateDamageRolls(rolls) : rolls;
+    // Display copies whose dice carry their source in options: dnd5e's aggregation
+    // rebuilds every term from its JSON, which keeps options but not identity.
+    const display = rolls.map(roll => {
+        const copy = Roll.fromData(roll.toJSON());
+        const rollIndex = sources.indexOf(roll);
+        copy.dice.forEach((die, dieIndex) => { die.options = { ...die.options, rsrSource: [rollIndex, dieIndex] }; });
+        return copy;
+    });
+    const parts = aggregate ? dnd5e.dice.aggregateDamageRolls(display) : display;
     // Aggregated parts carry their own leading " + ", which the first part must drop.
     const formula = parts.map(r => r.formula).join(aggregate ? '' : ' + ').replace(/^\s*\+\s*/, '');
     const total = parts.reduce((sum, r) => sum + Math.max(0, r.total), 0);
@@ -313,7 +340,7 @@ function _renderDamage(rolls, sources = rolls) {
         return `<section class="tooltip-part" data-rsr-damage-type="${_escape(type ?? '')}"${source}><div class="dice">
             ${icon ? `<span class="part-method" data-tooltip aria-label="${_escape(CoreUtility.localize(method))}">${icon}</span>` : ''}
             <ol class="dice-rolls">
-                ${dice.map(die => `<li class="roll ${die.classes}"${_dieSource(die, sources)}>${die.result}</li>`).join('')}
+                ${dice.map(die => `<li class="roll ${die.classes}"${_dieSource(die)}>${die.result}</li>`).join('')}
                 ${constant ? `<li class="constant"><span class="sign">${constant < 0 ? '-' : '+'}</span>${Math.abs(constant)}</li>` : ''}
             </ol>
             <div class="total">
@@ -343,13 +370,11 @@ function _stampDie(node, rollIndex, dieIndex, resultIndex) {
     Object.assign(node.dataset, { rsrRoll: rollIndex, rsrDie: dieIndex, rsrResult: resultIndex });
 }
 
-/** The same stamp as markup, found by term identity: damage parts list dice in their own order. */
-function _dieSource({ term, resultIndex }, sources) {
-    for (const [rollIndex, roll] of sources.entries()) {
-        const dieIndex = roll.dice?.indexOf(term) ?? -1;
-        if (dieIndex >= 0) return ` data-rsr-roll="${rollIndex}" data-rsr-die="${dieIndex}" data-rsr-result="${resultIndex}"`;
-    }
-    return '';
+/** The same stamp as markup, from the source _renderDamage marked on the die's options. */
+function _dieSource({ term, resultIndex }) {
+    const [rollIndex, dieIndex] = term?.options?.rsrSource ?? [];
+    if (!(rollIndex >= 0) || !(dieIndex >= 0)) return '';
+    return ` data-rsr-roll="${rollIndex}" data-rsr-die="${dieIndex}" data-rsr-result="${resultIndex}"`;
 }
 
 /**

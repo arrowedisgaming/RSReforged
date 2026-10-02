@@ -186,11 +186,19 @@ export class RollUtility {
             const needed = forcedDiceCount - d20BaseTerm.number;
             // Always Roll Multiple Dice already rolled, threw, and showed these with the
             // roll (dnd5e 6); adopt them instead of rolling dice the table never saw.
-            const saved = foundry.utils.deepClone(roll.options.rsreforgedAlternates ?? []).slice(0, needed);
+            // A stored die can carry its reroll history (e.g. Halfling Lucky's replaced 1), so
+            // take whole dice: results up to and including the needed number of final ones.
+            const saved = [];
+            let complete = 0;
+            for (const result of foundry.utils.deepClone(roll.options.rsreforgedAlternates ?? [])) {
+                if (complete >= needed) break;
+                saved.push(result);
+                if (!result.rerolled) complete++;
+            }
             delete roll.options.rsreforgedAlternates;
             const d20Additional = { dice: [{ results: saved }] };
-            if (saved.length < needed) {
-                const fresh = await new Roll(`${needed - saved.length}d20${d20BaseTerm.modifiers.join('')}`).evaluate();
+            if (complete < needed) {
+                const fresh = await new Roll(`${needed - complete}d20${d20BaseTerm.modifiers.join('')}`).evaluate();
                 await RollUtility._showExtraDice(fresh, message);
                 d20Additional.dice[0].results.push(...fresh.dice[0].results);
             }
@@ -257,9 +265,10 @@ export class RollUtility {
      */
     static async _showExtraDice(roll, message) {
         if (!message) return CoreUtility.tryRollDice3D(roll);
-        if (!game.dice3d?.isEnabled?.()) return;
+        if (!game.dice3d?.isEnabled?.() || !roll.dice?.length) return false;
         const whisper = message.whisper?.length ? message.whisper : null;
         await game.dice3d.showForRoll(roll, game.user, true, whisper, message.blind ?? false, message.id, message.speaker);
+        return true;
     }
 
     static resetRollGetters(roll) {
