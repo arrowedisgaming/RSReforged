@@ -1,5 +1,7 @@
 # Local dnd5e 6 testing branch
 
+> **Superseded.** This describes the September 2026 "base case" (dnd5e's own markup folded into the usage card, no RSReforged controls), and its screenshot shows an earlier text-button prototype. RSReforged 6.0.0 instead renders the RSReforged card from dnd5e 6's native messages and restores the card controls; see the 6.0.0 entry in `CHANGELOG.md`. Kept for the implementation history and the fixture notes.
+
 Branch: `codex/dnd5e-6-compatibility`
 
 Starting commit: `c3ba388`

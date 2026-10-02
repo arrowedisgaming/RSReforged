@@ -2,6 +2,10 @@
 
 > Quality-of-life roll automation for Foundry VTT's D&D 5e system.
 
+> ⚠️ **Experimental: RSReforged 6.0 is experimental support for the D&D 5e system version 6.** We're still working out some bugs, but we want to get a release out for early testers. If something looks wrong, please [open an issue](https://github.com/arrowedisgaming/RSReforged/issues) with your Foundry, dnd5e, and RSReforged versions.
+>
+> **Still on dnd5e 5.3?** Stay on RSReforged 4.13.4. See [Compatibility](https://github.com/arrowedisgaming/RSReforged#compatibility) for how.
+
 ![Latest Release](https://img.shields.io/badge/dynamic/json.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Farrowedisgaming%2FRSReforged%2Fmaster%2Fmodule.json&label=Latest%20Release&prefix=v&query=$.version&colorB=blue&style=for-the-badge)
 ![Foundry Versions](https://img.shields.io/endpoint?url=https%3A%2F%2Ffoundryshields.com%2Fversion%3Fstyle%3Dfor-the-badge%26url%3Dhttps%3A%2F%2Fraw.githubusercontent.com%2Farrowedisgaming%2FRSReforged%2Fmaster%2Fmodule.json&color=ff601e&label=Foundry)
 ![dnd5e](https://img.shields.io/badge/dnd5e-6.0%2B-red?style=for-the-badge)
@@ -46,55 +50,41 @@
 RSReforged removes clicks from D&D 5e rolls in Foundry VTT.
 
 - **One-click rolls.** Skill checks, saves, attacks, and damage go to chat without the usual dnd5e dialog.
-- **Damage split by type.** If an attack deals fire and cold, apply each to different tokens. *Returning in a later 6.x release.*
-- **Edit rolls after they land.** Turn a flat roll into advantage, promote a hit to a crit, or add a Bless die you forgot. *Returning in a later 6.x release.*
+- **Damage split by type.** If an attack deals fire and cold, apply each to different tokens.
+- **Edit rolls after they land.** Turn a flat roll into advantage, promote a hit to a crit, or add a Bless die you forgot.
 
 ## Status on dnd5e 6
 
 RSReforged's version number now tracks the dnd5e system: **RSReforged 6.x is for dnd5e 6.x.**
 
-dnd5e 6.0 replaced the chat-message model RSReforged was built on, so 6.0.0 is a deliberately small base release. It does one thing well: **one click rolls the attack and the damage together**, as a single Dice So Nice throw, into one chat card. Everything inside that card is dnd5e's own markup, including its damage tray, so it looks and behaves exactly like vanilla dnd5e with fewer clicks. RSReforged's own card controls are coming back one feature at a time in later 6.x releases.
+dnd5e 6.0 replaced the chat-message model RSReforged was built on. RSReforged 6.0 rebuilds the familiar card on top of it: one click rolls the attack and the damage together, as a single Dice So Nice throw, into one card with RSReforged's Attack and Damage sections, apply buttons, and roll-editing controls. Checks and saves get the RSReforged look too.
 
-### Working in 6.0.0
+Under the hood each roll is now dnd5e's own attack, damage, check, or save message, hidden behind the card. Edits (advantage, crits, bonuses, rerolls, damage types) are written to those messages, so dnd5e's own targeting, damage application, and other modules see the same numbers you do.
 
-- **Enable Quick Roll for Activities** — one click rolls attack and damage (or healing, or a utility formula) into a single combined card, as one Dice So Nice throw.
-- **Enable Quick Roll for Abilities / Skills / Tool Checks** — skips the dnd5e roll dialog. Hold the *Advantage* or *Disadvantage* modifier to roll in that mode; hold *Skip Dialog* (Shift by default) to get the normal dialog for one roll.
-- **Use Vanilla Rolls with RSReforged Styling** — works as the master off switch for quick rolls. It adds no styling in 6.0.0.
-- **Roll Damage Manually** — the attack rolls alone; dnd5e's own Damage button on the card rolls the damage, and the result joins the same card.
-- **Aggregate Damage Fields** — applied through dnd5e's own damage display.
-- **Equipped-ammunition preference** and the **Versatile two-handed keybinding** (V by default).
+### Known issues on dnd5e 6
 
-### Not active yet in 6.0.0
-
-These settings are still listed in *Module Settings* and keep their saved values, but they have **no effect on dnd5e 6 yet**:
-
-| Setting | What happens instead in 6.0.0 |
-|---|---|
-| **Hide NPC Roll Results**, **Hidden Roll Style** | **NPC rolls are not masked by RSReforged.** If you rely on this, use dnd5e's own *Attack Result Visibility* and *Challenge Visibility* options (dnd5e system settings, *Visibility*) until it returns. |
-| **Damage Apply UI**, **Always Show RSReforged Apply Buttons**, **RSReforged Apply Button Targets** | dnd5e's damage tray is always used. |
-| **Enable Overlay Buttons**, **Confirm Retroactive Advantage**, **Confirm Retroactive Crits** | No retroactive advantage, disadvantage, or critical on the card. |
-| **Always Roll Multiple Dice** | Only the dice the roll needs are rolled. |
-| **Show D20 Rolls for Quick Rolls** | dnd5e shows its own natural-d20 badge regardless. |
-| **Enable Interactive Dice (Master Switch)**, **Allow Players to Reroll Their Own Dice**, **Allow GM Dice Fudging**, **Reroll Sound & Dice So Nice**, **Log Rerolls to Chat** | Clicking a die in the breakdown does nothing. |
-
-Features without a setting that are also not active yet: **Add a bonus after the roll** (including pre-defined bonuses on Active Effects), **changing a damage type on the card**, **per-damage-type apply buttons**, and the **`rsreforged.*` Integration API hooks**, which do not fire on dnd5e 6 cards in 6.0.0.
+- **Critical promotion** refuses damage that contains a typed multi-term bonus (for example `+1d6 + 2` fire added with *Add Bonus*), and shows an error instead. Plain typed dice promote normally.
+- **Hide NPC Roll Results** masks save summaries on cards RSReforged manages. A spell used through dnd5e's dialog shows dnd5e's own summaries unmasked.
+- **Death saves** accept bonuses and retroactive advantage, as in 4.x, but dnd5e does not recount the actor's death-save successes afterwards.
+- **Integration API:** only `rsreforged.renderApplyDamageButtons` fires on dnd5e 6 cards so far. See [`docs/INTEGRATION.md`](https://github.com/arrowedisgaming/RSReforged/blob/master/docs/INTEGRATION.md).
+- Clicking a die inside dnd5e's own roll breakdowns does nothing; rerolls work on RSReforged's cards.
 
 ## Compatibility
 
-| | Minimum | Verified |
+| | Required | Verified |
 |---|---|---|
-| Foundry VTT | **14.367** | 14.539 |
-| dnd5e system | **6.0.0** | 6.0.1 |
+| Foundry VTT | **14** | 14.367 |
+| dnd5e system | **6.x** | 6.0.5 |
 
-**RSReforged 6.x requires dnd5e 6.0 or newer.** Pick the version that matches your system:
+**RSReforged 6.x requires Foundry VTT 14 and dnd5e 6.x.** Pick the version that matches your system:
 
 | Your dnd5e version | Use | Manifest URL |
 |---|---|---|
-| **6.0 and newer** | RSReforged 6.x (latest) | `https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/module.json` |
+| **6.x** | RSReforged 6.x (latest) | `https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/module.json` |
 | **5.3.x** | RSReforged 4.13.4 (full feature set, no further updates) | `https://github.com/arrowedisgaming/RSReforged/releases/download/release-4.13.4/module.json` |
 | **5.0–5.2**, or Foundry v13 | [upstream RSR v3.5.0](https://github.com/MangoFVTT/fvtt-ready-set-roll-5e/releases/tag/release-3.5.0) | — |
 
-If you are staying on dnd5e 5.3.x, **do not update RSReforged past 4.13.4**. Foundry will offer 6.0.0 as an update and only shows a compatibility warning; it does not stop you. RSReforged 6.x is not tested or supported on dnd5e 5.3. Lock the module in *Add-on Modules* (the padlock icon), or reinstall from the 4.13.4 manifest URL above.
+If you are staying on dnd5e 5.3.x, **do not update RSReforged past 4.13.4**. Foundry will offer 6.0 as an update and only shows a compatibility warning; it does not stop you. RSReforged 6.x is not tested or supported on dnd5e 5.3. Lock the module in *Add-on Modules* (the padlock icon), or reinstall from the 4.13.4 manifest URL above.
 
 RSReforged also conflicts with other modules that overhaul the dnd5e roll pipeline, most notably [Midi-QOL](https://gitlab.com/tposney/midi-qol). They will fight each other in unpredictable ways. Pick one.
 
@@ -111,8 +101,6 @@ https://raw.githubusercontent.com/arrowedisgaming/RSReforged/master/module.json
 Click *Install*. Foundry downloads the latest release and adds RSReforged to your module list.
 
 ## Features
-
-> On dnd5e 6, only **Quick rolls** is active in 6.0.0. The other features below describe RSReforged 4.13.4 on dnd5e 5.3 and return in later 6.x releases. See [Status on dnd5e 6](#status-on-dnd5e-6).
 
 ### Quick rolls
 
@@ -144,7 +132,7 @@ See [Setting up pre-defined bonuses](#setting-up-pre-defined-bonuses) below for 
 
 With this feature enabled, you can click any die shown in a chat tooltip:
 
-- **Left-click** a die in a roll you made to reroll that die in place. The chat card recalculates. If Dice So Nice is installed, the rerolled die is animated in 3D; otherwise the configured dice sound plays as a fallback. A public chat message logs the reroll (e.g. *"Alice rerolled a d20: 7 → 14"*), respecting the current roll mode.
+- **Left-click** a die in a roll you made to reroll that die in place. The chat card recalculates. If Dice So Nice is installed, the rerolled die is animated in 3D; otherwise the configured dice sound plays as a fallback. A chat message logs the reroll (e.g. *"Alice rerolled a d20: 7 → 14"*). For a whispered or blind roll, the log and the 3D die go only to that roll's audience; otherwise the log follows the current roll mode.
 - **Right-click** a die (GM only, when *Allow GM Dice Fudging* is on) to set its value via a prompt. Useful for narrative course-correction. Fudging is intentionally silent.
 
 Settings that gate the feature:
@@ -157,7 +145,7 @@ Settings that gate the feature:
 
 ## Configuration
 
-All settings live under *Configure Settings → Module Settings → RSReforged*. Several have no effect on dnd5e 6 yet; see [Status on dnd5e 6](#status-on-dnd5e-6) for the list. The ones worth knowing:
+All settings live under *Configure Settings → Module Settings → RSReforged*. The ones worth knowing:
 
 - **Quick Roll for {Skills, Abilities, Tools, Activities}** — toggle each category independently
 - **Always Roll Multiple Dice** — show two d20s on every roll, not just advantage or disadvantage
@@ -220,6 +208,8 @@ Examples:
 ## Integration API (for module authors)
 
 RSReforged emits a small set of public hooks so other modules can decorate its chat cards without racing Foundry's render lifecycle. Full reference, contract rules, and worked examples in [`docs/INTEGRATION.md`](https://github.com/arrowedisgaming/RSReforged/blob/master/docs/INTEGRATION.md).
+
+On dnd5e 6, only `rsreforged.renderApplyDamageButtons` fires so far; the others are emitted for legacy dnd5e 5.3 cards.
 
 | Hook | When it fires | Args |
 |---|---|---|
