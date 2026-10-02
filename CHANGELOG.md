@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Card Style setting (dnd5e 6).** *Classic RSReforged* (the default) is the card as it is in 6.0.0. *Vanilla+* keeps dnd5e 6's own compact roll rows and folds them onto the usage card: RSReforged asks dnd5e to render each attack, damage, healing or formula message and moves its rows (roll button, breakdown popover, targets, damage tray) under the item card, so the look follows the system and other modules' changes to those rows carry over. Each roll's breakdown gets Disadvantage / Advantage, Critical Hit and Bonus buttons that run the same edits as the classic overlays, on quick-roll cards, standalone checks and saves, and the save lines summarised on a usage card. *Hide NPC Roll Results*, the *Always Roll Multiple Dice* extra d20 (shown faded beside the real one), and click-to-reroll / GM fudging apply in both styles; in Vanilla+ the dice in dnd5e's breakdown are matched to the roll's dice and left inert if they do not correspond exactly. Not in Vanilla+ yet: damage-type cycling and the RSReforged quick apply buttons (it always uses dnd5e's tray).
+- **Wide saving throw button on Classic cards.** dnd5e 6 shows a save as a small shield icon among the card's action icons. Classic cards now also get the 4.x full-width "DC 15 Dexterity Saving Throw" button under the damage section, one per save ability. It forwards the click (with Shift/Ctrl/Alt) to dnd5e's own button, and leaves the DC off for viewers dnd5e hides it from.
+
 ## [6.0.0] — 2026-10-02
 
 > **Experimental support for the D&D 5e system version 6.** We're still working out some bugs, but we want to get a release out for early testers. Please report problems on the [issue tracker](https://github.com/arrowedisgaming/RSReforged/issues) with your Foundry, dnd5e, and RSReforged versions. If you are on dnd5e 5.3, stay on RSReforged 4.13.4 (see below).

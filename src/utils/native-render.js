@@ -3,6 +3,7 @@ import { BonusManager } from './bonus.js';
 import { getOriginId, getRollType } from './dnd5e-compat.js';
 import { getNativeRollSources } from './native-workflow.js';
 import { renderRsrCheck, renderRsrSection } from './native-card.js';
+import { decorateVanillaRolls, renderVanillaSection } from './native-vanilla.js';
 import { HIDE_NPC_ROLL_STYLES, SETTING_NAMES, SettingsUtility } from './settings.js';
 
 const combinedTypes = new Set(['attack', 'damage', 'healing', 'generic']);
@@ -96,11 +97,15 @@ export async function renderNativeMessage(message, suppliedHtml) {
     const content = html.querySelector('.message-content');
     if (!content) return;
 
+    const vanilla = SettingsUtility.useVanillaCards;
+    html.classList.toggle('rsr-vanilla-card', vanilla);
     const token = {};
     renders.set(html, token);
     content.querySelector(':scope > .rsr-native-combined')?.remove();
-    // dnd5e's registry returns children in no guaranteed order; the card reads top-down.
     maskHiddenSummaries(content);
+    if (vanilla) decorateSummaries(content);
+    else addWideSaveButtons(message, content);
+    // dnd5e's registry returns children in no guaranteed order; the card reads top-down.
     const sources = getNativeRollSources(message).filter(child =>
         combinedTypes.has(child.type) && child.visible !== false && child.isContentVisible)
         .sort((a, b) => (sectionOrder[a.type] - sectionOrder[b.type]) || (a.timestamp - b.timestamp));
@@ -110,7 +115,7 @@ export async function renderNativeMessage(message, suppliedHtml) {
     }
 
     const combined = document.createElement('div');
-    combined.className = 'rsr-native-combined';
+    combined.className = vanilla ? 'rsr-native-combined rsr-vanilla' : 'rsr-native-combined';
     // Results appear when the dice land, as they do on a plain native card.
     const throws = pendingThrows(sources);
     combined.hidden = throws.length > 0;
@@ -120,7 +125,7 @@ export async function renderNativeMessage(message, suppliedHtml) {
     else content.append(combined);
 
     for (const child of sources) {
-        const section = await renderRsrSection(message, child);
+        const section = vanilla ? await renderVanillaSection(message, child) : await renderRsrSection(message, child);
         if (renders.get(html) !== token) return;
         if (!section) continue;
         // The section's data-message-id identifies the real child document, so
@@ -167,6 +172,12 @@ async function renderNativeCheck(message, html) {
     const rows = [...(content?.querySelectorAll(':scope > .icon-row') ?? [])].filter(row => row.querySelector('.dice-roll'));
     if (!rows.length) return;
 
+    // Vanilla+: dnd5e's row stays; the edits go into its breakdown.
+    if (SettingsUtility.useVanillaCards) {
+        decorateVanillaRolls(message, content, { flavor: true });
+        return;
+    }
+
     const section = await renderRsrCheck(message);
     // dnd5e fires this before ChatLog inserts the card, so ask whether the row is still
     // part of this render, not whether it is in the document.
@@ -203,6 +214,64 @@ function maskHiddenSummaries(content) {
         }
         summary.querySelectorAll('.roll-breakdown').forEach(node => node.remove());
     }
+}
+
+/**
+ * Vanilla+: the save and check lines dnd5e summarises on the usage card get the same
+ * breakdown buttons as a standalone card. Hidden NPC rows were masked just before this
+ * and have no breakdown left to decorate.
+ */
+function decorateSummaries(content) {
+    for (const summary of content.querySelectorAll(':scope > .card-summary[data-message-id]')) {
+        const source = game.messages.get(summary.dataset.messageId);
+        if (!source || !checkTypes.has(source.type) || !source.isContentVisible) continue;
+        decorateVanillaRolls(source, summary, { flavor: true, mask: false });
+    }
+}
+
+/**
+ * Classic: the 4.x wide saving throw button. dnd5e 6 shows a usage card's save as a small
+ * shield icon in its "Item actions" row; this adds one full-width button per save ability
+ * under the roll sections (or under the item card when nothing was rolled) and above the
+ * save results. It carries no data-action of its own: the click is forwarded, with its
+ * modifier keys, to dnd5e's button, so the roll, targets and permissions are dnd5e's.
+ */
+export function addWideSaveButtons(message, content) {
+    content.querySelector(':scope > .rsr-wide-buttons')?.remove();
+    const sources = [...content.querySelectorAll(':scope > .chat-card button[data-action="rollSave"]')];
+    if (!sources.length) return;
+
+    const showDc = message.shouldDisplayChallenge !== false;
+    const row = document.createElement('div');
+    row.className = 'rsr-wide-buttons';
+    for (const source of sources) {
+        const ability = CONFIG.DND5E.abilities?.[source.dataset.ability]?.label ?? '';
+        const dc = source.dataset.dc;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'rsr-wide-save';
+        button.disabled = source.disabled;
+        const icon = document.createElement('i');
+        icon.className = 'fa-solid fa-shield-heart';
+        icon.inert = true;
+        const label = document.createElement('span');
+        label.textContent = (showDc && dc)
+            ? game.i18n.format('DND5E.SavingThrowDC', { ability, dc })
+            : game.i18n.format('DND5E.SavePromptTitle', { ability });
+        button.append(icon, label);
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            // The element's own window: chat can live in a detached window.
+            const Click = source.ownerDocument?.defaultView?.MouseEvent ?? MouseEvent;
+            source.dispatchEvent(new Click('click', {
+                bubbles: true, cancelable: true,
+                shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, altKey: event.altKey, metaKey: event.metaKey
+            }));
+        });
+        row.append(button);
+    }
+    content.querySelector(':scope > .chat-card')?.after(row);
 }
 
 function toggleBreakdown(event) {

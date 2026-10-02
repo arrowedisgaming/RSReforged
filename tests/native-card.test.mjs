@@ -527,6 +527,27 @@ describe("Always Roll Multiple Dice display", () => {
     });
 });
 
+it("reports where each die of a damage breakdown comes from, per roll or merged per type", async () => {
+    const rolls = [damageRoll("slashing", 7, 10, 3), damageRoll("fire", 6, 6)];
+    const attack = { dice: [] };
+
+    // Indices refer to the message's rolls, not to the damage rolls alone.
+    expect(card.damageDieSources(rolls, [attack, ...rolls], false)).toEqual([
+        [{ rollIndex: 1, dieIndex: 0, resultIndex: 0, result: "7" }],
+        [{ rollIndex: 2, dieIndex: 0, resultIndex: 0, result: "6" }]
+    ]);
+
+    // Aggregated: whatever parts dnd5e merges the rolls into, each die keeps its source.
+    dnd5e.dice.aggregateDamageRolls = (display) => {
+        const merged = Object.create(Object.getPrototypeOf(display[0]));
+        Object.assign(merged, display[0]);
+        merged.terms = display.flatMap((roll) => roll.terms);
+        return [merged];
+    };
+    expect(card.damageDieSources(rolls, rolls, true).map((part) => part.map((die) => [die.rollIndex, die.dieIndex, die.result]).sort()))
+        .toEqual([[[0, 0, "7"], [1, 0, "6"]]]);
+});
+
 describe("review fixes", () => {
     it("stamps damage dice for rerolls even when dnd5e's aggregation rebuilds every term", async () => {
         CONFIG.DND5E.aggregateDamageDisplay = true;

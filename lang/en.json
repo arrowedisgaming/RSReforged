@@ -50,7 +50,9 @@
             "rerollSoundEnabled.name": "Reroll Sound & Dice So Nice",
             "rerollSoundEnabled.hint": "When a die is rerolled, play the configured dice sound and animate the rerolled die in 3D via Dice So Nice if installed. If Dice So Nice is not available, the dice sound is still played as a fallback.",
             "rerollLogChat.name": "Log Rerolls to Chat",
-            "rerollLogChat.hint": "When a die is rerolled, post a public chat message announcing the reroll (e.g. \"Alice rerolled a d20: 7 → 14\"). The message respects the current roll mode (public/whisper/blind/self)."
+            "rerollLogChat.hint": "When a die is rerolled, post a public chat message announcing the reroll (e.g. \"Alice rerolled a d20: 7 → 14\"). The message respects the current roll mode (public/whisper/blind/self).",
+            "cardStyle.name": "Card Style",
+            "cardStyle.hint": "How quick-roll results are drawn on the chat card (dnd5e 6). Classic shows RSReforged's boxed Attack / Damage sections with the large total and a wide saving throw button. Vanilla+ keeps dnd5e's own compact roll rows and folds them onto the one card; advantage, critical and bonus buttons are in each roll's breakdown. Rolling, targeting and damage application are identical in both."
         },
         "choices": {
             "rollModifierMode": {
@@ -81,6 +83,10 @@
             "hideNpcRollStyle": {
                 "total": "Hide Total (show natural d20)",
                 "breakdown": "Hide Breakdown (show final total)"
+            },
+            "cardStyle": {
+                "classic": "Classic RSReforged",
+                "vanilla": "Vanilla+ (dnd5e compact rows)"
             }
         },
         "sheet": {
@@ -118,7 +124,9 @@
                 "rollAdvantage": "Click to roll with advantage.",
                 "rollDisadvantage": "Click to roll with disadvantage.",
                 "repeat": "Click to repeat the quick roll.",
-                "damageType": "Click to change the damage type."
+                "damageType": "Click to change the damage type.",
+                "bonus": "Add a bonus to this roll.",
+                "bonusShort": "Bonus"
             },
             "prompts": {
                 "retroCrit": "Upgrade to Crit?",
@@ -129,7 +137,8 @@
                 "log": "<strong>{user}</strong> rerolled a d{faces}: <span class=\"rsr-reroll-old\">{old}</span> &rarr; <span class=\"rsr-reroll-new\">{new}</span>",
                 "flavor": "Reroll",
                 "notification": "Rerolled die: New result is {new}"
-            }
+            },
+            "ignoredDie": "Unused d20"
         },
         "messages": {
             "error": {

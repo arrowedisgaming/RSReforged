@@ -34,7 +34,21 @@ export const SETTING_NAMES = {
     REROLL_PLAYERS: "rerollPlayers",
     FUDGE_GM: "fudgeGM",
     REROLL_SOUND_ENABLED: "rerollSoundEnabled",
-    REROLL_LOG_CHAT: "rerollLogChat"
+    REROLL_LOG_CHAT: "rerollLogChat",
+
+    // dnd5e 6 card style
+    CARD_STYLE: "cardStyle"
+}
+
+/**
+ * How a quick roll's results are drawn on its usage card (dnd5e 6 only).
+ * The rolls, the messages that hold them, and every edit are the same in both.
+ */
+export const CARD_STYLES = {
+    // RSReforged's boxed Attack / Damage / Formula sections with the big total.
+    CLASSIC: "classic",
+    // dnd5e 6's own compact roll rows, folded onto the usage card.
+    VANILLA: "vanilla"
 }
 
 export const DAMAGE_APPLY_MODES = {
@@ -76,6 +90,21 @@ export class SettingsUtility {
      */
     static registerSettings() {
         LogUtility.log("Registering module settings");
+
+        // CARD STYLE (dnd5e 6)
+        game.settings.register(MODULE_NAME, SETTING_NAMES.CARD_STYLE, {
+            name: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.CARD_STYLE}.name`),
+            hint: CoreUtility.localize(`${MODULE_SHORT}.settings.${SETTING_NAMES.CARD_STYLE}.hint`),
+            scope: "world",
+            config: true,
+            type: String,
+            default: CARD_STYLES.CLASSIC,
+            requiresReload: true,
+            choices: {
+                [CARD_STYLES.CLASSIC]: CoreUtility.localize(`${MODULE_SHORT}.choices.cardStyle.${CARD_STYLES.CLASSIC}`),
+                [CARD_STYLES.VANILLA]: CoreUtility.localize(`${MODULE_SHORT}.choices.cardStyle.${CARD_STYLES.VANILLA}`)
+            }
+        });
 
         // QUICK ROLL SETTINGS
         // QUICK_VANILLA_ENABLED is registered first so it sits at the top of the
@@ -321,6 +350,11 @@ export class SettingsUtility {
      */
     static getHideNpcRollStyle() {
         return SettingsUtility.getSettingValue(SETTING_NAMES.HIDE_NPC_ROLL_STYLE);
+    }
+
+    /** Whether dnd5e 6 cards use dnd5e's own compact roll rows (Vanilla+) instead of RSR sections. */
+    static get useVanillaCards() {
+        return SettingsUtility.getSettingValue(SETTING_NAMES.CARD_STYLE) === CARD_STYLES.VANILLA;
     }
 
     static get _useRsrDamageApplyButtons() {

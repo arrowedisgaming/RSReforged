@@ -156,9 +156,58 @@ async function _formulaSection(parent, child) {
  * The 4.x hover overlays. Each edit rewrites the child document's own rolls; its update
  * refreshes the usage card, which rebuilds these sections from the new rolls.
  */
-function _canEdit(child) {
+export function canEditRolls(child) {
     return SettingsUtility.getSettingValue(SETTING_NAMES.OVERLAY_BUTTONS_ENABLED)
         && (game.user.isGM || child.isAuthor === true);
+}
+const _canEdit = canEditRolls;
+
+/**
+ * Retroactively give a message's d20 roll advantage or disadvantage. Shared by the classic
+ * overlay and the Vanilla+ breakdown buttons.
+ * @param {ChatMessage} child The message that owns the roll.
+ * @param {string} state ROLL_STATE.ADV or ROLL_STATE.DIS.
+ * @param {object} [options]
+ * @param {boolean} [options.flavor] Also write the new mode into the message flavor (checks and saves).
+ * @param {Event} [options.event] Positions the confirmation dialog.
+ */
+export async function retroAdvantage(child, state, { flavor = false, event } = {}) {
+    const target = CoreUtility.localize(state === ROLL_STATE.ADV ? 'DND5E.Advantage' : 'DND5E.Disadvantage');
+    if (!await _confirm(SETTING_NAMES.CONFIRM_RETRO_ADV, CoreUtility.localize(`${MODULE_SHORT}.chat.prompts.retroAdv`, { target }), event)) return;
+    const before = _rollsState(child);
+    const rolls = _cloneRolls(child);
+    const index = rolls.findIndex(r => r instanceof CONFIG.Dice.D20Roll);
+    if (index < 0) return;
+    // Adds the extra d20 (a stored Always Roll Multiple Dice alternate, or one rolled
+    // and thrown now for this message's audience), keeping the original result.
+    rolls[index] = await RollUtility.upgradeRoll(rolls[index], state, { message: child });
+    if (!_unchangedSince(child, before)) return;
+    const update = { rolls: CoreUtility.serializeRolls(rolls) };
+    if (flavor) update.flavor = `${child.flavor ?? ''} (${target})`.trim();
+    await child.update(update);
+}
+
+/**
+ * Retroactively promote a damage message's rolls to a critical hit. Shared by the classic
+ * overlay and the Vanilla+ breakdown buttons.
+ * @param {ChatMessage} child The damage message.
+ * @param {Event} [event] Positions the confirmation dialog.
+ */
+export async function retroCritical(child, event) {
+    if (!await _confirm(SETTING_NAMES.CONFIRM_RETRO_CRIT, CoreUtility.localize(`${MODULE_SHORT}.chat.prompts.retroCrit`), event)) return;
+    const before = _rollsState(child);
+    const rolls = _cloneRolls(child);
+    const promoted = [];
+    for (const [index, roll] of rolls.entries()) {
+        if (!(roll instanceof CONFIG.Dice.DamageRoll)) continue;
+        // dnd5e builds the critical expression; the original dice keep their results.
+        rolls[index] = await setNativeCritical(roll, true);
+        promoted.push(rolls[index]);
+    }
+    if (!promoted.length) return;
+    await _showDice(child, promoted);
+    if (!_unchangedSince(child, before)) return;
+    await child.update({ rolls: CoreUtility.serializeRolls(rolls) });
 }
 
 async function _addAdvantageOverlay(section, child, roll, { flavor = false } = {}) {
@@ -166,22 +215,8 @@ async function _addAdvantageOverlay(section, child, roll, { flavor = false } = {
     const total = section.querySelector('.rsr-multiroll .dice-total');
     if (!total) return;
     total.append(_fragment(await RenderUtility.render(TEMPLATE.OVERLAY_MULTIROLL, {})));
-    _onOverlayClick(total.querySelectorAll('.rsr-overlay-multiroll [data-action="rsr-retro"]'), async (event, button) => {
-        const state = button.dataset.state;
-        const target = CoreUtility.localize(state === ROLL_STATE.ADV ? 'DND5E.Advantage' : 'DND5E.Disadvantage');
-        if (!await _confirm(SETTING_NAMES.CONFIRM_RETRO_ADV, CoreUtility.localize(`${MODULE_SHORT}.chat.prompts.retroAdv`, { target }), event)) return;
-        const before = _rollsState(child);
-        const rolls = _cloneRolls(child);
-        const index = rolls.findIndex(r => r instanceof CONFIG.Dice.D20Roll);
-        if (index < 0) return;
-        // Adds the extra d20 (a stored Always Roll Multiple Dice alternate, or one rolled
-        // and thrown now for this message's audience), keeping the original result.
-        rolls[index] = await RollUtility.upgradeRoll(rolls[index], state, { message: child });
-        if (!_unchangedSince(child, before)) return;
-        const update = { rolls: CoreUtility.serializeRolls(rolls) };
-        if (flavor) update.flavor = `${child.flavor ?? ''} (${target})`.trim();
-        await child.update(update);
-    });
+    _onOverlayClick(total.querySelectorAll('.rsr-overlay-multiroll [data-action="rsr-retro"]'),
+        (event, button) => retroAdvantage(child, button.dataset.state, { flavor, event }));
 }
 
 async function _addCriticalOverlay(section, child) {
@@ -189,28 +224,17 @@ async function _addCriticalOverlay(section, child) {
     const total = section.querySelector('.rsr-damage > .dice-total');
     if (!total) return;
     total.append(_fragment(await RenderUtility.render(TEMPLATE.OVERLAY_CRIT, {})));
-    _onOverlayClick(total.querySelectorAll('.rsr-overlay-crit [data-action="rsr-retro"]'), async event => {
-        if (!await _confirm(SETTING_NAMES.CONFIRM_RETRO_CRIT, CoreUtility.localize(`${MODULE_SHORT}.chat.prompts.retroCrit`), event)) return;
-        const before = _rollsState(child);
-        const rolls = _cloneRolls(child);
-        const promoted = [];
-        for (const [index, roll] of rolls.entries()) {
-            if (!(roll instanceof CONFIG.Dice.DamageRoll)) continue;
-            // dnd5e builds the critical expression; the original dice keep their results.
-            rolls[index] = await setNativeCritical(roll, true);
-            promoted.push(rolls[index]);
-        }
-        if (!promoted.length) return;
-        await _showDice(child, promoted);
-        if (!_unchangedSince(child, before)) return;
-        await child.update({ rolls: CoreUtility.serializeRolls(rolls) });
-    });
+    _onOverlayClick(total.querySelectorAll('.rsr-overlay-crit [data-action="rsr-retro"]'), event => retroCritical(child, event));
 }
 
 /** The 4.x header "+": the bonus is added to this child's own roll, as the overlays are. */
 function _addBonusButton(section, child, type) {
     if (!game.user.isGM && child.isAuthor !== true) return;
     BonusManager.injectButton(child, $(section), type, `.rsr-section-${type}`);
+}
+
+export function onEditClick(buttons, handler) {
+    return _onOverlayClick(buttons, handler);
 }
 
 function _onOverlayClick(buttons, handler) {
@@ -318,15 +342,7 @@ async function _renderRoll(roll, rollIndex) {
  */
 function _renderDamage(rolls, sources = rolls) {
     const aggregate = CONFIG.DND5E.aggregateDamageDisplay;
-    // Display copies whose dice carry their source in options: dnd5e's aggregation
-    // rebuilds every term from its JSON, which keeps options but not identity.
-    const display = rolls.map(roll => {
-        const copy = Roll.fromData(roll.toJSON());
-        const rollIndex = sources.indexOf(roll);
-        copy.dice.forEach((die, dieIndex) => { die.options = { ...die.options, rsrSource: [rollIndex, dieIndex] }; });
-        return copy;
-    });
-    const parts = aggregate ? dnd5e.dice.aggregateDamageRolls(display) : display;
+    const parts = _damageParts(rolls, sources, aggregate);
     // Aggregated parts carry their own leading " + ", which the first part must drop.
     const formula = parts.map(r => r.formula).join(aggregate ? '' : ' + ').replace(/^\s*\+\s*/, '');
     const total = parts.reduce((sum, r) => sum + Math.max(0, r.total), 0);
@@ -359,6 +375,36 @@ function _renderDamage(rolls, sources = rolls) {
     </div>`;
     root.querySelector('.dice-formula').textContent = formula;
     return root;
+}
+
+/**
+ * The damage rolls as dnd5e lists them in a breakdown, one part per roll or, aggregated,
+ * one per damage type. Display copies whose dice carry their source in options: dnd5e's
+ * aggregation rebuilds every term from its JSON, which keeps options but not identity.
+ */
+function _damageParts(rolls, sources, aggregate) {
+    const display = rolls.map(roll => {
+        const copy = Roll.fromData(roll.toJSON());
+        const rollIndex = sources.indexOf(roll);
+        copy.dice.forEach((die, dieIndex) => { die.options = { ...die.options, rsrSource: [rollIndex, dieIndex] }; });
+        return copy;
+    });
+    return aggregate ? dnd5e.dice.aggregateDamageRolls(display) : display;
+}
+
+/**
+ * Where each die of a damage breakdown comes from, part by part in display order, for a
+ * breakdown RSReforged did not render itself (Vanilla+ stamps dnd5e's own).
+ * @param {Roll[]} rolls The damage rolls shown.
+ * @param {Roll[]} sources The message's rolls, which the indices refer to.
+ * @param {boolean} aggregate Whether the breakdown merges rolls of one damage type.
+ * @returns {{rollIndex: number, dieIndex: number, resultIndex: number, result: string}[][]}
+ */
+export function damageDieSources(rolls, sources, aggregate) {
+    return _damageParts(rolls, sources, aggregate).map(part => _simplifyDamageRoll(part).dice.map(die => {
+        const [rollIndex, dieIndex] = die.term?.options?.rsrSource ?? [];
+        return { rollIndex, dieIndex, resultIndex: die.resultIndex, result: String(die.result) };
+    }));
 }
 
 /**
