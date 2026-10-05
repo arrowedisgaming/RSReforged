@@ -12,6 +12,12 @@ const renders = new WeakMap();
 /** Longest a folded card waits for Dice So Nice before revealing its results anyway. */
 const DICE_REVEAL_TIMEOUT_MS = 10000;
 
+/** Every match in the main document and in any detached Foundry window. */
+function queryAll(selector) {
+    return globalThis.foundry?.applications?.detached?.querySelectorAll?.(selector)
+        ?? document.querySelectorAll(selector);
+}
+
 /** UI-only refresh: never update a document from its render/update hook. */
 export function refreshNativeOrigin(message, { rollsChanged = false } = {}) {
     const id = getOriginId(message);
@@ -96,6 +102,39 @@ const WIDE_ACTIONS = new Set(['rollDamage', 'rollSave']);
 // dialog or a failed roll re-renders nothing, so the button comes back.
 const WIDE_ACTION_BUSY_MS = 1500;
 
+/**
+ * Card actions in progress, by `messageId.action.index`. Kept here, not on a button:
+ * dnd5e re-renders the usage card as each save result posts while its handler still
+ * awaits the next target, and the sidebar, popout, and a notification each render their
+ * own copy of the card. An entry lives only while its action is busy: until the cooldown
+ * ends and dnd5e has re-enabled the button that was clicked (on a re-rendered card, the
+ * detached original, which dnd5e still re-enables in its `finally`).
+ */
+const busyActions = new Map();
+
+function isWideActionBusy(key) {
+    const state = busyActions.get(key);
+    return !!state && (state.cooling || state.source.disabled);
+}
+
+function refreshWideAction(key) {
+    const busy = isWideActionBusy(key);
+    for (const button of queryAll(`.rsr-wide-action[data-rsr-action-key="${key}"]`)) button.disabled = busy;
+    if (busy) return;
+    busyActions.get(key)?.observer.disconnect();
+    busyActions.delete(key);
+}
+
+function startWideAction(key, source) {
+    const state = { cooling: true, source, observer: new MutationObserver(() => refreshWideAction(key)) };
+    state.observer.observe(source, { attributes: true, attributeFilter: ['disabled'] });
+    busyActions.set(key, state);
+    setTimeout(() => {
+        state.cooling = false;
+        refreshWideAction(key);
+    }, WIDE_ACTION_BUSY_MS);
+}
+
 // dnd5e's singleton save icon is labelled just "Saving Throw"; 4.x read "DC 15 Dexterity
 // Saving Throw", with the DC withheld when dnd5e withholds it.
 function wideLabel(message, source) {
@@ -114,8 +153,8 @@ function wideLabel(message, source) {
  * hides the icons. Grouped multi-ability saves keep dnd5e's icon, which anchors its
  * ability menu. A wide button has no data-action of its own: the click is forwarded,
  * with its modifier keys, to dnd5e's button, so the roll, its origin card, and its
- * permissions stay dnd5e's. A wide button is busy while dnd5e's button is disabled (a
- * save awaits every target's roll) and for WIDE_ACTION_BUSY_MS after each click: dnd5e's
+ * permissions stay dnd5e's. An action is busy while dnd5e's button is disabled (a save
+ * awaits every target's roll) and for WIDE_ACTION_BUSY_MS after each click: dnd5e's
  * Damage handler doesn't await its roll, so its own button is enabled again at once.
  */
 function addWideActions(message, content, container, anchor) {
@@ -134,17 +173,15 @@ function addWideActions(message, content, container, anchor) {
         label.textContent = wideLabel(message, source);
         button.append(label);
 
-        let busy = false;
-        const sync = () => { button.disabled = busy || source.disabled; };
-        sync();
-        new MutationObserver(sync).observe(source, { attributes: true, attributeFilter: ['disabled'] });
+        const key = `${message.id}.${source.dataset.action}.${source.dataset.index ?? ''}`;
+        button.dataset.rsrActionKey = key;
+        button.disabled = isWideActionBusy(key);
         button.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
-            if (busy || source.disabled) return;
-            busy = true;
-            sync();
-            setTimeout(() => { busy = false; sync(); }, WIDE_ACTION_BUSY_MS);
+            if (isWideActionBusy(key) || source.disabled) return;
+            startWideAction(key, source);
+            refreshWideAction(key);
             // The element's own window: chat can live in a detached window.
             const Click = source.ownerDocument?.defaultView?.MouseEvent ?? MouseEvent;
             // dnd5e places its damage dialog at the click's height.
@@ -326,12 +363,10 @@ function toggleBreakdown(event) {
 
 /** Hide originals that a fold-in represents; restore them when it disappears. */
 export function reconcileNativeSources() {
-    const query = selector => globalThis.foundry?.applications?.detached?.querySelectorAll?.(selector)
-        ?? document.querySelectorAll(selector);
-    for (const root of query('.message[data-message-id]')) {
+    for (const root of queryAll('.message[data-message-id]')) {
         if (root.classList.contains('rsr-native-source')) continue;
         const id = root.dataset.messageId;
-        const represented = [...query('.rsr-native-source[data-rsr-message-id]')].some(node =>
+        const represented = [...queryAll('.rsr-native-source[data-rsr-message-id]')].some(node =>
             node.dataset.rsrMessageId === id && node.isConnected);
         const wasHidden = root.classList.contains('rsr-native-combined-original');
         root.classList.toggle('rsr-native-combined-original', represented);

@@ -384,21 +384,28 @@ it("puts the wide Damage button under the attack, forwarding the click and its k
     expect(clicks[0].button).toBe(0);
 });
 
+// Wide buttons find every copy of themselves in the document, as Foundry's chat log and
+// popout hold them, so these tests attach their cards before clicking.
+function postedManualCard(actions = ["rollDamage"], parent = usageParent([])) {
+    const html = manualUsageHtml(actions);
+    document.body.append(html);
+    return { html, native: html.querySelector("[data-action]"), render: () => renderer.renderNativeMessage(parent, html) };
+}
+
 it("stays busy after forwarding, though dnd5e re-enables its Damage button before the roll exists", async () => {
     // dnd5e's AttackActivity handler doesn't await rollDamage, so Activity#onChatAction's
     // disable/re-enable of the clicked button is over within a microtask (seen live: a
     // double-click rolled damage twice).
     vi.useFakeTimers();
     try {
-        const html = manualUsageHtml(["rollDamage"]);
-        const native = html.querySelector('[data-action="rollDamage"]');
+        const card = postedManualCard();
         const handler = vi.fn();
-        native.addEventListener("click", handler);
-        await renderer.renderNativeMessage(usageParent([]), html);
-        const wide = html.querySelector(".rsr-wide-action");
+        card.native.addEventListener("click", handler);
+        await card.render();
+        const wide = card.html.querySelector(".rsr-wide-action");
 
         wide.click();
-        wide.click();
+        wide.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
         expect(handler).toHaveBeenCalledTimes(1);
         expect(wide.disabled).toBe(true);
 
@@ -416,23 +423,88 @@ it("stays busy after forwarding, though dnd5e re-enables its Damage button befor
 it("also stays busy for as long as dnd5e keeps its button disabled (saves await every target)", async () => {
     vi.useFakeTimers();
     try {
-        const html = manualUsageHtml(["rollDamage"]);
-        const native = html.querySelector('[data-action="rollDamage"]');
-        const handler = vi.fn(() => { native.disabled = true; });
-        native.addEventListener("click", handler);
-        await renderer.renderNativeMessage(usageParent([]), html);
-        const wide = html.querySelector(".rsr-wide-action");
+        const card = postedManualCard();
+        const handler = vi.fn(() => { card.native.disabled = true; });
+        card.native.addEventListener("click", handler);
+        await card.render();
+        const wide = card.html.querySelector(".rsr-wide-action");
 
         wide.click();
         vi.advanceTimersByTime(5000);
         await Promise.resolve();
         expect(wide.disabled).toBe(true);
-        wide.click();
+        wide.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
         expect(handler).toHaveBeenCalledTimes(1);
 
-        native.disabled = false;
+        card.native.disabled = false;
         await Promise.resolve();
         expect(wide.disabled).toBe(false);
+    } finally {
+        vi.useRealTimers();
+    }
+});
+
+it("keeps an action busy across a re-render while dnd5e is still running it", async () => {
+    // dnd5e re-renders the usage card as each save result posts (ChatMessage5e#_onCreate ->
+    // #refreshOrigin, dnd5e.mjs ≈55988/55667) while SaveActivity#rollSave still awaits the
+    // next target. Found in adversarial review: a fresh button let the batch start again.
+    vi.useFakeTimers();
+    try {
+        const first = postedManualCard();
+        first.native.addEventListener("click", () => { first.native.disabled = true; });
+        await first.render();
+        first.html.querySelector(".rsr-wide-action").click();
+
+        // ChatLog replaces the whole message element.
+        first.html.remove();
+        const second = postedManualCard();
+        const fresh = vi.fn();
+        second.native.addEventListener("click", fresh);
+        await second.render();
+        const wide = second.html.querySelector(".rsr-wide-action");
+
+        vi.advanceTimersByTime(1500);
+        expect(wide.disabled).toBe(true);
+        wide.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        expect(fresh).not.toHaveBeenCalled();
+
+        // dnd5e's `finally` re-enables the original, now detached, button.
+        first.native.disabled = false;
+        await Promise.resolve();
+        expect(wide.disabled).toBe(false);
+        wide.click();
+        expect(fresh).toHaveBeenCalledTimes(1);
+    } finally {
+        vi.useRealTimers();
+    }
+});
+
+it("shares busy state between copies of one card, and only that card", async () => {
+    // The sidebar log, its popout, and a chat notification each render their own copy.
+    vi.useFakeTimers();
+    try {
+        const handler = vi.fn();
+        const other = vi.fn();
+        const sidebar = postedManualCard();
+        const popout = postedManualCard();
+        const otherCard = postedManualCard(["rollDamage"], { ...usageParent([]), id: "other" });
+        sidebar.native.addEventListener("click", handler);
+        popout.native.addEventListener("click", handler);
+        otherCard.native.addEventListener("click", other);
+        for (const card of [sidebar, popout, otherCard]) await card.render();
+        const wide = (card) => card.html.querySelector(".rsr-wide-action");
+
+        wide(sidebar).click();
+        expect(wide(popout).disabled).toBe(true);
+        wide(popout).dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        expect(handler).toHaveBeenCalledTimes(1);
+
+        expect(wide(otherCard).disabled).toBe(false);
+        wide(otherCard).click();
+        expect(other).toHaveBeenCalledTimes(1);
+
+        vi.advanceTimersByTime(1500);
+        expect(wide(popout).disabled).toBe(false);
     } finally {
         vi.useRealTimers();
     }
