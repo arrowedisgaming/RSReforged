@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.1] — 2026-10-05
+
 ### Added
 
 - The wide "DC 15 Dexterity Saving Throw" button on spell and feature cards with a single saving throw, as on 4.x (thanks [@maxobremer](https://github.com/maxobremer), [#42](https://github.com/arrowedisgaming/RSReforged/pull/42)). Saves offering a choice of abilities keep dnd5e's icon.
