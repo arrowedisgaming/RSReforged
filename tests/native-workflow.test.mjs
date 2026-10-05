@@ -312,3 +312,22 @@ describe("release review fixes", () => {
         expect(created()[0].dataArray.map((d) => d.type)).toEqual(["attack", "damage"]);
     });
 });
+
+it("resolves the RSR quick-roll card a click came from, and nothing else", () => {
+    const { quickRollCardFor } = workflow;
+    const card = document.createElement("li");
+    card.dataset.messageId = "card";
+    card.innerHTML = '<div class="chat-card"><button data-action="rollDamage"></button></div>';
+    const target = card.querySelector("button");
+    const quick = { id: "card", flags: { rsreforged: { workflowVersion: 2, quickRoll: true } } };
+
+    game.messages.set("card", quick);
+    expect(quickRollCardFor({ target })).toBe(quick);
+
+    // A dialog-rolled (slow) RSR card, a non-RSR card, and no event at all.
+    game.messages.set("card", { id: "card", flags: { rsreforged: { workflowVersion: 2, quickRoll: false } } });
+    expect(quickRollCardFor({ target })).toBeNull();
+    game.messages.set("card", { id: "card", flags: {} });
+    expect(quickRollCardFor({ target })).toBeNull();
+    expect(quickRollCardFor(undefined)).toBeNull();
+});

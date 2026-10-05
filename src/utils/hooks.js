@@ -9,7 +9,7 @@ import { KEYBIND_VERSATILE_TWO_HANDED, ROLL_TYPE, RollUtility } from "./roll.js"
 import { SETTING_NAMES, SettingsUtility, HIDE_NPC_ROLL_MODES } from "./settings.js";
 
 import { usesNativeWorkflow, getOriginId } from "./dnd5e-compat.js";
-import { NATIVE_ACTIVITY_TYPES, runNativeUsage, recordAmmunitionSnapshot, captureNativeMessageConfig } from "./native-workflow.js";
+import { NATIVE_ACTIVITY_TYPES, quickRollCardFor, runNativeUsage, recordAmmunitionSnapshot, captureNativeMessageConfig } from "./native-workflow.js";
 import { renderNativeMessage, refreshNativeOrigin, reconcileNativeSources } from "./native-render.js";
 import { claimNativeThrow, prepareAlternates } from "./native-dice.js";
 
@@ -202,13 +202,23 @@ export class HooksUtility {
             ) return true;
 
             const flags = message?.flags || message?.data?.flags;
-            if (!flags || !flags[MODULE_SHORT]?.quickRoll) return true;
-
-            for (const roll of config.rolls) {
-                roll.options ??= {};
-                roll.options.isCritical ??= config.isCritical;
+            if (flags?.[MODULE_SHORT]?.quickRoll) {
+                for (const roll of config.rolls) {
+                    roll.options ??= {};
+                    roll.options.isCritical ??= config.isCritical;
+                }
+                dialog.configure = false;
+                return true;
             }
-            dialog.configure = false;
+
+            // dnd5e 6: the Damage button on an RSR card (manual damage mode) rolls through
+            // dnd5e's own action, which carries no RSR flags. 4.x quick-rolled it, with the
+            // dialog on the skip-dialog key. Set explicitly both ways: DamageRoll.applyKeybindings
+            // runs next, and for an undefined value it reads that key as "skip the dialog".
+            // Critical/normal keys are still dnd5e's, applied in that same step.
+            if (usesNativeWorkflow() && quickRollCardFor(config.event)) {
+                dialog.configure = CoreUtility.areKeysPressed(config.event, "skipDialogNormal");
+            }
             return true;
         });
 

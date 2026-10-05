@@ -222,3 +222,15 @@ export function runNativeUsage(activity, usageConfig, results) {
     pending.set(parent.id, execution);
     return execution;
 }
+
+/**
+ * The RSR quick-roll usage card a click came from, if any. dnd5e's own card buttons
+ * (Damage) roll without RSR's message flags; dnd5e resolves their origin card the same
+ * way, from the clicked element (BasicRoll.buildPost).
+ */
+export function quickRollCardFor(event) {
+    const id = event?.target?.closest?.('[data-message-id]')?.dataset.messageId;
+    const card = id ? game.messages.get(id) : null;
+    const flags = card?.flags?.[MODULE_SHORT];
+    return flags?.workflowVersion === 2 && flags.quickRoll ? card : null;
+}
