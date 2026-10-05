@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The wide "DC 15 Dexterity Saving Throw" button on spell and feature cards with a single saving throw, as on 4.x (thanks [@maxobremer](https://github.com/maxobremer), [#42](https://github.com/arrowedisgaming/RSReforged/pull/42)). Saves offering a choice of abilities keep dnd5e's icon.
+
+### Fixed
+
+- **The Damage button quick-rolls again** on RSReforged cards in *Roll Damage Manually* mode, as it did in 4.x, instead of opening dnd5e's damage dialog. Hold Shift (dnd5e's *Skip Dialog* key) for the dialog; Alt and Ctrl/Cmd still roll critical and normal damage. Fixes [#43](https://github.com/arrowedisgaming/RSReforged/issues/43).
+- **The wide, labelled Damage button is back under the attack result**, instead of a small icon above it. A double-click rolls once. Refs [#43](https://github.com/arrowedisgaming/RSReforged/issues/43), [#40](https://github.com/arrowedisgaming/RSReforged/issues/40).
+- Check and saving-throw cards no longer end up partly hidden at the bottom of the chat log (sidebar or popout) when their RSReforged result appears as the dice land, for example with *Always Roll Multiple Dice* and Chat Portrait. Refs [#40](https://github.com/arrowedisgaming/RSReforged/issues/40).
+
 ## [6.0.0] — 2026-10-02
 
 > **Experimental support for the D&D 5e system version 6.** We're still working out some bugs, but we want to get a release out for early testers. Please report problems on the [issue tracker](https://github.com/arrowedisgaming/RSReforged/issues) with your Foundry, dnd5e, and RSReforged versions. If you are on dnd5e 5.3, stay on RSReforged 4.13.4 (see below).
