@@ -56,13 +56,78 @@ function hideRepresentedButtons(content, sources) {
     for (const button of content.querySelectorAll(':scope > .chat-card button[data-action]')) {
         if (actions.has(button.dataset.action)) (button.closest('li') ?? button).classList.add('rsr-native-hidden');
     }
-    // Drop a button row left with nothing to show.
+}
+
+// Drop a button row left with nothing to show.
+function hideEmptyRows(content) {
     for (const row of content.querySelectorAll(':scope > .chat-card .icon-row')) {
         const entries = row.querySelectorAll('li');
         if (entries.length && [...entries].every(entry => entry.classList.contains('rsr-native-hidden'))) {
             row.classList.add('rsr-native-hidden');
         }
     }
+}
+
+/**
+ * Undo the previous pass's layout before deriving this one. The class and the wide row
+ * are RSR's alone, so clearing them never touches dnd5e's own state.
+ */
+function resetRsrLayout(content) {
+    content.querySelector(':scope > .rsr-wide-actions')?.remove();
+    for (const node of content.querySelectorAll(':scope > .chat-card .rsr-native-hidden')) {
+        node.classList.remove('rsr-native-hidden');
+    }
+}
+
+// Usage-card actions that 4.x showed as full-width buttons under its roll sections.
+const WIDE_ACTIONS = new Set(['rollDamage']);
+
+/**
+ * 4.x put a full-width "Damage" button under the attack. dnd5e 6 shows it as a small
+ * icon in the item actions row, above RSR's sections. This adds the wide button where
+ * 4.x had it and hides the icon. The wide button has no data-action of its own: the click
+ * is forwarded, with its modifier keys, to dnd5e's button, so the roll, its origin card,
+ * and its permissions stay dnd5e's. dnd5e disables its button while the action runs; the
+ * wide button mirrors that and never forwards while it is set.
+ */
+function addWideActions(message, content, container, anchor) {
+    const sources = [...content.querySelectorAll(':scope > .chat-card button[data-action]')]
+        .filter(button => WIDE_ACTIONS.has(button.dataset.action) && !button.closest('.rsr-native-hidden'));
+    if (!sources.length) return null;
+    const row = document.createElement('div');
+    row.className = 'rsr-wide-actions';
+    for (const source of sources) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'rsr-wide-action';
+        const icon = source.querySelector('i, dnd5e-icon')?.cloneNode(true);
+        if (icon) button.append(icon);
+        const label = document.createElement('span');
+        label.textContent = source.getAttribute('aria-label') ?? '';
+        button.append(label);
+
+        const sync = () => { button.disabled = source.disabled; };
+        sync();
+        new MutationObserver(sync).observe(source, { attributes: true, attributeFilter: ['disabled'] });
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (source.disabled) return;
+            // The element's own window: chat can live in a detached window.
+            const Click = source.ownerDocument?.defaultView?.MouseEvent ?? MouseEvent;
+            source.dispatchEvent(new Click('click', {
+                bubbles: true, cancelable: true, button: 0,
+                shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, altKey: event.altKey, metaKey: event.metaKey
+            }));
+            // dnd5e disables its button synchronously as the action starts.
+            sync();
+        });
+        row.append(button);
+        (source.closest('li') ?? source).classList.add('rsr-native-hidden');
+    }
+    if (container) container.append(row);
+    else anchor.after(row);
+    return row;
 }
 
 /**
@@ -99,12 +164,16 @@ export async function renderNativeMessage(message, suppliedHtml) {
     const token = {};
     renders.set(html, token);
     content.querySelector(':scope > .rsr-native-combined')?.remove();
+    resetRsrLayout(content);
     // dnd5e's registry returns children in no guaranteed order; the card reads top-down.
     maskHiddenSummaries(content);
     const sources = getNativeRollSources(message).filter(child =>
         combinedTypes.has(child.type) && child.visible !== false && child.isContentVisible)
         .sort((a, b) => (sectionOrder[a.type] - sectionOrder[b.type]) || (a.timestamp - b.timestamp));
     if (!sources.length) {
+        const face = content.querySelector(':scope > .chat-card');
+        if (face) addWideActions(message, content, null, face);
+        hideEmptyRows(content);
         scheduleReconcile();
         return;
     }
@@ -131,6 +200,9 @@ export async function renderNativeMessage(message, suppliedHtml) {
     // The legacy 5.3 breakdown toggles on click, as dnd5e's own roll cards did.
     combined.addEventListener('click', toggleBreakdown);
     hideRepresentedButtons(content, sources);
+    // Inside the combined block, so the button appears with the results it follows.
+    addWideActions(message, content, combined);
+    hideEmptyRows(content);
     activateTargets(combined);
     scheduleReconcile();
 

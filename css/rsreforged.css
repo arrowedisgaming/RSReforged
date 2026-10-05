@@ -343,6 +343,20 @@
 .rsr-native-combined-original,
 .rsr-native-hidden { display: none !important; }
 
+/* The 4.x full-width card buttons, forwarded to dnd5e's own icons. */
+.rsr-wide-actions { display: flex; flex-direction: column; gap: 4px; }
+.rsr-wide-actions > .rsr-wide-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 32px;
+    font-family: var(--dnd5e-font-roboto-slab, inherit);
+    text-transform: uppercase;
+    font-weight: bold;
+}
+
 /* The 5.3 card's section box: dnd5e 6 styles only the compact roll button, so the
    legacy section and big total are restated here. */
 .rsr-card {

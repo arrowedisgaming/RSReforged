@@ -48,6 +48,18 @@ function usageHtml() {
     return html;
 }
 
+function manualUsageHtml(actions = ["rollAttack", "rollDamage", "placeTemplate"]) {
+    const html = document.createElement("li");
+    html.className = "chat-message message";
+    html.dataset.messageId = "parent";
+    const buttons = actions.map((action) =>
+        `<li><button type="button" class="icon" data-action="${action}" aria-label="${action}-label"><i class="fa-solid fa-burst"></i></button></li>`).join("");
+    html.innerHTML = `<div class="message-content"><div class="chat-card"><section class="icon-row"><ul>${buttons}</ul></section></div></div>`;
+    return html;
+}
+
+const isHidden = (html, action) => html.querySelector(`[data-action="${action}"]`).closest("li").classList.contains("rsr-native-hidden");
+
 it("renders one RSR section per child under the item card, attack first, each keeping its child's identity", async () => {
     const attack = nativeChild("attack", "attack", "");
     const damage = nativeChild("damage", "damage", "");
@@ -66,19 +78,23 @@ it("renders one RSR section per child under the item card, attack first, each ke
     expect(attack.message.delete).not.toHaveBeenCalled();
 });
 
-it("hides the usage card's roll buttons once their rolls are shown, but only those", async () => {
+it("hides the usage card's roll buttons once their rolls are shown, and widens an unrolled Damage", async () => {
     const attack = nativeChild("attack", "attack", "");
-    const html = usageHtml();
+    const html = manualUsageHtml();
 
     await renderer.renderNativeMessage(usageParent([attack.message]), html);
 
-    const hidden = (action) => html.querySelector(`[data-action="${action}"]`).closest("li").classList.contains("rsr-native-hidden");
-    expect(hidden("rollAttack")).toBe(true);
-    expect(hidden("rollDamage")).toBe(false);
+    expect(isHidden(html, "rollAttack")).toBe(true);
+    // Damage isn't rolled yet: its icon gives way to one wide button.
+    expect(isHidden(html, "rollDamage")).toBe(true);
+    expect(html.querySelectorAll(".rsr-wide-action")).toHaveLength(1);
+    // Unrelated native actions stay usable, and so does their row.
+    expect(isHidden(html, "placeTemplate")).toBe(false);
     expect(html.querySelector(".icon-row").classList.contains("rsr-native-hidden")).toBe(false);
 
-    const both = usageHtml();
+    const both = manualUsageHtml(["rollAttack", "rollDamage"]);
     await renderer.renderNativeMessage(usageParent([attack.message, nativeChild("damage", "damage", "").message]), both);
+    expect(both.querySelector(".rsr-wide-action")).toBeNull();
     expect(both.querySelector(".icon-row").classList.contains("rsr-native-hidden")).toBe(true);
 });
 
@@ -345,4 +361,87 @@ it("asks dnd5e to refresh a usage card's cached save outcomes when a save's roll
     await Promise.resolve();
     expect(onDescendentRefresh).not.toHaveBeenCalled();
     expect(ui.chat.updateMessage).not.toHaveBeenCalled();
+});
+
+it("puts the wide Damage button under the attack, forwarding the click and its keys to dnd5e's button", async () => {
+    const attack = nativeChild("attack", "attack", "");
+    const html = manualUsageHtml();
+    const native = html.querySelector('[data-action="rollDamage"]');
+    const clicks = [];
+    native.addEventListener("click", (event) => clicks.push(event));
+
+    await renderer.renderNativeMessage(usageParent([attack.message]), html);
+
+    const combined = html.querySelector(".rsr-native-combined");
+    expect(combined.lastElementChild.classList.contains("rsr-wide-actions")).toBe(true);
+    const wide = combined.lastElementChild.querySelector("button.rsr-wide-action");
+    expect(wide.textContent).toContain("rollDamage-label");
+    expect(wide.hasAttribute("data-action")).toBe(false);
+
+    wide.dispatchEvent(new window.MouseEvent("click", { bubbles: true, shiftKey: true }));
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0].shiftKey).toBe(true);
+    expect(clicks[0].button).toBe(0);
+});
+
+it("never forwards to dnd5e's button while its action is still running, and recovers after", async () => {
+    // dnd5e's Activity#onChatAction disables the clicked button for the whole action and
+    // re-enables it in `finally`, so success, cancellation, and errors all end the same way.
+    const html = manualUsageHtml(["rollDamage"]);
+    const native = html.querySelector('[data-action="rollDamage"]');
+    const handler = vi.fn(() => { native.disabled = true; });
+    native.addEventListener("click", handler);
+
+    await renderer.renderNativeMessage(usageParent([]), html);
+    const wide = html.querySelector(".rsr-wide-action");
+
+    wide.click();
+    wide.click();
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(wide.disabled).toBe(true);
+
+    native.disabled = false;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(wide.disabled).toBe(false);
+    wide.click();
+    expect(handler).toHaveBeenCalledTimes(2);
+});
+
+it("shows the wide button under the item card when nothing has been rolled yet", async () => {
+    // A save or damage activity in "manual damage for everything" mode has no children at first.
+    const html = manualUsageHtml(["rollDamage"]);
+
+    await renderer.renderNativeMessage(usageParent([]), html);
+
+    const row = html.querySelector(".message-content > .rsr-wide-actions");
+    expect(row.previousElementSibling.classList.contains("chat-card")).toBe(true);
+});
+
+it("rebuilds the wide buttons and RSR's hiding on every render of the same card", async () => {
+    const attack = nativeChild("attack", "attack", "");
+    const damage = nativeChild("damage", "damage", "");
+
+    // Attack only, rendered twice: still exactly one wide Damage button.
+    const twice = manualUsageHtml();
+    await renderer.renderNativeMessage(usageParent([attack.message]), twice);
+    await renderer.renderNativeMessage(usageParent([attack.message]), twice);
+    expect(twice.querySelectorAll(".rsr-wide-action")).toHaveLength(1);
+
+    // Nothing rolled -> attack -> damage on one root: the standalone row goes, then the wide button goes.
+    const html = manualUsageHtml();
+    await renderer.renderNativeMessage(usageParent([]), html);
+    expect(html.querySelector(".message-content > .rsr-wide-actions")).not.toBeNull();
+    expect(isHidden(html, "rollAttack")).toBe(false);
+
+    await renderer.renderNativeMessage(usageParent([attack.message]), html);
+    expect(html.querySelector(".message-content > .rsr-wide-actions")).toBeNull();
+    expect(html.querySelectorAll(".rsr-native-combined .rsr-wide-action")).toHaveLength(1);
+
+    await renderer.renderNativeMessage(usageParent([attack.message, damage.message]), html);
+    expect(html.querySelectorAll(".rsr-wide-action")).toHaveLength(0);
+    expect(isHidden(html, "rollDamage")).toBe(true);
+
+    // And back: a deleted damage child brings the wide button back.
+    await renderer.renderNativeMessage(usageParent([attack.message]), html);
+    expect(html.querySelectorAll(".rsr-wide-action")).toHaveLength(1);
 });
