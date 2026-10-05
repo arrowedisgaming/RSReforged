@@ -7,6 +7,7 @@ beforeEach(async () => {
     vi.resetModules();
     await setupFoundryEnv({ settings: { enableQuickActivity: true } });
     game.system = { version: "6.0.1" };
+    delete globalThis.dnd5e;
     CONFIG.ChatMessage = { dataModels: Object.fromEntries(["attack", "damage", "healing", "check", "save", "generic"].map((t) => [t, {}])) };
     callbacks = new Map();
     Hooks.on = (name, cb) => callbacks.set(name, cb);
@@ -73,11 +74,33 @@ function dnd5eDamageKeybindings(config, dialog, areKeysPressed) {
     }
 }
 
+// dnd5e 6.0.1 areKeysPressed (dnd5e.mjs ≈685, exposed as dnd5e.utils.areKeysPressed).
+// Unlike RSR's CoreUtility helper, Meta (Cmd) is its own modifier, not Control.
+function dnd5eAreKeysPressed(event, action) {
+    if (!event) return false;
+    const codes = {
+        Alt: ["AltLeft", "AltRight"], Control: ["ControlLeft", "ControlRight"],
+        Meta: ["MetaLeft", "MetaRight"], Shift: ["ShiftLeft", "ShiftRight"]
+    };
+    const active = {};
+    const add = (key, pressed) => { active[key] = pressed; codes[key].forEach(code => active[code] = pressed); };
+    add("Alt", event.altKey);
+    add("Control", event.ctrlKey);
+    add("Meta", event.metaKey);
+    add("Shift", event.shiftKey);
+    return game.keybindings.get("dnd5e", action).some(b => {
+        if (game.keyboard.downKeys.has(b.key) && b.modifiers.every(m => active[m])) return true;
+        if (b.modifiers.length) return false;
+        return active[b.key];
+    });
+}
+
 // dnd5e's default bindings (dnd5e.mjs ≈57247).
 function registerDnd5eSkipKeys({ normal = [{ key: "ShiftLeft", modifiers: [] }] } = {}) {
     game.keybindings.register("dnd5e", "skipDialogNormal", { editable: normal });
     game.keybindings.register("dnd5e", "skipDialogAdvantage", { editable: [{ key: "AltLeft", modifiers: [] }] });
     game.keybindings.register("dnd5e", "skipDialogDisadvantage", { editable: [{ key: "ControlLeft", modifiers: [] }] });
+    globalThis.dnd5e = { utils: { areKeysPressed: dnd5eAreKeysPressed } };
 }
 
 function damageClick({ quickRoll = true, isCritical = false, ...keys } = {}) {
@@ -89,10 +112,9 @@ function damageClick({ quickRoll = true, isCritical = false, ...keys } = {}) {
 }
 
 async function rollDamageThroughDnd5e(config) {
-    const { CoreUtility } = await import("../src/utils/core.js");
     const dialog = {};
     const result = callbacks.get("dnd5e.preRollDamage")(config, dialog, {});
-    dnd5eDamageKeybindings(config, dialog, (event, action) => CoreUtility.areKeysPressed(event, action));
+    dnd5eDamageKeybindings(config, dialog, dnd5eAreKeysPressed);
     return { result, dialog, critical: config.rolls[0].options.isCritical };
 }
 
@@ -138,4 +160,21 @@ it("leaves dialog-rolled cards and non-RSR rolls entirely to dnd5e", async () =>
         expect((await rollDamageThroughDnd5e(config)).dialog.configure).toBe(true);
     }
     expect((await rollDamageThroughDnd5e(damageClick({ quickRoll: false, shiftKey: true }))).dialog.configure).toBe(false);
+});
+
+it("reads the dialog key exactly as dnd5e does, where Cmd and Ctrl are different keys", async () => {
+    registerDnd5eSkipKeys({ normal: [{ key: "ControlLeft", modifiers: [] }] });
+    expect((await rollDamageThroughDnd5e(damageClick({ ctrlKey: true }))).dialog.configure).toBe(true);
+    expect((await rollDamageThroughDnd5e(damageClick({ metaKey: true }))).dialog.configure).toBe(false);
+
+    registerDnd5eSkipKeys({ normal: [{ key: "MetaLeft", modifiers: [] }] });
+    expect((await rollDamageThroughDnd5e(damageClick({ metaKey: true }))).dialog.configure).toBe(true);
+    expect((await rollDamageThroughDnd5e(damageClick({ ctrlKey: true }))).dialog.configure).toBe(false);
+});
+
+it("falls back to RSR's key helper if dnd5e's is unavailable", () => {
+    game.keybindings.register("dnd5e", "skipDialogNormal", { editable: [{ key: "ShiftLeft", modifiers: [] }] });
+    const dialog = {};
+    callbacks.get("dnd5e.preRollDamage")(damageClick({ shiftKey: true }), dialog, {});
+    expect(dialog.configure).toBe(true);
 });

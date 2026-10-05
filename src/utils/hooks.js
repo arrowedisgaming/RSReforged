@@ -215,9 +215,11 @@ export class HooksUtility {
             // dnd5e's own action, which carries no RSR flags. 4.x quick-rolled it, with the
             // dialog on the skip-dialog key. Set explicitly both ways: DamageRoll.applyKeybindings
             // runs next, and for an undefined value it reads that key as "skip the dialog".
-            // Critical/normal keys are still dnd5e's, applied in that same step.
+            // Critical/normal keys are still dnd5e's, applied in that same step. The key is
+            // read with dnd5e's own helper, which (unlike RSR's) tells Cmd from Ctrl.
             if (usesNativeWorkflow() && quickRollCardFor(config.event)) {
-                dialog.configure = CoreUtility.areKeysPressed(config.event, "skipDialogNormal");
+                const areKeysPressed = globalThis.dnd5e?.utils?.areKeysPressed ?? CoreUtility.areKeysPressed;
+                dialog.configure = areKeysPressed(config.event, "skipDialogNormal");
             }
             return true;
         });
