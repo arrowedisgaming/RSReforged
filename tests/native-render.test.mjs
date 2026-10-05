@@ -445,3 +445,31 @@ it("rebuilds the wide buttons and RSR's hiding on every render of the same card"
     await renderer.renderNativeMessage(usageParent([attack.message]), html);
     expect(html.querySelectorAll(".rsr-wide-action")).toHaveLength(1);
 });
+
+it("gives a single-ability save the 4.x wide DC button, hiding the DC when dnd5e would", async () => {
+    CONFIG.DND5E = { ...(CONFIG.DND5E ?? {}), abilities: { dex: { label: "Dexterity" } } };
+    const damage = nativeChild("damage", "damage", "");
+    for (const [shouldDisplayChallenge, key] of [[true, "DND5E.SavingThrowDC"], [false, "DND5E.SavePromptTitle"]]) {
+        const html = manualUsageHtml([]);
+        html.querySelector(".icon-row ul").innerHTML =
+            '<li><button type="button" class="icon" data-action="rollSave" data-ability="dex" data-dc="15" aria-label="Saving Throw"><i class="fa-solid fa-shield-heart"></i></button></li>';
+        const parent = { ...usageParent([damage.message]), shouldDisplayChallenge };
+
+        await renderer.renderNativeMessage(parent, html);
+
+        const wide = html.querySelector(".rsr-native-combined > .rsr-wide-actions > .rsr-wide-action");
+        expect(wide.textContent).toContain(key);
+        expect(wide.textContent.includes('"dc":"15"')).toBe(shouldDisplayChallenge);
+    }
+});
+
+it("leaves grouped multi-ability saves as dnd5e's icon", async () => {
+    const html = manualUsageHtml([]);
+    html.querySelector(".icon-row ul").innerHTML =
+        '<li><button type="button" class="icon" data-group data-forward-action="rollSave" aria-label="Saving Throw"></button></li>';
+
+    await renderer.renderNativeMessage(usageParent([]), html);
+
+    expect(html.querySelector(".rsr-wide-actions")).toBeNull();
+    expect(html.querySelector("[data-forward-action]").closest("li").classList.contains("rsr-native-hidden")).toBe(false);
+});

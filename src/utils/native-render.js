@@ -80,15 +80,28 @@ function resetRsrLayout(content) {
 }
 
 // Usage-card actions that 4.x showed as full-width buttons under its roll sections.
-const WIDE_ACTIONS = new Set(['rollDamage']);
+const WIDE_ACTIONS = new Set(['rollDamage', 'rollSave']);
+
+// dnd5e's singleton save icon is labelled just "Saving Throw"; 4.x read "DC 15 Dexterity
+// Saving Throw", with the DC withheld when dnd5e withholds it.
+function wideLabel(message, source) {
+    if (source.dataset.action !== 'rollSave') return source.getAttribute('aria-label') ?? '';
+    const ability = CONFIG.DND5E.abilities?.[source.dataset.ability]?.label ?? '';
+    const dc = source.dataset.dc;
+    return (dc && message.shouldDisplayChallenge !== false)
+        ? game.i18n.format('DND5E.SavingThrowDC', { ability, dc })
+        : game.i18n.format('DND5E.SavePromptTitle', { ability });
+}
 
 /**
- * 4.x put a full-width "Damage" button under the attack. dnd5e 6 shows it as a small
- * icon in the item actions row, above RSR's sections. This adds the wide button where
- * 4.x had it and hides the icon. The wide button has no data-action of its own: the click
- * is forwarded, with its modifier keys, to dnd5e's button, so the roll, its origin card,
- * and its permissions stay dnd5e's. dnd5e disables its button while the action runs; the
- * wide button mirrors that and never forwards while it is set.
+ * 4.x put a full-width "Damage" button under the attack, and a wide "DC 15 Dexterity
+ * Saving Throw" button on save cards. dnd5e 6 shows both as small icons in the item
+ * actions row, above RSR's sections. This adds the wide buttons where 4.x had them and
+ * hides the icons. Grouped multi-ability saves keep dnd5e's icon, which anchors its
+ * ability menu. A wide button has no data-action of its own: the click is forwarded,
+ * with its modifier keys, to dnd5e's button, so the roll, its origin card, and its
+ * permissions stay dnd5e's. dnd5e disables its button while the action runs; the wide
+ * button mirrors that and never forwards while it is set.
  */
 function addWideActions(message, content, container, anchor) {
     const sources = [...content.querySelectorAll(':scope > .chat-card button[data-action]')]
@@ -103,7 +116,7 @@ function addWideActions(message, content, container, anchor) {
         const icon = source.querySelector('i, dnd5e-icon')?.cloneNode(true);
         if (icon) button.append(icon);
         const label = document.createElement('span');
-        label.textContent = source.getAttribute('aria-label') ?? '';
+        label.textContent = wideLabel(message, source);
         button.append(label);
 
         const sync = () => { button.disabled = source.disabled; };
