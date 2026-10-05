@@ -593,3 +593,19 @@ it("re-pins when a check's RSR result appears after its own dice land (Always Ro
     expect(html.querySelector(".rsr-check").hidden).toBe(false);
     expect(ui.chat.scrollBottom).toHaveBeenCalledTimes(1);
 });
+
+it("forwards the click's position, which dnd5e uses to place its damage dialog", async () => {
+    // DamageActivity#rollDamage sets the dialog's top to event.clientY - 80 (dnd5e.mjs ≈18213).
+    const html = manualUsageHtml(["rollDamage"]);
+    const native = html.querySelector('[data-action="rollDamage"]');
+    const clicks = [];
+    native.addEventListener("click", (event) => clicks.push(event));
+    await renderer.renderNativeMessage(usageParent([]), html);
+
+    html.querySelector(".rsr-wide-action").dispatchEvent(new window.MouseEvent("click", {
+        bubbles: true, clientX: 640, clientY: 700, screenX: 900, screenY: 820
+    }));
+
+    expect(clicks).toHaveLength(1);
+    expect([clicks[0].clientX, clicks[0].clientY, clicks[0].screenX, clicks[0].screenY]).toEqual([640, 700, 900, 820]);
+});

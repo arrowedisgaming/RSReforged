@@ -147,8 +147,10 @@ function addWideActions(message, content, container, anchor) {
             setTimeout(() => { busy = false; sync(); }, WIDE_ACTION_BUSY_MS);
             // The element's own window: chat can live in a detached window.
             const Click = source.ownerDocument?.defaultView?.MouseEvent ?? MouseEvent;
+            // dnd5e places its damage dialog at the click's height.
             source.dispatchEvent(new Click('click', {
                 bubbles: true, cancelable: true, button: 0,
+                clientX: event.clientX, clientY: event.clientY, screenX: event.screenX, screenY: event.screenY,
                 shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, altKey: event.altKey, metaKey: event.metaKey
             }));
         });
