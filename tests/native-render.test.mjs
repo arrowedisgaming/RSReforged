@@ -384,27 +384,58 @@ it("puts the wide Damage button under the attack, forwarding the click and its k
     expect(clicks[0].button).toBe(0);
 });
 
-it("never forwards to dnd5e's button while its action is still running, and recovers after", async () => {
-    // dnd5e's Activity#onChatAction disables the clicked button for the whole action and
-    // re-enables it in `finally`, so success, cancellation, and errors all end the same way.
-    const html = manualUsageHtml(["rollDamage"]);
-    const native = html.querySelector('[data-action="rollDamage"]');
-    const handler = vi.fn(() => { native.disabled = true; });
-    native.addEventListener("click", handler);
+it("stays busy after forwarding, though dnd5e re-enables its Damage button before the roll exists", async () => {
+    // dnd5e's AttackActivity handler doesn't await rollDamage, so Activity#onChatAction's
+    // disable/re-enable of the clicked button is over within a microtask (seen live: a
+    // double-click rolled damage twice).
+    vi.useFakeTimers();
+    try {
+        const html = manualUsageHtml(["rollDamage"]);
+        const native = html.querySelector('[data-action="rollDamage"]');
+        const handler = vi.fn();
+        native.addEventListener("click", handler);
+        await renderer.renderNativeMessage(usageParent([]), html);
+        const wide = html.querySelector(".rsr-wide-action");
 
-    await renderer.renderNativeMessage(usageParent([]), html);
-    const wide = html.querySelector(".rsr-wide-action");
+        wide.click();
+        wide.click();
+        expect(handler).toHaveBeenCalledTimes(1);
+        expect(wide.disabled).toBe(true);
 
-    wide.click();
-    wide.click();
-    expect(handler).toHaveBeenCalledTimes(1);
-    expect(wide.disabled).toBe(true);
+        // A rolled card re-renders without the button; a cancelled dialog or a failed
+        // roll re-renders nothing, so the button comes back on its own.
+        vi.advanceTimersByTime(1500);
+        expect(wide.disabled).toBe(false);
+        wide.click();
+        expect(handler).toHaveBeenCalledTimes(2);
+    } finally {
+        vi.useRealTimers();
+    }
+});
 
-    native.disabled = false;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(wide.disabled).toBe(false);
-    wide.click();
-    expect(handler).toHaveBeenCalledTimes(2);
+it("also stays busy for as long as dnd5e keeps its button disabled (saves await every target)", async () => {
+    vi.useFakeTimers();
+    try {
+        const html = manualUsageHtml(["rollDamage"]);
+        const native = html.querySelector('[data-action="rollDamage"]');
+        const handler = vi.fn(() => { native.disabled = true; });
+        native.addEventListener("click", handler);
+        await renderer.renderNativeMessage(usageParent([]), html);
+        const wide = html.querySelector(".rsr-wide-action");
+
+        wide.click();
+        vi.advanceTimersByTime(5000);
+        await Promise.resolve();
+        expect(wide.disabled).toBe(true);
+        wide.click();
+        expect(handler).toHaveBeenCalledTimes(1);
+
+        native.disabled = false;
+        await Promise.resolve();
+        expect(wide.disabled).toBe(false);
+    } finally {
+        vi.useRealTimers();
+    }
 });
 
 it("shows the wide button under the item card when nothing has been rolled yet", async () => {

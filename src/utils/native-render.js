@@ -92,6 +92,9 @@ function resetRsrLayout(content) {
 
 // Usage-card actions that 4.x showed as full-width buttons under its roll sections.
 const WIDE_ACTIONS = new Set(['rollDamage', 'rollSave']);
+// A card that rolled re-renders without its button well within this; a cancelled
+// dialog or a failed roll re-renders nothing, so the button comes back.
+const WIDE_ACTION_BUSY_MS = 1500;
 
 // dnd5e's singleton save icon is labelled just "Saving Throw"; 4.x read "DC 15 Dexterity
 // Saving Throw", with the DC withheld when dnd5e withholds it.
@@ -111,8 +114,9 @@ function wideLabel(message, source) {
  * hides the icons. Grouped multi-ability saves keep dnd5e's icon, which anchors its
  * ability menu. A wide button has no data-action of its own: the click is forwarded,
  * with its modifier keys, to dnd5e's button, so the roll, its origin card, and its
- * permissions stay dnd5e's. dnd5e disables its button while the action runs; the wide
- * button mirrors that and never forwards while it is set.
+ * permissions stay dnd5e's. A wide button is busy while dnd5e's button is disabled (a
+ * save awaits every target's roll) and for WIDE_ACTION_BUSY_MS after each click: dnd5e's
+ * Damage handler doesn't await its roll, so its own button is enabled again at once.
  */
 function addWideActions(message, content, container, anchor) {
     const sources = [...content.querySelectorAll(':scope > .chat-card button[data-action]')]
@@ -130,21 +134,23 @@ function addWideActions(message, content, container, anchor) {
         label.textContent = wideLabel(message, source);
         button.append(label);
 
-        const sync = () => { button.disabled = source.disabled; };
+        let busy = false;
+        const sync = () => { button.disabled = busy || source.disabled; };
         sync();
         new MutationObserver(sync).observe(source, { attributes: true, attributeFilter: ['disabled'] });
         button.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
-            if (source.disabled) return;
+            if (busy || source.disabled) return;
+            busy = true;
+            sync();
+            setTimeout(() => { busy = false; sync(); }, WIDE_ACTION_BUSY_MS);
             // The element's own window: chat can live in a detached window.
             const Click = source.ownerDocument?.defaultView?.MouseEvent ?? MouseEvent;
             source.dispatchEvent(new Click('click', {
                 bubbles: true, cancelable: true, button: 0,
                 shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, altKey: event.altKey, metaKey: event.metaKey
             }));
-            // dnd5e disables its button synchronously as the action starts.
-            sync();
         });
         row.append(button);
         (source.closest('li') ?? source).classList.add('rsr-native-hidden');
