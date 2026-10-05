@@ -681,3 +681,29 @@ it("forwards the click's position, which dnd5e uses to place its damage dialog",
     expect(clicks).toHaveLength(1);
     expect([clicks[0].clientX, clicks[0].clientY, clicks[0].screenX, clicks[0].screenY]).toEqual([640, 700, 900, 820]);
 });
+
+it("releases a copy rendered while busy but inserted only after the action ended", async () => {
+    // ChatLog renders a whole batch (e.g. a newly opened popout) before inserting any of it
+    // (chat.mjs ≈306-322), and every single message before inserting it. Found in review.
+    vi.useFakeTimers();
+    try {
+        const sidebar = postedManualCard();
+        sidebar.native.addEventListener("click", () => { sidebar.native.disabled = true; });
+        await sidebar.render();
+        sidebar.html.querySelector(".rsr-wide-action").click();
+
+        const pending = manualUsageHtml(["rollDamage"]);
+        await renderer.renderNativeMessage(usageParent([]), pending);
+        const copy = pending.querySelector(".rsr-wide-action");
+        expect(copy.disabled).toBe(true);
+
+        vi.advanceTimersByTime(1500);
+        sidebar.native.disabled = false;
+        await Promise.resolve();
+
+        document.body.append(pending);
+        expect(copy.disabled).toBe(false);
+    } finally {
+        vi.useRealTimers();
+    }
+});

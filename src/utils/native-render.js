@@ -108,7 +108,9 @@ const WIDE_ACTION_BUSY_MS = 1500;
  * awaits the next target, and the sidebar, popout, and a notification each render their
  * own copy of the card. An entry lives only while its action is busy: until the cooldown
  * ends and dnd5e has re-enabled the button that was clicked (on a re-rendered card, the
- * detached original, which dnd5e still re-enables in its `finally`).
+ * detached original, which dnd5e still re-enables in its `finally`). Copies rendered
+ * while it is busy are held by the entry too: ChatLog renders a message (or a whole
+ * batch of them) before inserting it, so the end of an action can fall in between.
  */
 const busyActions = new Map();
 
@@ -119,14 +121,22 @@ function isWideActionBusy(key) {
 
 function refreshWideAction(key) {
     const busy = isWideActionBusy(key);
-    for (const button of queryAll(`.rsr-wide-action[data-rsr-action-key="${key}"]`)) button.disabled = busy;
+    const rendered = busyActions.get(key)?.buttons ?? [];
+    for (const button of new Set([...queryAll(`.rsr-wide-action[data-rsr-action-key="${key}"]`), ...rendered])) {
+        button.disabled = busy;
+    }
     if (busy) return;
     busyActions.get(key)?.observer.disconnect();
     busyActions.delete(key);
 }
 
 function startWideAction(key, source) {
-    const state = { cooling: true, source, observer: new MutationObserver(() => refreshWideAction(key)) };
+    const state = {
+        cooling: true,
+        source,
+        buttons: new Set(),
+        observer: new MutationObserver(() => refreshWideAction(key))
+    };
     state.observer.observe(source, { attributes: true, attributeFilter: ['disabled'] });
     busyActions.set(key, state);
     setTimeout(() => {
@@ -176,6 +186,7 @@ function addWideActions(message, content, container, anchor) {
         const key = `${message.id}.${source.dataset.action}.${source.dataset.index ?? ''}`;
         button.dataset.rsrActionKey = key;
         button.disabled = isWideActionBusy(key);
+        if (button.disabled) busyActions.get(key).buttons.add(button);
         button.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
