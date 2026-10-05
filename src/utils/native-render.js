@@ -58,6 +58,17 @@ function hideRepresentedButtons(content, sources) {
     }
 }
 
+/**
+ * Keep a pinned chat log pinned after RSR changes a card's height. Foundry renders the
+ * sidebar log and its popout separately, each with its own scroll position, so the log
+ * holding this node decides; one its user has scrolled up stays put (issue #31). A node
+ * not yet in a log needs nothing: ChatLog scrolls as it posts the card.
+ */
+function keepPinned(node) {
+    const log = [ui.chat, ui.chat?.popout].find(app => app?.element?.contains?.(node));
+    if (log?.isAtBottom) log.scrollBottom();
+}
+
 // Drop a button row left with nothing to show.
 function hideEmptyRows(content) {
     for (const row of content.querySelectorAll(':scope > .chat-card .icon-row')) {
@@ -185,7 +196,8 @@ export async function renderNativeMessage(message, suppliedHtml) {
         .sort((a, b) => (sectionOrder[a.type] - sectionOrder[b.type]) || (a.timestamp - b.timestamp));
     if (!sources.length) {
         const face = content.querySelector(':scope > .chat-card');
-        if (face) addWideActions(message, content, null, face);
+        const row = face ? addWideActions(message, content, null, face) : null;
+        if (row) keepPinned(row);
         hideEmptyRows(content);
         scheduleReconcile();
         return;
@@ -220,6 +232,7 @@ export async function renderNativeMessage(message, suppliedHtml) {
     scheduleReconcile();
 
     if (combined.hidden) await revealAfter(combined, throws, () => renders.get(html) === token);
+    else keepPinned(combined);
 }
 
 /**
@@ -233,7 +246,10 @@ async function revealAfter(node, throws, current = () => true) {
     const giveUp = new Promise(resolve => { timer = setTimeout(resolve, DICE_REVEAL_TIMEOUT_MS); });
     await Promise.race([Promise.all(throws), giveUp]).catch(() => {});
     clearTimeout(timer);
-    if (current()) node.hidden = false;
+    if (current()) {
+        node.hidden = false;
+        keepPinned(node);
+    }
 }
 
 const checkTypes = new Set(['check', 'save']);
@@ -258,6 +274,8 @@ async function renderNativeCheck(message, html) {
     if (!section || !html.contains(rows[0])) return;
     rows[0].before(section);
     rows.forEach(row => row.remove());
+    // ChatLog scrolled when it posted dnd5e's shorter row; keep a pinned log pinned.
+    keepPinned(section);
     html.classList.add('rsr-native-card');
     section.addEventListener('click', toggleBreakdown);
     // A check thrown with its extra d20 (native-dice.js) shows its result when the dice land.

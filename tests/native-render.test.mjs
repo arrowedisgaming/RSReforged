@@ -473,3 +473,92 @@ it("leaves grouped multi-ability saves as dnd5e's icon", async () => {
     expect(html.querySelector(".rsr-wide-actions")).toBeNull();
     expect(html.querySelector("[data-forward-action]").closest("li").classList.contains("rsr-native-hidden")).toBe(false);
 });
+
+// Foundry 14 renders the sidebar log and the popout as separate ChatLog instances, each
+// with its own scroll position and pinned state.
+function chatLogs({ mainAtBottom = true, popoutAtBottom = true } = {}) {
+    const main = document.createElement("section");
+    const pop = document.createElement("section");
+    document.body.append(main, pop);
+    ui.chat = {
+        element: main, isAtBottom: mainAtBottom, scrollBottom: vi.fn(),
+        popout: { element: pop, isAtBottom: popoutAtBottom, scrollBottom: vi.fn() }
+    };
+    return { main, pop };
+}
+
+it("re-pins only the log holding a check whose taller RSR row was swapped in", async () => {
+    const { main, pop } = chatLogs();
+    const inMain = checkHtml();
+    main.append(inMain);
+    await renderer.renderNativeMessage(checkMessage(), inMain);
+    expect(ui.chat.scrollBottom).toHaveBeenCalled();
+    expect(ui.chat.popout.scrollBottom).not.toHaveBeenCalled();
+
+    ui.chat.scrollBottom.mockClear();
+    const inPopout = checkHtml();
+    pop.append(inPopout);
+    await renderer.renderNativeMessage(checkMessage(), inPopout);
+    expect(ui.chat.popout.scrollBottom).toHaveBeenCalled();
+    expect(ui.chat.scrollBottom).not.toHaveBeenCalled();
+});
+
+it("leaves a log alone when its user has scrolled up, whatever the other log's state", async () => {
+    const { pop } = chatLogs({ mainAtBottom: true, popoutAtBottom: false });
+    const html = checkHtml();
+    pop.append(html);
+
+    await renderer.renderNativeMessage(checkMessage(), html);
+
+    expect(ui.chat.popout.scrollBottom).not.toHaveBeenCalled();
+    expect(ui.chat.scrollBottom).not.toHaveBeenCalled();
+});
+
+it("does nothing for a card not yet in any log; ChatLog scrolls when it posts it", async () => {
+    chatLogs();
+    await renderer.renderNativeMessage(checkMessage(), checkHtml());
+    expect(ui.chat.scrollBottom).not.toHaveBeenCalled();
+    expect(ui.chat.popout.scrollBottom).not.toHaveBeenCalled();
+});
+
+it("re-pins when a usage card's results appear after the dice land, unless the user scrolled up meanwhile", async () => {
+    for (const scrolledUp of [false, true]) {
+        const { main } = chatLogs();
+        const attack = nativeChild("attack", "attack", "");
+        let land;
+        attack.message._rsrNativeThrow = new Promise((resolve) => { land = resolve; });
+        game.dice3d = { isEnabled: () => true, waitFor3DAnimationByMessageID: vi.fn() };
+        const html = usageHtml();
+        main.append(html);
+
+        const rendering = renderer.renderNativeMessage(usageParent([attack.message]), html);
+        await Promise.resolve();
+        ui.chat.scrollBottom.mockClear();
+        if (scrolledUp) ui.chat.isAtBottom = false;
+        land();
+        await rendering;
+
+        expect(ui.chat.scrollBottom).toHaveBeenCalledTimes(scrolledUp ? 0 : 1);
+    }
+});
+
+it("re-pins when a check's RSR result appears after its own dice land (Always Roll Multiple Dice)", async () => {
+    // Reproduced live (Foundry 14.367, dnd5e 6.0.1, DSN 6.4.1, Chat Portrait 14.0.0): the
+    // card is posted and scrolled with RSR's section hidden, then grows by ~70px when the
+    // throw lands, leaving its bottom under the chat input.
+    const { main } = chatLogs();
+    const html = checkHtml();
+    main.append(html);
+    const message = checkMessage();
+    let land;
+    message._rsrNativeThrow = new Promise((resolve) => { land = resolve; });
+
+    await renderer.renderNativeMessage(message, html);
+    expect(html.querySelector(".rsr-check").hidden).toBe(true);
+    ui.chat.scrollBottom.mockClear();
+
+    land();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(html.querySelector(".rsr-check").hidden).toBe(false);
+    expect(ui.chat.scrollBottom).toHaveBeenCalledTimes(1);
+});
