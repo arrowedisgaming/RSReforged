@@ -57,9 +57,18 @@ const representedActions = {
     generic: ['rollFormula']
 };
 
+/**
+ * dnd5e's own usage-card buttons: those in the action rows directly under .chat-card. The
+ * item's description and chat flavor are author HTML rendered deeper in the same card,
+ * and Foundry's sanitizer lets them contain buttons with any data-* attributes.
+ */
+function cardActionButtons(content) {
+    return content.querySelectorAll(':scope > .chat-card > .icon-row button[data-action]');
+}
+
 function hideRepresentedButtons(content, sources) {
     const actions = new Set(sources.flatMap(source => representedActions[source.type] ?? []));
-    for (const button of content.querySelectorAll(':scope > .chat-card button[data-action]')) {
+    for (const button of cardActionButtons(content)) {
         if (actions.has(button.dataset.action)) (button.closest('li') ?? button).classList.add('rsr-native-hidden');
     }
 }
@@ -77,7 +86,7 @@ function keepPinned(node) {
 
 // Drop a button row left with nothing to show.
 function hideEmptyRows(content) {
-    for (const row of content.querySelectorAll(':scope > .chat-card .icon-row')) {
+    for (const row of content.querySelectorAll(':scope > .chat-card > .icon-row')) {
         const entries = row.querySelectorAll('li');
         if (entries.length && [...entries].every(entry => entry.classList.contains('rsr-native-hidden'))) {
             row.classList.add('rsr-native-hidden');
@@ -91,7 +100,8 @@ function hideEmptyRows(content) {
  */
 function resetRsrLayout(content) {
     content.querySelector(':scope > .rsr-wide-actions')?.remove();
-    for (const node of content.querySelectorAll(':scope > .chat-card .rsr-native-hidden')) {
+    const hidden = ':scope > .chat-card > .icon-row.rsr-native-hidden, :scope > .chat-card > .icon-row .rsr-native-hidden';
+    for (const node of content.querySelectorAll(hidden)) {
         node.classList.remove('rsr-native-hidden');
     }
 }
@@ -122,9 +132,9 @@ function isWideActionBusy(key) {
 function refreshWideAction(key) {
     const busy = isWideActionBusy(key);
     const rendered = busyActions.get(key)?.buttons ?? [];
-    for (const button of new Set([...queryAll(`.rsr-wide-action[data-rsr-action-key="${key}"]`), ...rendered])) {
-        button.disabled = busy;
-    }
+    // Matched in script, never spliced into a selector: the key carries dataset values.
+    const copies = [...queryAll('.rsr-wide-action[data-rsr-action-key]')].filter(button => button.dataset.rsrActionKey === key);
+    for (const button of new Set([...copies, ...rendered])) button.disabled = busy;
     if (busy) return;
     busyActions.get(key)?.observer.disconnect();
     busyActions.delete(key);
@@ -168,7 +178,7 @@ function wideLabel(message, source) {
  * Damage handler doesn't await its roll, so its own button is enabled again at once.
  */
 function addWideActions(message, content, container, anchor) {
-    const sources = [...content.querySelectorAll(':scope > .chat-card button[data-action]')]
+    const sources = [...cardActionButtons(content)]
         .filter(button => WIDE_ACTIONS.has(button.dataset.action) && !button.closest('.rsr-native-hidden'));
     if (!sources.length) return null;
     const row = document.createElement('div');

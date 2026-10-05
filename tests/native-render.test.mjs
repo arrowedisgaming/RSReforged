@@ -707,3 +707,55 @@ it("releases a copy rendered while busy but inserted only after the action ended
         vi.useRealTimers();
     }
 });
+
+it("ignores buttons an item's author wrote into its description", async () => {
+    // Foundry's sanitizer allows <button> and data-* in item descriptions, which dnd5e
+    // renders inside .chat-card (card-face.hbs). Found in pre-release review.
+    vi.useFakeTimers();
+    try {
+        const card = postedManualCard(["rollAttack", "rollDamage"]);
+        card.html.querySelector(".chat-card").insertAdjacentHTML("afterbegin", `<section class="card-description"><div class="wrapper">
+            <button data-action="rollDamage" data-index='0"], #unrelated, [data-x="'>fake damage</button>
+            <button data-action="rollAttack">fake attack</button></div></section>`);
+        const unrelated = document.createElement("button");
+        unrelated.id = "unrelated";
+        unrelated.disabled = true;
+        document.body.append(unrelated);
+        const real = card.html.querySelector('.icon-row [data-action="rollDamage"]');
+        const realClicks = vi.fn();
+        real.addEventListener("click", realClicks);
+
+        await renderer.renderNativeMessage(usageParent([nativeChild("attack", "attack", "").message]), card.html);
+
+        const fakes = [...card.html.querySelectorAll(".card-description button")];
+        expect(fakes.every((fake) => !fake.closest(".rsr-native-hidden"))).toBe(true);
+        const wides = card.html.querySelectorAll(".rsr-wide-action");
+        expect(wides).toHaveLength(1);
+        wides[0].click();
+        expect(realClicks).toHaveBeenCalledTimes(1);
+        vi.advanceTimersByTime(1500);
+        expect(unrelated.disabled).toBe(true);
+    } finally {
+        vi.useRealTimers();
+    }
+});
+
+it("never builds a selector from a button's data, so odd values can't break the busy cleanup", async () => {
+    vi.useFakeTimers();
+    try {
+        const card = postedManualCard();
+        card.native.dataset.index = '0"]';
+        const handler = vi.fn();
+        card.native.addEventListener("click", handler);
+        await card.render();
+        const wide = card.html.querySelector(".rsr-wide-action");
+
+        expect(() => wide.click()).not.toThrow();
+        expect(handler).toHaveBeenCalledTimes(1);
+        expect(wide.disabled).toBe(true);
+        expect(() => vi.advanceTimersByTime(1500)).not.toThrow();
+        expect(wide.disabled).toBe(false);
+    } finally {
+        vi.useRealTimers();
+    }
+});
