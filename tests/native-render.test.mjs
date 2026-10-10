@@ -759,3 +759,21 @@ it("never builds a selector from a button's data, so odd values can't break the 
         vi.useRealTimers();
     }
 });
+
+it("coalesces reconcile requests made in the same frame into one pass", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "requestAnimationFrame"] });
+    try {
+        const spy = vi.spyOn(document, "querySelectorAll");
+        for (let i = 0; i < 10; i++) renderer.scheduleReconcile();
+        await vi.runAllTimersAsync();
+        const passes = spy.mock.calls.filter(([selector]) => selector === ".message[data-message-id]").length;
+        expect(passes).toBe(1);
+        // A later request still runs.
+        renderer.scheduleReconcile();
+        await vi.runAllTimersAsync();
+        expect(spy.mock.calls.filter(([selector]) => selector === ".message[data-message-id]").length).toBe(2);
+        spy.mockRestore();
+    } finally {
+        vi.useRealTimers();
+    }
+});
