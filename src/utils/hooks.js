@@ -10,7 +10,7 @@ import { SETTING_NAMES, SettingsUtility, HIDE_NPC_ROLL_MODES } from "./settings.
 
 import { usesNativeWorkflow, getOriginId } from "./dnd5e-compat.js";
 import { NATIVE_ACTIVITY_TYPES, quickRollCardFor, runNativeUsage, recordAmmunitionSnapshot, captureNativeMessageConfig } from "./native-workflow.js";
-import { renderNativeMessage, refreshNativeOrigin, reconcileNativeSources } from "./native-render.js";
+import { renderNativeMessage, refreshNativeOrigin, scheduleReconcile } from "./native-render.js";
 import { claimNativeThrow, prepareAlternates } from "./native-dice.js";
 
 export const HOOKS_CORE = { INIT: "init", READY: "ready" }
@@ -366,7 +366,7 @@ export class HooksUtility {
         Hooks.on("deleteChatMessage", message => {
             if (usesNativeWorkflow()) {
                 if (getOriginId(message)) refreshNativeOrigin(message);
-                setTimeout(reconcileNativeSources, 0);
+                scheduleReconcile();
             }
         });
 

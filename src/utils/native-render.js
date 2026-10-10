@@ -384,14 +384,19 @@ function toggleBreakdown(event) {
 
 /** Hide originals that a fold-in represents; restore them when it disappears. */
 export function reconcileNativeSources() {
+    // Collect the represented ids once: re-querying the whole document for every
+    // message made each pass O(messages x DOM nodes). Query results are always connected.
+    const represented = new Set();
+    for (const node of queryAll('.rsr-native-source[data-rsr-message-id]')) {
+        represented.add(node.dataset.rsrMessageId);
+    }
     for (const root of queryAll('.message[data-message-id]')) {
         if (root.classList.contains('rsr-native-source')) continue;
         const id = root.dataset.messageId;
-        const represented = [...queryAll('.rsr-native-source[data-rsr-message-id]')].some(node =>
-            node.dataset.rsrMessageId === id && node.isConnected);
+        const isRepresented = represented.has(id);
         const wasHidden = root.classList.contains('rsr-native-combined-original');
-        root.classList.toggle('rsr-native-combined-original', represented);
-        if (represented) {
+        root.classList.toggle('rsr-native-combined-original', isRepresented);
+        if (isRepresented) {
             // Disconnect the duplicate live custom elements, preserving the root
             // for ChatLog pagination and updates. Re-render if it becomes visible.
             const content = root.querySelector('.message-content');
@@ -403,8 +408,17 @@ export function reconcileNativeSources() {
     }
 }
 
-function scheduleReconcile() {
+let reconcileQueued = false;
+
+/** Coalesced: every render in a frame (sidebar, popout, notification copies) shares one pass. */
+export function scheduleReconcile() {
+    if (reconcileQueued) return;
+    reconcileQueued = true;
+    const run = () => {
+        reconcileQueued = false;
+        reconcileNativeSources();
+    };
     // Background tabs pause animation frames; a hidden client must still hide originals.
-    if (typeof requestAnimationFrame === 'function' && document.visibilityState !== 'hidden') requestAnimationFrame(reconcileNativeSources);
-    else setTimeout(reconcileNativeSources, 0);
+    if (typeof requestAnimationFrame === 'function' && document.visibilityState !== 'hidden') requestAnimationFrame(run);
+    else setTimeout(run, 0);
 }
