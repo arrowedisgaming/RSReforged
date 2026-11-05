@@ -2,6 +2,7 @@ import { MODULE_SHORT } from '../module/const.js';
 import { BonusManager } from './bonus.js';
 import { getOriginId, getRollType } from './dnd5e-compat.js';
 import { getNativeRollSources } from './native-workflow.js';
+import { isFoldedRoll, isOrphanedRoll } from './native-cleanup.js';
 import { renderRsrCheck, renderRsrSection } from './native-card.js';
 import { HIDE_NPC_ROLL_STYLES, SETTING_NAMES, SettingsUtility } from './settings.js';
 
@@ -12,6 +13,10 @@ const renders = new WeakMap();
 // Fold-ins RSR built itself. Message content may carry the same class and data
 // attributes, so only these nodes may hide another card.
 const nativeSources = new WeakSet();
+// Rendered rows of rolls RSR folds into its cards (see native-cleanup.js). Only these
+// rows, or rows RSR hid itself, are ever removed or kept hidden by RSR.
+const managedRows = new WeakSet();
+const HIDDEN_ORIGINAL = 'rsr-native-combined-original';
 /** Longest a folded card waits for Dice So Nice before revealing its results anyway. */
 const DICE_REVEAL_TIMEOUT_MS = 10000;
 const RECONCILE_FALLBACK_MS = 100;
@@ -243,7 +248,12 @@ function pendingThrows(sources) {
 export async function renderNativeMessage(message, suppliedHtml) {
     const html = suppliedHtml instanceof HTMLElement ? suppliedHtml : suppliedHtml?.[0];
     if (!html) return;
-    html.classList.remove('rsr-native-combined-original');
+    html.classList.remove(HIDDEN_ORIGINAL);
+    if (isFoldedRoll(message)) {
+        managedRows.add(html);
+        // Its card was deleted and it awaits deletion itself: never flash it.
+        if (isOrphanedRoll(message)) html.classList.add(HIDDEN_ORIGINAL);
+    }
     if (message.type !== 'usage') {
         if (checkTypes.has(message.type)) await renderNativeCheck(message, html);
         scheduleReconcile();
@@ -403,18 +413,33 @@ export function reconcileNativeSources() {
     for (const root of queryAll('.message[data-message-id]')) {
         if (root.classList.contains('rsr-native-source')) continue;
         const id = root.dataset.messageId;
-        const isRepresented = represented.has(id);
-        const wasHidden = root.classList.contains('rsr-native-combined-original');
-        root.classList.toggle('rsr-native-combined-original', isRepresented);
-        if (isRepresented) {
+        const wasHidden = root.classList.contains(HIDDEN_ORIGINAL);
+        if (represented.has(id)) {
             // Disconnect the duplicate live custom elements, preserving the root
             // for ChatLog pagination and updates. Re-render if it becomes visible.
+            root.classList.add(HIDDEN_ORIGINAL);
+            // A row RSR hid is RSR's to remove if its document goes before it is shown again.
+            managedRows.add(root);
             const content = root.querySelector('.message-content');
             if (content?.childNodes.length) content.replaceChildren();
-        } else if (wasHidden) {
-            const message = game.messages.get(id);
-            if (message) ui.chat?.updateMessage?.(message);
+            continue;
         }
+        // Any other row is untouched unless RSR registered it or hid it itself.
+        if (!wasHidden && !managedRows.has(root)) continue;
+        const message = game.messages.get(id);
+        // Its document is gone: a stray copy Foundry did not remove. Showing it would
+        // expose an empty header, the card left behind in issue #48.
+        if (!message) {
+            root.remove();
+            continue;
+        }
+        // Its card was deleted; it stays hidden until it is deleted too.
+        if (isOrphanedRoll(message)) {
+            root.classList.add(HIDDEN_ORIGINAL);
+            continue;
+        }
+        root.classList.remove(HIDDEN_ORIGINAL);
+        if (wasHidden) ui.chat?.updateMessage?.(message);
     }
 }
 
@@ -431,7 +456,7 @@ const sourceSelector = '.message[data-message-id], .rsr-native-source[data-rsr-m
 export function observeNativeSources(doc = document) {
     if (sourceObservers.has(doc)) return sourceObservers.get(doc);
     const observer = new MutationObserver(records => {
-        for (const record of records) record.addedNodes.forEach(dropEarlierCopies);
+        dedupeAddedChatRows(records);
         const touchesSources = records.some(record => {
             // Our content clearing must not trigger a hide/restore loop, even when
             // author HTML contains copied source markers. Removing the whole card
@@ -456,16 +481,32 @@ export function observeNativeSources(doc = document) {
  * Creating the attack of a batch makes dnd5e refresh the batch's damage card before Foundry
  * has posted it, so Foundry posts that card twice, then updates and deletes only the first.
  * Drop the earlier copy as the repost lands, before a deletion can reach it, and keep the
- * repost, which Foundry still measures for its notification. Local-only cards have an empty
- * ID and are not ours to touch. The sidebar log, its popout, and the notifications each hold
- * their own copy.
+ * repost, which Foundry still measures for its notification. The sidebar log, its popout,
+ * and the notifications each hold their own copy, so each log is deduplicated on its own.
+ * Only rows RSR registered are kept or removed: local-only cards, Foundry's notification
+ * placeholder, and other modules' rows are never touched. IDs are compared as strings,
+ * never put into a selector.
  */
-function dropEarlierCopies(card) {
-    const log = card.parentElement;
-    const id = card.dataset?.messageId;
-    if (!id || !log?.matches('.chat-log')) return;
-    for (const copy of log.querySelectorAll(`:scope > .message[data-message-id="${id}"]`)) {
-        if (copy !== card) copy.remove();
+function dedupeAddedChatRows(records) {
+    // The last row added for each ID in each log, in delivery order (a prepend included).
+    const winners = new Map();
+    for (const record of records) {
+        const log = record.target;
+        if (record.type !== 'childList' || !record.addedNodes.length || !log.matches?.('.chat-log')) continue;
+        for (const node of record.addedNodes) {
+            if (node.nodeType !== 1 || node.parentNode !== log || !managedRows.has(node)) continue;
+            const id = node.dataset.messageId;
+            if (!id) continue;
+            if (!winners.has(log)) winners.set(log, new Map());
+            winners.get(log).set(id, node);
+        }
+    }
+    for (const [log, ids] of winners) {
+        for (const row of [...log.children]) {
+            if (!managedRows.has(row)) continue;
+            const winner = ids.get(row.dataset.messageId);
+            if (winner && winner !== row) row.remove();
+        }
     }
 }
 

@@ -178,3 +178,40 @@ it("falls back to RSR's key helper if dnd5e's is unavailable", () => {
     callbacks.get("dnd5e.preRollDamage")(damageClick({ shiftKey: true }), dialog, {});
     expect(dialog.configure).toBe(true);
 });
+
+// Issue #48: the lifecycle wiring of the folded-roll cleanup.
+it("links a roll made from an RSR card when its own client creates it", () => {
+    hooks.HooksUtility.registerChatHooks();
+    game.messages.set("card", { id: "card", type: "usage", flags: { rsreforged: { workflowVersion: 2, quickRoll: true } } });
+    const message = { type: "damage", flags: {}, system: { origin: "card" }, updateSource: vi.fn() };
+
+    callbacks.get("preCreateChatMessage")(message, {}, {}, "someone-else");
+    expect(message.updateSource).not.toHaveBeenCalled();
+    callbacks.get("preCreateChatMessage")(message, {}, {}, game.user.id);
+    expect(message.updateSource).toHaveBeenCalledWith({ "flags.rsreforged.parentId": "card", "flags.rsreforged.deleteWithParent": true });
+});
+
+it("deletes a deleted RSR card's rolls with the deleting user's ID", async () => {
+    hooks.HooksUtility.registerChatHooks();
+    const roll = { id: "roll", type: "damage", flags: { rsreforged: { parentId: "card" } }, system: { origin: "card" }, canUserModify: () => true };
+    game.messages.set("roll", roll);
+    ChatMessage.deleteDocuments = vi.fn(async ids => ids.forEach(id => game.messages.delete(id)));
+    const card = { id: "card", type: "usage", flags: { rsreforged: { workflowVersion: 2, quickRoll: true } } };
+
+    callbacks.get("deleteChatMessage")(card, {}, "someone-else");
+    await vi.waitFor(() => expect(ChatMessage.deleteDocuments).not.toHaveBeenCalled());
+    callbacks.get("deleteChatMessage")(card, {}, game.user.id);
+    await vi.waitFor(() => expect(ChatMessage.deleteDocuments).toHaveBeenCalledWith(["roll"]));
+});
+
+it("cleans up the rolls of deleted cards when the world is ready", async () => {
+    const cleanup = await import("../src/utils/native-cleanup.js");
+    const reconcile = vi.spyOn(cleanup, "deleteOrphanedRolls").mockResolvedValue();
+    CONFIG.DND5E.damageTypes ??= {};
+    CONFIG.DND5E.healingTypes ??= {};
+    CONFIG.rsreforged ??= {};
+    hooks.HooksUtility.registerModuleHooks();
+
+    await callbacks.get("ready")();
+    expect(reconcile).toHaveBeenCalledTimes(1);
+});

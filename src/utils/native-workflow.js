@@ -1,6 +1,7 @@
 import { MODULE_SHORT } from '../module/const.js';
 import { ActivityUtility } from './activity.js';
 import { SettingsUtility, SETTING_NAMES } from './settings.js';
+import { LogUtility } from './log.js';
 
 const pending = new Map();
 const ammunitionSnapshots = new WeakMap();
@@ -86,7 +87,7 @@ function messageConfig(parent, seeds) {
             whisper: [...(parent.whisper ?? [])],
             blind: parent.blind ?? false,
             system: { origin: parent.id, targets: foundry.utils.deepClone(parent.system?.targets ?? []) },
-            flags: { [MODULE_SHORT]: { workflowVersion: 2, parentId: parent.id, quickRoll: true, processed: true, nativeCaptureId } }
+            flags: { [MODULE_SHORT]: { workflowVersion: 2, parentId: parent.id, deleteWithParent: true, quickRoll: true, processed: true, nativeCaptureId } }
         }
     };
     seeds.push(seed);
@@ -117,19 +118,31 @@ function extractRolls(result) {
 }
 
 async function setState(parent, workflowState, extra = {}) {
+    // The card was deleted while its rolls were evaluating; there is nothing to update.
+    if (!game.messages.has(parent.id)) return;
     await parent.update({ [`flags.${MODULE_SHORT}.workflowState`]: workflowState, ...extra });
 }
 
-/** Create every prepared native message in one batch so Dice So Nice animates them together. */
-async function createBatch(prepared) {
+/**
+ * Create every prepared native message in one batch so Dice So Nice animates them together.
+ * The usage card can be deleted while its rolls evaluate. Its deletion cascade has already
+ * run by then, so the rolls are not created at all, or deleted again if the card went while
+ * they were being created. They are linked to the card, so a GM removes any that survive.
+ */
+async function createBatch(parent, prepared) {
     // Takes the prepared data out of the list, so the error path can never create
     // a batch that was already created (e.g. when only the later state update failed).
     const datas = prepared.splice(0);
-    if (!datas.length) return [];
+    if (!datas.length || !game.messages.has(parent.id)) return [];
     // Explicit null, not delete: Foundry's ChatMessage#_preCreate restores the dice
     // sound on any roll message whose data has no `sound` key at all.
     datas.forEach((data, index) => { if (index > 0) data.sound = null; });
-    return ChatMessage.implementation.createDocuments(datas);
+    const created = await ChatMessage.implementation.createDocuments(datas);
+    if (game.messages.has(parent.id)) return created;
+    const ids = (created ?? []).map(message => message.id).filter(id => game.messages.has(id));
+    if (ids.length) await ChatMessage.implementation.deleteDocuments(ids).catch(error =>
+        LogUtility.logWarning(`Could not delete the rolls of a deleted card: ${error.message}`));
+    return [];
 }
 
 /** Called only after native usage finalization, never while rendering a document. */
@@ -188,7 +201,7 @@ export function runNativeUsage(activity, usageConfig, results) {
                 if (!damage.length) {
                     releaseCapture(damageMessage);
                     const created = prepared.length;
-                    await createBatch(prepared);
+                    await createBatch(parent, prepared);
                     await setState(parent, created ? 'partial' : 'cancelled');
                     return;
                 }
@@ -201,17 +214,17 @@ export function runNativeUsage(activity, usageConfig, results) {
                 if (!formula.length) {
                     releaseCapture(formulaMessage);
                     const created = prepared.length;
-                    await createBatch(prepared);
+                    await createBatch(parent, prepared);
                     await setState(parent, created ? 'partial' : 'cancelled');
                     return;
                 }
                 prepared.push(takePreparedData(formulaMessage));
             }
 
-            await createBatch(prepared);
+            await createBatch(parent, prepared);
             await setState(parent, 'complete', { [`flags.${MODULE_SHORT}.processed`]: true });
         } catch (error) {
-            const created = await createBatch(prepared).catch(() => []);
+            const created = await createBatch(parent, prepared).catch(() => []);
             await setState(parent, created.length || getNativeRollSources(parent).length ? 'partial' : 'failed');
             throw error;
         } finally {

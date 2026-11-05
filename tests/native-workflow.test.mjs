@@ -331,3 +331,75 @@ it("resolves the RSR quick-roll card a click came from, and nothing else", () =>
     expect(quickRollCardFor({ target })).toBeNull();
     expect(quickRollCardFor(undefined)).toBeNull();
 });
+
+// Issue #48: the usage card can be deleted while its rolls evaluate. Its deletion cascade
+// has already run by then, so nothing may be created for it, or left behind.
+describe("usage card deleted mid-workflow", () => {
+    const updates = calls => calls.filter((call) => call[0] === "update").map((call) => call[1]["flags.rsreforged.workflowState"]);
+
+    function trackDeletes() {
+        const deleted = [];
+        ChatMessage.deleteDocuments = async (ids) => {
+            deleted.push(...ids);
+            ids.forEach((id) => game.messages.delete(id));
+        };
+        return deleted;
+    }
+
+    it("creates nothing when the card is deleted while a roll is pending", async () => {
+        for (const paused of ["attack", "damage"]) {
+            ChatMessage.createDocumentCalls.length = 0;
+            const f = fixture();
+            const deleted = trackDeletes();
+            let resume;
+            const method = paused === "attack" ? "rollAttack" : "rollDamage";
+            const roll = f.rollActivity[method];
+            f.rollActivity[method] = async (...args) => {
+                await new Promise((resolve) => { resume = resolve; });
+                return roll(...args);
+            };
+
+            const run = workflow.runNativeUsage(f.activity, {}, { message: f.parent });
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            game.messages.delete(f.parent.id);
+            resume();
+            await run;
+
+            expect(created(), paused).toHaveLength(0);
+            expect(deleted, paused).toEqual([]);
+            expect(updates(f.calls), paused).toEqual(["running"]);
+        }
+    });
+
+    it("deletes the rolls again when the card is deleted while they are being created", async () => {
+        const f = fixture();
+        const deleted = trackDeletes();
+        const create = ChatMessage.createDocuments;
+        ChatMessage.createDocuments = async (...args) => {
+            const documents = await create.apply(ChatMessage, args);
+            game.messages.delete(f.parent.id);
+            return documents;
+        };
+
+        await workflow.runNativeUsage(f.activity, {}, { message: f.parent });
+
+        expect(created()).toHaveLength(1);
+        expect(deleted).toHaveLength(2);
+        expect(deleted.some((id) => game.messages.has(id))).toBe(false);
+        expect(updates(f.calls)).toEqual(["running"]);
+    });
+
+    it("creates nothing on the error path once the card is gone", async () => {
+        const f = fixture();
+        trackDeletes();
+        f.rollActivity.rollDamage = async () => {
+            game.messages.delete(f.parent.id);
+            throw new Error("damage failed");
+        };
+
+        await expect(workflow.runNativeUsage(f.activity, {}, { message: f.parent })).rejects.toThrow("damage failed");
+
+        expect(created()).toHaveLength(0);
+        expect(updates(f.calls)).toEqual(["running"]);
+    });
+});

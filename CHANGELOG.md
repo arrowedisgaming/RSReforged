@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Deleting a card deletes its rolls, and clearing the chat log leaves nothing behind.** On dnd5e 6, deleting an RSReforged card now also deletes the attack, damage, healing, and formula rolls shown inside it, instead of bringing them back as separate cards. Neither deleting a card nor clearing the log leaves header-only cards behind any more: dnd5e could post a roll's card twice, and only one copy was ever removed (thanks [@AlanGabbianelli](https://github.com/AlanGabbianelli), [#49](https://github.com/arrowedisgaming/RSReforged/pull/49)). Fixes [#48](https://github.com/arrowedisgaming/RSReforged/issues/48).
+  - This changes the 6.0.0 behavior, which restored the standalone rolls when their card was deleted. A roll still comes back when its card only leaves the view, for example on a long log.
+  - When the player deleting a card may not delete one of its rolls (another user made it), the GM removes it. With no GM online, a roll made with this version stays hidden until a GM next loads the world, which then removes it.
+  - Rolls made before this version, including with a card's Damage button, are deleted with their card too.
+  - Rolls whose card you deleted before this version stay in the chat log as they are. Updating changes nothing already in your log, and you can remove those rolls by hand.
+
 ## [6.0.2] — 2026-10-12
 
 ### Fixed

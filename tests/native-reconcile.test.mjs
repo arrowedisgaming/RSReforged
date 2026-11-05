@@ -285,12 +285,44 @@ it("ignores a copied marker for another card, even inside an original that gets 
     expect(other.querySelector(".message-content").childNodes).toHaveLength(1);
 });
 
-function chatCard(id) {
-    const card = document.createElement("li");
-    card.className = "chat-message message";
-    card.dataset.messageId = id;
-    card.innerHTML = '<header class="message-header"><time class="message-timestamp"></time></header><div class="message-content"></div>';
-    return card;
+// Issue #48: rows of rolls RSR folds into its usage card. dnd5e can post one twice.
+
+const PARENT = "usage";
+
+function rsrUsage(id = PARENT) {
+    const usage = { id, type: "usage", flags: { rsreforged: { workflowVersion: 2, quickRoll: true } } };
+    game.messages.set(id, usage);
+    return usage;
+}
+
+function foldedRoll(id, { type = "damage", parentId = PARENT, origin = parentId } = {}) {
+    if (!game.messages.has(id)) {
+        game.messages.set(id, {
+            id, type, canUserModify: () => true,
+            flags: { rsreforged: { workflowVersion: 2, parentId, deleteWithParent: true } },
+            system: { origin }
+        });
+    }
+    return game.messages.get(id);
+}
+
+function rowFor(id, { register = true } = {}) {
+    const row = document.createElement("li");
+    row.className = "chat-message message";
+    row.dataset.messageId = id;
+    row.innerHTML = '<header class="message-header"><time class="message-timestamp"></time></header><div class="message-content"><p>Roll</p></div>';
+    // As dnd5e.renderChatMessage registers every rendered card, before ChatLog inserts it.
+    if (register) renderRow(row, game.messages.get(id));
+    return row;
+}
+
+function chatCard(id, options) {
+    foldedRoll(id, options);
+    return rowFor(id);
+}
+
+function renderRow(row, message) {
+    handlers.get("dnd5e.renderChatMessage")(message, row);
 }
 
 function chatLog() {
@@ -300,7 +332,25 @@ function chatLog() {
     return log;
 }
 
+const ids = log => [...log.children].map(row => row.dataset.messageId);
+
+/** By identity: duplicate rows are structurally equal, so toEqual cannot tell them apart. */
+function expectRows(log, rows) {
+    expect(log.children).toHaveLength(rows.length);
+    rows.forEach((row, index) => expect(log.children[index]).toBe(row));
+}
+
+async function settle() {
+    for (let i = 0; i < 5; i++) {
+        await Promise.resolve();
+        flushFrame();
+    }
+    await vi.advanceTimersByTimeAsync(200);
+    flushFrame();
+}
+
 it("drops the earlier copy as soon as Foundry posts a card again, keeping the one it still measures, with no frame, timer or saved message", async () => {
+    rsrUsage();
     const [log, notifications] = [chatLog(), chatLog()];
     const [first, repost, notification] = [1, 2, 3].map(() => chatCard("damage"));
     renderer.observeNativeSources(document);
@@ -318,6 +368,7 @@ it("drops the earlier copy as soon as Foundry posts a card again, keeping the on
 });
 
 it("keeps the card a scrolled-back page prepends in date order and drops the stray Foundry had appended at the bottom", async () => {
+    rsrUsage();
     const log = chatLog();
     const [stray, newer, inOrder] = [chatCard("old"), chatCard("newer"), chatCard("old")];
     renderer.observeNativeSources(document);
@@ -330,9 +381,39 @@ it("keeps the card a scrolled-back page prepends in date order and drops the str
     expect(stray.isConnected).toBe(false);
 });
 
+it("keeps the last insertion when a prepend follows an append within one observer delivery", async () => {
+    rsrUsage();
+    const log = chatLog();
+    const [old, latest] = [chatCard("damage"), chatCard("damage")];
+    renderer.observeNativeSources(document);
+    log.append(old);
+    log.prepend(latest);
+    await Promise.resolve();
+
+    expectRows(log, [latest]);
+});
+
+it("never removes a row RSR did not register: a non-message sibling, Foundry's notification placeholder, or a local-only card", async () => {
+    rsrUsage();
+    const log = chatLog();
+    const real = chatCard("damage");
+    renderer.observeNativeSources(document);
+    log.append(real);
+    await Promise.resolve();
+    const sibling = document.createElement("div");
+    sibling.dataset.messageId = "damage";
+    const placeholder = rowFor("damage", { register: false });
+    const localOnly = rowFor("local", { register: false });
+    log.append(sibling, placeholder, localOnly);
+    await settle();
+
+    expectRows(log, [real, sibling, placeholder, localOnly]);
+    expect(localOnly.classList.contains("rsr-native-combined-original")).toBe(false);
+});
+
 it("leaves cards with an empty message id alone, so two local-only cards both stay", async () => {
     const log = chatLog();
-    const [first, second] = [chatCard(""), chatCard("")];
+    const [first, second] = [rowFor("", { register: false }), rowFor("", { register: false })];
     renderer.observeNativeSources(document);
     log.append(first);
     await Promise.resolve();
@@ -344,6 +425,7 @@ it("leaves cards with an empty message id alone, so two local-only cards both st
 });
 
 it("dedupes only the cards a chat log holds directly, not a copy quoted in an earlier message or a list outside a log", async () => {
+    rsrUsage();
     const log = chatLog();
     const quoting = chatCard("quoting");
     quoting.querySelector(".message-content").innerHTML = '<div class="message" data-message-id="damage"></div>';
@@ -362,4 +444,223 @@ it("dedupes only the cards a chat log holds directly, not a copy quoted in an ea
     expect(quoting.querySelector('[data-message-id="damage"]')).not.toBeNull();
     expect(listed.isConnected).toBe(true);
     expect(relisted.isConnected).toBe(true);
+});
+
+it("dedupes a multi-row batch per log in one scan, compares a quoted ID as a string, and then goes quiet", async () => {
+    rsrUsage();
+    const [log, other] = [chatLog(), chatLog()];
+    const quoted = 'say "hi"';
+    const kept = chatCard(quoted);
+    const elsewhere = chatCard(quoted);
+    renderer.observeNativeSources(document);
+    log.append(chatCard("unique"), kept);
+    other.append(elsewhere);
+    await Promise.resolve();
+
+    const reads = Object.getOwnPropertyDescriptor(window.Element.prototype, "children").get;
+    let scans = 0;
+    Object.defineProperty(log, "children", { configurable: true, get() { scans++; return reads.call(this); } });
+    const batch = document.createDocumentFragment();
+    const [x, repost, y, xAgain] = [chatCard("x"), chatCard(quoted), chatCard("y"), chatCard("x")];
+    batch.append(x, repost, y, xAgain);
+    log.append(batch);
+    await Promise.resolve();
+    expect(scans).toBe(1);
+    await settle();
+
+    delete log.children;
+    expect(ids(log)).toEqual(["unique", quoted, "y", "x"]);
+    expect(kept.isConnected).toBe(false);
+    expect(repost.isConnected).toBe(true);
+    expect(xAgain.isConnected).toBe(true);
+    expect(elsewhere.isConnected).toBe(true);
+    expect(scans).toBe(1);
+    expect(frames.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+});
+
+/**
+ * The folded card from issue #48: a usage card representing an attack and a damage roll,
+ * with the damage row posted twice, as dnd5e's origin refresh does for a batched roll.
+ */
+async function foldedCard() {
+    const log = chatLog();
+    const usage = rsrUsage();
+    foldedRoll("attack", { type: "attack" });
+    foldedRoll("damage");
+    const usageRow = document.createElement("li");
+    usageRow.className = "chat-message message";
+    usageRow.dataset.messageId = PARENT;
+    usageRow.innerHTML = '<div class="message-content"></div>';
+    for (const id of ["attack", "damage"]) {
+        const section = document.createElement("section");
+        section.dataset.rsrMessageId = id;
+        renderer.markNativeSource(section);
+        usageRow.querySelector(".message-content").append(section);
+    }
+    renderer.observeNativeSources(document);
+    const [attack, damage, repost] = [rowFor("attack"), rowFor("damage"), rowFor("damage")];
+    log.append(usageRow, attack, damage);
+    log.append(repost);
+    await settle();
+    return { log, usage, usageRow, attack, damage: repost };
+}
+
+/** Foundry's deletion: the batch leaves the collection, then each client's ChatLog removes the first row per ID and fires the hook. */
+async function serverDelete(log, documents, userId = "user-1") {
+    for (const message of documents) game.messages.delete(message.id);
+    for (const message of documents) {
+        log.querySelector(`.message[data-message-id="${message.id}"]`)?.remove();
+        handlers.get("deleteChatMessage")(message, {}, userId);
+    }
+    await settle();
+}
+
+it("keeps one row per folded roll while the card shows them, then deletes the card and its rolls with nothing left behind", async () => {
+    const { log, usage, usageRow, attack, damage } = await foldedCard();
+    expectRows(log, [usageRow, attack, damage]);
+    expect(isHidden(attack) && isHidden(damage)).toBe(true);
+
+    let rowsDuringCascade;
+    ChatMessage.implementation.deleteDocuments = vi.fn(async deleted => {
+        // The usage row is gone, its rolls are not yet: they must not be exposed.
+        rowsDuringCascade = [...log.children].map(row => [row.dataset.messageId, isHidden(row)]);
+        await serverDelete(log, deleted.map(id => game.messages.get(id)));
+    });
+    await serverDelete(log, [usage]);
+
+    expect(ChatMessage.implementation.deleteDocuments).toHaveBeenCalledWith(["attack", "damage"]);
+    expect(rowsDuringCascade).toEqual([["attack", true], ["damage", true]]);
+    expect(log.children).toHaveLength(0);
+    expect(game.messages.size).toBe(0);
+});
+
+it("leaves an empty log after a flush, and a fresh roll still posts normally", async () => {
+    const { log, usage } = await foldedCard();
+    ChatMessage.implementation.deleteDocuments = vi.fn();
+    const all = [usage, game.messages.get("attack"), game.messages.get("damage")];
+    await serverDelete(log, all);
+
+    expect(log.children).toHaveLength(0);
+    expect(game.messages.size).toBe(0);
+    // Already deleted in the same batch: nothing left to cascade.
+    expect(ChatMessage.implementation.deleteDocuments).not.toHaveBeenCalled();
+
+    rsrUsage("next");
+    const fresh = chatCard("fresh", { parentId: "next" });
+    log.append(fresh);
+    await settle();
+    expectRows(log, [fresh]);
+    expect(isHidden(fresh)).toBe(false);
+});
+
+it("removes a registered row that arrives after its document was deleted, with no duplicate left to compare", async () => {
+    rsrUsage();
+    const log = chatLog();
+    renderer.observeNativeSources(document);
+    const late = chatCard("damage");
+    game.messages.delete("damage");
+    log.append(late);
+    await settle();
+
+    expect(late.isConnected).toBe(false);
+});
+
+it("keeps rolls hidden while their deleted card's cascade cannot run, including after a reload", async () => {
+    const { log, usage, attack, damage } = await foldedCard();
+    // The deleting player may not delete these, and no GM is online.
+    for (const id of ["attack", "damage"]) game.messages.get(id).canUserModify = () => false;
+    ChatMessage.implementation.deleteDocuments = vi.fn();
+    await serverDelete(log, [usage]);
+
+    expect(ChatMessage.implementation.deleteDocuments).not.toHaveBeenCalled();
+    expectRows(log, [attack, damage]);
+    expect(isHidden(attack) && isHidden(damage)).toBe(true);
+
+    // Reload: the rows are rendered afresh, with no RSR state carried over.
+    log.replaceChildren();
+    await settle();
+    const [attackAgain, damageAgain] = [rowFor("attack"), rowFor("damage")];
+    expect(isHidden(attackAgain) && isHidden(damageAgain)).toBe(true);
+    log.append(attackAgain, damageAgain);
+    await settle();
+    expect(isHidden(attackAgain) && isHidden(damageAgain)).toBe(true);
+});
+
+it("restores a folded roll when its live card only leaves the view, as on a pruned page", async () => {
+    const { usageRow, damage } = await foldedCard();
+    ui.chat.updateMessage = vi.fn();
+    usageRow.remove();
+    await settle();
+
+    expect(isHidden(damage)).toBe(false);
+    expect(ui.chat.updateMessage).toHaveBeenCalledWith(game.messages.get("damage"));
+    expect(game.messages.has("damage")).toBe(true);
+});
+
+it("does not claim a roll whose native origin names a different card than its RSR link", async () => {
+    rsrUsage();
+    foldedRoll("damage", { parentId: "deleted-card", origin: PARENT });
+    const log = chatLog();
+    renderer.observeNativeSources(document);
+    const row = rowFor("damage");
+    log.append(row);
+    await settle();
+
+    expect(isHidden(row)).toBe(false);
+    expect(row.isConnected).toBe(true);
+});
+
+it("keeps showing a roll from before this version whose card is gone, as that version restored it", async () => {
+    foldedRoll("damage", { parentId: "deleted-before-upgrade" });
+    delete game.messages.get("damage").flags.rsreforged.deleteWithParent;
+    const log = chatLog();
+    renderer.observeNativeSources(document);
+    const row = rowFor("damage");
+    log.append(row);
+    await settle();
+
+    expect(isHidden(row)).toBe(false);
+    expect(row.isConnected).toBe(true);
+});
+
+it("cleans up the duplicate rows of a Damage-button roll made before rolls were linked to their card", async () => {
+    const { log } = await foldedCard();
+    // dnd5e's own message: no RSR flags, only its native origin names the RSR card.
+    game.messages.set("old-manual", { id: "old-manual", type: "damage", flags: {}, system: { origin: PARENT }, canUserModify: () => true });
+    const [first, repost] = [rowFor("old-manual"), rowFor("old-manual")];
+    log.append(first);
+    await Promise.resolve();
+    log.append(repost);
+    await settle();
+    expect(first.isConnected).toBe(false);
+    expect(repost.isConnected).toBe(true);
+
+    // Its document goes before Foundry removes the row: the row is removed, not exposed empty.
+    game.messages.delete("old-manual");
+    log.append(rowFor("unrelated", { register: false }));
+    await settle();
+    expect(repost.isConnected).toBe(false);
+});
+
+it("removes a stray copy of a row RSR hid once its document is gone, even after it was shown again", async () => {
+    const { log, usage, usageRow, attack } = await foldedCard();
+    // A roll from before this version: shown again when its card goes, not kept hidden.
+    delete game.messages.get("attack").flags.rsreforged.deleteWithParent;
+    const stray = attack.cloneNode(true);
+    log.append(stray);
+    await settle();
+    expect(isHidden(stray)).toBe(true);
+
+    ui.chat.updateMessage = vi.fn();
+    game.messages.delete(usage.id);
+    usageRow.remove();
+    await settle();
+    expect(isHidden(stray)).toBe(false);
+
+    // Foundry removes only the first row for the deleted roll.
+    game.messages.delete("attack");
+    attack.remove();
+    await settle();
+    expect(stray.isConnected).toBe(false);
 });

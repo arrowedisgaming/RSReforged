@@ -12,6 +12,7 @@ import { usesNativeWorkflow, getOriginId } from "./dnd5e-compat.js";
 import { NATIVE_ACTIVITY_TYPES, quickRollCardFor, runNativeUsage, recordAmmunitionSnapshot, captureNativeMessageConfig } from "./native-workflow.js";
 import { renderNativeMessage, refreshNativeOrigin, scheduleReconcile, observeNativeSources } from "./native-render.js";
 import { claimNativeThrow, prepareAlternates } from "./native-dice.js";
+import { cascadeUsageDeletion, deleteOrphanedRolls, stampRsrParent } from "./native-cleanup.js";
 
 export const HOOKS_CORE = { INIT: "init", READY: "ready" }
 
@@ -54,6 +55,9 @@ export class HooksUtility {
             );
             CONFIG.DND5E.aggregateDamageDisplay = SettingsUtility.getSettingValue(SETTING_NAMES.AGGREGATE_DAMAGE) ?? true;
             await _migrateHideNpcRollSetting().catch(err => LogUtility.logError(`Failed to migrate hide NPC roll setting: ${err}`));
+            if (usesNativeWorkflow()) {
+                await deleteOrphanedRolls().catch(err => LogUtility.logError(`Failed to clean up the rolls of deleted cards: ${err}`));
+            }
             LogUtility.log(`Loaded ${MODULE_TITLE}`);
         });
     }
@@ -287,7 +291,11 @@ export class HooksUtility {
             if (userId !== game.user.id) return;
             // dnd5e 6: native typed messages are created as dnd5e prepared them; the
             // legacy Die rewrite and usage flagging below belong to the 5.3 workflow.
-            if (usesNativeWorkflow()) return;
+            // A roll made from an RSR card is linked to it, so deleting the card deletes it.
+            if (usesNativeWorkflow()) {
+                stampRsrParent(message);
+                return;
+            }
 
             // Forward-compat hygiene: dnd5e 5.3's D20Roll constructs its d20 term using
             // Foundry's legacy `Die` class, while Foundry V14 canonicalises on `BasicDie`
@@ -378,10 +386,11 @@ export class HooksUtility {
                 refreshNativeOrigin(message, { rollsChanged: "rolls" in changes });
             }
         });
-        Hooks.on("deleteChatMessage", message => {
+        Hooks.on("deleteChatMessage", (message, options, userId) => {
             if (usesNativeWorkflow()) {
                 if (getOriginId(message)) refreshNativeOrigin(message);
                 scheduleReconcile();
+                cascadeUsageDeletion(message, userId).catch(err => LogUtility.logError(`Failed to delete the rolls of a deleted card: ${err}`));
             }
         });
 
