@@ -98,6 +98,64 @@ it("hides the usage card's roll buttons once their rolls are shown, and widens a
     expect(both.querySelector(".icon-row").classList.contains("rsr-native-hidden")).toBe(true);
 });
 
+it("offers no roll the quick workflow will make until it has run", async () => {
+    const { beginNativeUsage } = await import("../src/utils/native-workflow.js");
+    const flags = { rsreforged: { workflowVersion: 2, quickRoll: true } };
+    beginNativeUsage(flags.rsreforged);
+    const parent = usageParent([], { flags });
+    const actions = ["rollAttack", "rollDamage", "rollHealing", "rollFormula", "placeTemplate"];
+
+    // The card is posted, and template placement has not ended.
+    const placing = manualUsageHtml(actions);
+    await renderer.renderNativeMessage(parent, placing);
+    for (const action of actions.slice(0, -1)) expect(isHidden(placing, action)).toBe(true);
+    expect(placing.querySelector(".rsr-wide-action")).toBeNull();
+    expect(isHidden(placing, "placeTemplate")).toBe(false);
+
+    // Still rolling: the button must not come back between "running" and the results.
+    flags.rsreforged.workflowState = "running";
+    const running = manualUsageHtml(actions);
+    await renderer.renderNativeMessage(parent, running);
+    expect(running.querySelector(".rsr-wide-action")).toBeNull();
+
+    // Damage deferred to the button (manual damage mode), or a veto: it is offered again.
+    flags.rsreforged.workflowState = "complete";
+    const complete = manualUsageHtml(actions);
+    await renderer.renderNativeMessage(parent, complete);
+    expect(complete.querySelector(".rsr-wide-action")).not.toBeNull();
+    expect(isHidden(complete, "rollAttack")).toBe(false);
+});
+
+it("keeps a save offered while the quick workflow waits, since the workflow never rolls one", async () => {
+    const { beginNativeUsage } = await import("../src/utils/native-workflow.js");
+    const flags = { rsreforged: { workflowVersion: 2, quickRoll: true } };
+    beginNativeUsage(flags.rsreforged);
+    const html = document.createElement("li");
+    html.className = "chat-message message";
+    html.dataset.messageId = "parent";
+    html.innerHTML = `<div class="message-content"><div class="chat-card"><section class="icon-row"><ul>
+        <li><button type="button" class="icon" data-action="rollSave" data-ability="dex" data-dc="15" aria-label="Saving Throw"><i class="fa-solid fa-shield-heart"></i></button></li>
+        <li><button type="button" class="icon" data-action="rollDamage" aria-label="Damage"><i class="fa-solid fa-burst"></i></button></li>
+    </ul></section></div></div>`;
+
+    await renderer.renderNativeMessage(usageParent([], { flags }), html);
+
+    const wide = [...html.querySelectorAll(".rsr-wide-action")];
+    expect(wide.map((button) => button.dataset.rsrActionKey)).toEqual(["parent.rollSave."]);
+    expect(html.querySelector('[data-action="rollDamage"]').closest("li").classList.contains("rsr-native-hidden")).toBe(true);
+});
+
+it("offers the card's rolls on a client that did not start the use", async () => {
+    // A GM viewing a player's card, or a card whose use a reload ended: nothing will roll
+    // it here, and the workflow itself skips rolls that already exist.
+    const flags = { rsreforged: { workflowVersion: 2, quickRoll: true, usageToken: "someone-elses" } };
+    const html = manualUsageHtml(["rollDamage"]);
+
+    await renderer.renderNativeMessage(usageParent([], { flags }), html);
+
+    expect(html.querySelector(".rsr-wide-action")).not.toBeNull();
+});
+
 it("toggles a section's breakdown on click, but not from its buttons", async () => {
     const attack = nativeChild("attack", "attack", "");
     const html = usageHtml();

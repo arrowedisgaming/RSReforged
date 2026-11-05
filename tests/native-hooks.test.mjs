@@ -25,6 +25,17 @@ it("leaves unsupported activities and message-free uses entirely native", () => 
     }
 });
 
+it("marks a quick use as started on this client before its card is posted", async () => {
+    const workflow = await import("../src/utils/native-workflow.js");
+    const message = { data: { flags: {} } };
+
+    callbacks.get("dnd5e.preUseActivity")({ type: "save", item: { type: "feat" } }, {}, {}, message);
+
+    const card = { flags: message.data.flags };
+    expect(card.flags.rsreforged.workflowVersion).toBe(2);
+    expect(workflow.isNativeUsagePending(card)).toBe(true);
+});
+
 it("registers finalized-use execution independently of rendering", () => {
     expect(callbacks.has("dnd5e.postUseActivity")).toBe(true);
 });

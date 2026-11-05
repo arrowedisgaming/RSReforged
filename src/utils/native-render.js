@@ -1,7 +1,7 @@
 import { MODULE_SHORT } from '../module/const.js';
 import { BonusManager } from './bonus.js';
 import { getOriginId, getRollType } from './dnd5e-compat.js';
-import { getNativeRollSources } from './native-workflow.js';
+import { getNativeRollSources, isNativeUsagePending } from './native-workflow.js';
 import { isFoldedRoll, isOrphanedRoll } from './native-cleanup.js';
 import { renderRsrCheck, renderRsrSection } from './native-card.js';
 import { HIDE_NPC_ROLL_STYLES, SETTING_NAMES, SettingsUtility } from './settings.js';
@@ -75,12 +75,19 @@ function cardActionButtons(content) {
     return content.querySelectorAll(':scope > .chat-card > .icon-row button[data-action]');
 }
 
-function hideRepresentedButtons(content, sources) {
-    const actions = new Set(sources.flatMap(source => representedActions[source.type] ?? []));
+function hideActionButtons(content, actions) {
     for (const button of cardActionButtons(content)) {
         if (actions.has(button.dataset.action)) (button.closest('li') ?? button).classList.add('rsr-native-hidden');
     }
 }
+
+function hideRepresentedButtons(content, sources) {
+    hideActionButtons(content, new Set(sources.flatMap(source => representedActions[source.type] ?? [])));
+}
+
+// Every roll the quick workflow can make. Clicking one before the workflow has run, while
+// a template is being placed, would roll it a second time. Saves stay: it never rolls those.
+const WORKFLOW_ACTIONS = new Set(Object.values(representedActions).flat());
 
 /**
  * Keep a pinned chat log pinned after RSR changes a card's height. Foundry renders the
@@ -269,6 +276,7 @@ export async function renderNativeMessage(message, suppliedHtml) {
     renders.set(html, token);
     content.querySelector(':scope > .rsr-native-combined')?.remove();
     resetRsrLayout(content);
+    if (isNativeUsagePending(message)) hideActionButtons(content, WORKFLOW_ACTIONS);
     // dnd5e's registry returns children in no guaranteed order; the card reads top-down.
     maskHiddenSummaries(content);
     const sources = getNativeRollSources(message).filter(child =>

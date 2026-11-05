@@ -424,6 +424,7 @@ export async function setupFoundryEnv(options = {}) {
         utils: {
             deepClone: (value) => structuredClone(value),
             duplicate: (value) => structuredClone(value),
+            randomID: () => Math.random().toString(36).slice(2, 18),
             mergeObject: (target, source) => ({ ...target, ...source }),
             // Mirrors Foundry's isEmpty: nullish, or an empty string/array/Set/Map/object.
             // Primitives are never "empty".

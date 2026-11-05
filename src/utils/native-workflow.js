@@ -2,9 +2,12 @@ import { MODULE_SHORT } from '../module/const.js';
 import { ActivityUtility } from './activity.js';
 import { SettingsUtility, SETTING_NAMES } from './settings.js';
 import { LogUtility } from './log.js';
+import { FOLDED_TYPES } from './native-cleanup.js';
 
 const pending = new Map();
 const ammunitionSnapshots = new WeakMap();
+// Tokens of the quick uses this client started and has not finished.
+const unfinishedUses = new Set();
 
 export const NATIVE_ACTIVITY_TYPES = new Set(['attack', 'damage', 'heal', 'save', 'check', 'utility']);
 
@@ -145,6 +148,26 @@ async function createBatch(parent, prepared) {
     return [];
 }
 
+/**
+ * dnd5e posts a usage card, awaits template placement, and only then fires the hook that
+ * starts the workflow, so a card can sit in the log for as long as the user takes to place
+ * its template. Its token is stamped before the card exists, so its first render already
+ * knows. The token means something only to the client that started the use: other clients
+ * and a reload see an unknown token, and the card's buttons stay offered there, the only
+ * way left to roll if the use will never finish.
+ */
+export function beginNativeUsage(flags) {
+    const usageToken = foundry.utils.randomID();
+    unfinishedUses.add(usageToken);
+    flags.usageToken = usageToken;
+}
+
+/** Whether this client's workflow will still roll for this card. */
+export function isNativeUsagePending(message) {
+    const flags = message?.flags?.[MODULE_SHORT];
+    return unfinishedUses.has(flags?.usageToken) && (!flags.workflowState || flags.workflowState === 'running');
+}
+
 /** Called only after native usage finalization, never while rendering a document. */
 export function runNativeUsage(activity, usageConfig, results) {
     const parent = results?.message;
@@ -155,6 +178,12 @@ export function runNativeUsage(activity, usageConfig, results) {
     if (flags.workflowState) return Promise.resolve(); // Never replay partially consumed work after reload.
 
     const execution = Promise.resolve().then(async () => {
+        // Rolled from the card while the use was finishing, by a client that could not know
+        // it was (a GM, on a player's card). The rest is left to the card's buttons.
+        if (getNativeRollSources(parent).some(message => FOLDED_TYPES.has(message.type))) {
+            await setState(parent, 'complete', { [`flags.${MODULE_SHORT}.processed`]: true });
+            return;
+        }
         await setState(parent, 'running');
         // Prepared-but-uncreated message data. Anything here has already consumed its
         // resources, so it is created even when a later step fails.
@@ -231,7 +260,13 @@ export function runNativeUsage(activity, usageConfig, results) {
             // A roll that threw never reached takePreparedData; drop its token.
             seeds.forEach(releaseCapture);
         }
-    }).finally(() => pending.delete(parent.id));
+    }).finally(() => {
+        pending.delete(parent.id);
+        // Only a failed state update leaves it pending here, with no render to come.
+        const stuck = isNativeUsagePending(parent);
+        unfinishedUses.delete(flags.usageToken);
+        if (stuck && game.messages.has(parent.id)) ui.chat?.updateMessage?.(parent);
+    });
     pending.set(parent.id, execution);
     return execution;
 }

@@ -9,7 +9,7 @@ import { KEYBIND_VERSATILE_TWO_HANDED, ROLL_TYPE, RollUtility } from "./roll.js"
 import { SETTING_NAMES, SettingsUtility, HIDE_NPC_ROLL_MODES } from "./settings.js";
 
 import { usesNativeWorkflow, getOriginId } from "./dnd5e-compat.js";
-import { NATIVE_ACTIVITY_TYPES, quickRollCardFor, runNativeUsage, recordAmmunitionSnapshot, captureNativeMessageConfig } from "./native-workflow.js";
+import { NATIVE_ACTIVITY_TYPES, beginNativeUsage, quickRollCardFor, runNativeUsage, recordAmmunitionSnapshot, captureNativeMessageConfig } from "./native-workflow.js";
 import { renderNativeMessage, refreshNativeOrigin, scheduleReconcile, observeNativeSources } from "./native-render.js";
 import { claimNativeThrow, prepareAlternates } from "./native-dice.js";
 import { cascadeUsageDeletion, deleteOrphanedRolls, stampRsrParent } from "./native-cleanup.js";
@@ -136,6 +136,7 @@ export class HooksUtility {
                 RollUtility.processActivity(activity, usageConfig, dialogConfig, messageConfig);
                 if (usesNativeWorkflow() && messageConfig.data.flags[MODULE_SHORT].quickRoll) {
                     messageConfig.data.flags[MODULE_SHORT].workflowVersion = 2;
+                    beginNativeUsage(messageConfig.data.flags[MODULE_SHORT]);
                 }
             }
             return true;
