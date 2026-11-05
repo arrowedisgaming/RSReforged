@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { setupFoundryEnv } from "./helpers/foundry-env.mjs";
 
 let env;
@@ -112,6 +112,191 @@ it("uses RSR's apply buttons by default and dnd5e's tray when that mode is chose
     // The tray resolves its message from the nearest data-message-id: the damage child.
     expect(tray.closest("[data-message-id]").dataset.messageId).toBe("dmg");
     expect(native.querySelector(".rsr-damage-buttons, .rsr-damage-buttons-xl")).toBeNull();
+});
+
+describe("native tray state (issue #46)", () => {
+    const NOW = 1_800_000_000_000;
+    const FIVE_MINUTES = 5 * 60 * 1000;
+
+    // Stands in for dnd5e's autoCollapseChatTrays: the environment's settings store ignores
+    // writes outside RSR's namespace, and the policy would silently read undefined.
+    let trayPolicy;
+
+    // dnd5e 6.0.6's ChatMessage5e#_collapseTrays, which reads the setting and `this`.
+    class TrayMessage {
+        static TRAY_TYPES = ["damage-application", "effect-application"];
+
+        constructor(data) {
+            Object.assign(this, data);
+        }
+
+        _collapseTrays(html) {
+            let collapse;
+            switch (trayPolicy) {
+                case "always": collapse = true; break;
+                case "never":
+                case "manual": collapse = false; break;
+                case "older": collapse = this.timestamp < Date.now() - FIVE_MINUTES; break;
+            }
+            for (const tray of html.querySelectorAll(".card-tray")) {
+                tray.classList.toggle("collapsed", this._trayStates?.get(tray.className.replace(" collapsed", "")) ?? collapse);
+            }
+            for (const element of html.querySelectorAll(this.constructor.TRAY_TYPES.join(", "))) {
+                element.toggleAttribute("open", this._trayStates?.get(element.tagName) ?? !collapse);
+            }
+        }
+    }
+
+    const usageMessage = (timestamp, children = []) => new TrayMessage({
+        id: "parent",
+        type: "usage",
+        timestamp,
+        isContentVisible: true,
+        flags: { rsreforged: { workflowVersion: 2, quickRoll: true } },
+        getAssociatedRolls: () => children
+    });
+
+    const rollMessage = (id, type, timestamp) => ({
+        ...child(id, type, [damageRoll(type === "healing" ? "healing" : "fire", 4, 6)]),
+        timestamp,
+        visible: true,
+        isContentVisible: true
+    });
+
+    function usageCard() {
+        const html = document.createElement("li");
+        html.className = "chat-message message";
+        html.dataset.messageId = "parent";
+        html.innerHTML = `<div class="message-content"><div class="chat-card"></div></div>`;
+        return html;
+    }
+
+    // ChatLog5e#updateMessage saves [tagName, element.open]. The test environment has no
+    // registered damage-application, so `.open` would be undefined here; read the attribute.
+    function saveTrayStates(message, html) {
+        message._trayStates = new Map([...html.querySelectorAll("damage-application")]
+            .map((tray) => [tray.tagName, tray.hasAttribute("open")]));
+    }
+
+    const trays = (html) => [...html.querySelectorAll("damage-application")];
+    const openStates = (html) => trays(html).map((tray) => tray.hasAttribute("open"));
+    const setPolicy = (value) => { trayPolicy = value; };
+
+    beforeEach(() => {
+        env.settings.damageApplyMode = "dnd5e";
+        game.user.isGM = true;
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(NOW);
+    });
+
+    afterEach(() => vi.useRealTimers());
+
+    describe.each(["damage", "healing"])("a fresh %s tray", (type) => {
+        it.each([
+            ["manual", 0, true],
+            ["never", 0, true],
+            ["older", 0, true],
+            ["older", FIVE_MINUTES, true],
+            ["older", FIVE_MINUTES + 1, false],
+            ["always", 0, false]
+        ])("under %s, on a roll %i ms old, has open=%s", async (policy, age, open) => {
+            setPolicy(policy);
+            const section = await card.renderRsrSection(usageMessage(NOW - age), rollMessage("roll", type, NOW - age));
+            expect(openStates(section)).toEqual([open]);
+        });
+    });
+
+    it("judges Collapse Older Trays by the roll's age, not the usage card's", async () => {
+        setPolicy("older");
+        const lateRoll = await card.renderRsrSection(usageMessage(NOW - FIVE_MINUTES - 1), rollMessage("late", "damage", NOW));
+        const oldRoll = await card.renderRsrSection(usageMessage(NOW), rollMessage("old", "damage", NOW - FIVE_MINUTES - 1));
+
+        expect(openStates(lateRoll)).toEqual([true]);
+        expect(openStates(oldRoll)).toEqual([false]);
+    });
+
+    it("gives a GM and a permitted player the tray in their chosen state", async () => {
+        setPolicy("manual");
+        const gm = await card.renderRsrSection(usageMessage(NOW), rollMessage("roll", "damage", NOW));
+        expect(openStates(gm)).toEqual([true]);
+
+        game.user.isGM = false;
+        dnd5e.settings.allowPlayerDamageTray = true;
+        const player = await card.renderRsrSection(usageMessage(NOW), rollMessage("roll", "damage", NOW));
+        expect(openStates(player)).toEqual([true]);
+    });
+
+    it("never applies the policy where no tray is built", async () => {
+        const message = usageMessage(NOW);
+        const policy = vi.spyOn(message, "_collapseTrays");
+
+        game.user.isGM = false;
+        const denied = await card.renderRsrSection(message, rollMessage("roll", "damage", NOW));
+        env.settings.damageApplyMode = "rsr";
+        game.user.isGM = true;
+        const quick = await card.renderRsrSection(message, rollMessage("roll", "damage", NOW));
+
+        expect(trays(denied)).toEqual([]);
+        expect(trays(quick)).toEqual([]);
+        expect(policy).not.toHaveBeenCalled();
+    });
+
+    describe("when the usage card refreshes", () => {
+        let renderNativeMessage;
+
+        beforeEach(async () => {
+            ({ renderNativeMessage } = await import("../src/utils/native-render.js"));
+        });
+
+        it.each([
+            ["manual", false],
+            ["always", true]
+        ])("under %s, keeps the tray at the open=%s the user set", async (policy, open) => {
+            setPolicy(policy);
+            const message = usageMessage(NOW, [rollMessage("roll", "damage", NOW)]);
+            const before = usageCard();
+            await renderNativeMessage(message, before);
+            trays(before)[0].toggleAttribute("open", open);
+            saveTrayStates(message, before);
+
+            const after = usageCard();
+            await renderNativeMessage(message, after);
+
+            expect(openStates(after)).toEqual([open]);
+        });
+
+        it("keeps a tray open once its roll ages past Collapse Older Trays", async () => {
+            setPolicy("older");
+            const message = usageMessage(NOW, [rollMessage("roll", "damage", NOW)]);
+            const before = usageCard();
+            await renderNativeMessage(message, before);
+            saveTrayStates(message, before);
+            vi.setSystemTime(NOW + FIVE_MINUTES + 1);
+
+            const after = usageCard();
+            await renderNativeMessage(message, after);
+
+            expect(openStates(after)).toEqual([true]);
+        });
+
+        it.each([
+            [[false, true], [true, true]],
+            [[true, false], [false, false]]
+        ])("shares the last saved state between trays: %j becomes %j", async (saved, restored) => {
+            setPolicy("manual");
+            const message = usageMessage(NOW, [rollMessage("dmg", "damage", NOW), rollMessage("heal", "healing", NOW + 1)]);
+            const before = usageCard();
+            await renderNativeMessage(message, before);
+            trays(before).forEach((tray, index) => tray.toggleAttribute("open", saved[index]));
+            saveTrayStates(message, before);
+
+            const after = usageCard();
+            await renderNativeMessage(message, after);
+
+            expect(openStates(after)).toEqual(restored);
+            expect(trays(after).map((tray) => tray.closest("[data-message-id]").dataset.messageId)).toEqual(["dmg", "heal"]);
+        });
+    });
 });
 
 it("titles healing children as healing and notes a damage child's save outcome", async () => {

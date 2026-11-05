@@ -135,6 +135,11 @@ async function _damageSection(parent, child) {
         const tray = document.createElement('damage-application');
         tray.classList.add('dnd5e2');
         section.append(tray);
+        // Before the tray connects, so it builds in the right state. The chat log saves tray
+        // state on the card it replaces, the usage message, but native trays age by their roll.
+        if (typeof parent._collapseTrays === 'function') {
+            parent._collapseTrays.call(Object.create(parent, { timestamp: { value: child.timestamp } }), section);
+        }
     }
     return section;
 }

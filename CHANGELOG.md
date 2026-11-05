@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The native Apply tray follows dnd5e's Collapse Trays in Chat setting again.** On dnd5e 6 with the native damage apply option, damage and healing trays on RSReforged cards always started collapsed. They now start in the state you chose, and a tray you opened or closed by hand stays that way when the card refreshes. Collapse Older Trays goes by the age of the roll, as it does on dnd5e's own cards, so damage rolled long after the attack still starts open. Fixes [#46](https://github.com/arrowedisgaming/RSReforged/issues/46).
+
 ## [6.0.3] — 2026-11-05
 
 ### Fixed
