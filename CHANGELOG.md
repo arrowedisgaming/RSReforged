@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.4] — 2026-11-05
+
 ### Fixed
 
 - **The native Apply tray follows dnd5e's Collapse Trays in Chat setting again.** On dnd5e 6 with the native damage apply option, damage and healing trays on RSReforged cards always started collapsed. They now start in the state you chose, and a tray you opened or closed by hand stays that way when the card refreshes. Collapse Older Trays goes by the age of the roll, as it does on dnd5e's own cards, so damage rolled long after the attack still starts open. Fixes [#46](https://github.com/arrowedisgaming/RSReforged/issues/46).
+  - A card with more than one Apply tray keeps one saved state for all of them: a refresh sets them all to match the last tray, and a tray added later starts that way too.
 
 ## [6.0.3] — 2026-11-05
 
@@ -404,7 +407,8 @@ The first RSReforged release. Forked from [MangoFVTT/fvtt-ready-set-roll-5e@v3.5
 - **MangoFVTT** — author and maintainer of upstream Ready Set Roll for D&D5e (the direct ancestor of this fork).
 - **RedReign** — author of the original [Better Rolls for 5e](https://github.com/RedReign/FoundryVTT-BetterRolls5e), which RSR is a rewrite of.
 
-[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.3...HEAD
+[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.4...HEAD
+[6.0.4]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.3...release-6.0.4
 [6.0.3]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.2...release-6.0.3
 [6.0.2]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.1...release-6.0.2
 [6.0.1]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.0...release-6.0.1
