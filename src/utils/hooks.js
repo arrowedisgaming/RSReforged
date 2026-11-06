@@ -136,7 +136,8 @@ export class HooksUtility {
                 RollUtility.processActivity(activity, usageConfig, dialogConfig, messageConfig);
                 if (usesNativeWorkflow() && messageConfig.data.flags[MODULE_SHORT].quickRoll) {
                     messageConfig.data.flags[MODULE_SHORT].workflowVersion = 2;
-                    beginNativeUsage(messageConfig.data.flags[MODULE_SHORT]);
+                    // Only placing a template leaves the card waiting on the workflow.
+                    if (activity.target?.template?.type) beginNativeUsage(messageConfig.data.flags[MODULE_SHORT]);
                 }
             }
             return true;

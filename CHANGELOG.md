@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **A quick use with a template can no longer roll its damage twice.** The card appears as you start placing the template, but RSReforged's quick roll only runs once you finish, so clicking Damage in between gave the card two damage rolls and two damage trays. Your own card now holds back its Attack, Damage, Healing, and Formula buttons until the quick roll has run. Saving throw buttons stay available, and in manual damage modes the Damage button appears as soon as placement ends. If you reload mid-placement, the buttons come back, since the quick roll won't run after that.
-  - A GM sees a player's buttons throughout, and can still roll from them during placement. The quick roll then skips itself rather than rolling again, and anything left to roll stays on the card's buttons.
+- **Clicking Damage while placing a quick use's template no longer rolls its damage twice.** The card appears as you start placing the template, but RSReforged's quick roll only runs once you finish, so clicking Damage in between gave the card two damage rolls and two damage trays. Your own card now holds back its Attack, Damage, Healing, and Formula buttons until the quick roll has run. Saving throw buttons stay available, and in manual damage modes the Damage button appears as soon as placement ends. If you reload mid-placement, the buttons come back, since the quick roll won't run after that.
+  - A GM sees a player's buttons throughout, and can still roll from them during placement. If that roll lands before placement ends, the quick roll skips itself and anything left to roll stays on the card's buttons. A roll still in its dialog when placement ends gives the card a second damage roll.
+  - If another module cancels dnd5e's `dnd5e.postUseActivity` hook on a use with a template, that card's buttons stay hidden until you reload.
 
 ## [6.0.4] — 2026-11-05
 

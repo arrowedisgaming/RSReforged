@@ -25,15 +25,28 @@ it("leaves unsupported activities and message-free uses entirely native", () => 
     }
 });
 
-it("marks a quick use as started on this client before its card is posted", async () => {
+it("marks a quick use with a template as started on this client before its card is posted", async () => {
     const workflow = await import("../src/utils/native-workflow.js");
     const message = { data: { flags: {} } };
+    const activity = { type: "save", item: { type: "feat" }, target: { template: { type: "cone" } } };
 
-    callbacks.get("dnd5e.preUseActivity")({ type: "save", item: { type: "feat" } }, {}, {}, message);
+    callbacks.get("dnd5e.preUseActivity")(activity, {}, {}, message);
 
     const card = { flags: message.data.flags };
     expect(card.flags.rsreforged.workflowVersion).toBe(2);
     expect(workflow.isNativeUsagePending(card)).toBe(true);
+});
+
+it("never holds back the buttons of a quick use with no template to place", async () => {
+    const workflow = await import("../src/utils/native-workflow.js");
+    const message = { data: { flags: {} } };
+    const activity = { type: "attack", item: { type: "weapon" }, target: { template: { type: "" } } };
+
+    callbacks.get("dnd5e.preUseActivity")(activity, {}, {}, message);
+
+    const card = { flags: message.data.flags };
+    expect(card.flags.rsreforged.workflowVersion).toBe(2);
+    expect(workflow.isNativeUsagePending(card)).toBe(false);
 });
 
 it("registers finalized-use execution independently of rendering", () => {
