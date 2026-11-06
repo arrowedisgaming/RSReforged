@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { setupFoundryEnv } from "./helpers/foundry-env.mjs";
 
 let workflow;
@@ -310,6 +310,99 @@ describe("release review fixes", () => {
         // One batch of attack + damage, not a second copy from the error path.
         expect(created()).toHaveLength(1);
         expect(created()[0].dataArray.map((d) => d.type)).toEqual(["attack", "damage"]);
+    });
+});
+
+describe("a use still finishing, such as during template placement", () => {
+    const damage = (calls) => calls.filter((call) => call[0] === "damage");
+
+    // dnd5e posts the card, awaits template placement, then fires postUseActivity. A GM's
+    // client cannot know the player is still placing, so the Damage button there stays live.
+    it("rolls no second damage when a damage roll was made from the card meanwhile", async () => {
+        const f = fixture();
+        f.rollActivity.type = "save";
+        f.parent.getAssociatedRolls = () => [{ id: "manual", type: "damage" }];
+
+        await workflow.runNativeUsage(f.activity, {}, { message: f.parent });
+
+        expect(damage(f.calls)).toHaveLength(0);
+        expect(created()).toHaveLength(0);
+        expect(f.parent.flags.rsreforged.workflowState).toBe("complete");
+    });
+
+    it("leaves the rest to the card's buttons when an attack was made from it meanwhile", async () => {
+        const f = fixture();
+        f.parent.getAssociatedRolls = () => [{ id: "manual", type: "attack" }];
+
+        await workflow.runNativeUsage(f.activity, {}, { message: f.parent });
+
+        expect(f.calls.filter((call) => call[0] === "attack")).toHaveLength(0);
+        expect(damage(f.calls)).toHaveLength(0);
+        expect(created()).toHaveLength(0);
+    });
+
+    it("still rolls damage when only a target's saving throw exists", async () => {
+        const f = fixture();
+        f.rollActivity.type = "save";
+        f.parent.getAssociatedRolls = () => [{ id: "save", type: "save" }];
+
+        await workflow.runNativeUsage(f.activity, {}, { message: f.parent });
+
+        expect(damage(f.calls)).toHaveLength(1);
+        expect(created()[0].dataArray.map((d) => d.type)).toEqual(["damage"]);
+    });
+
+    function startedUse() {
+        const f = fixture();
+        workflow.beginNativeUsage(f.parent.flags.rsreforged);
+        return f;
+    }
+
+    it("tracks a use from its start until the workflow has settled", async () => {
+        const f = startedUse();
+        expect(workflow.isNativeUsagePending(f.parent)).toBe(true);
+
+        const during = [];
+        const update = f.parent.update;
+        f.parent.update = async (data) => {
+            await update(data);
+            during.push([f.parent.flags.rsreforged.workflowState, workflow.isNativeUsagePending(f.parent)]);
+        };
+        await workflow.runNativeUsage(f.activity, {}, { message: f.parent });
+
+        // Rendering "complete" must already show the card's buttons: nothing renders later.
+        expect(during).toEqual([["running", true], ["complete", false]]);
+    });
+
+    it("is never pending on another client, or after a reload", () => {
+        const f = fixture();
+        f.parent.flags.rsreforged.usageToken = "from-another-client-or-session";
+
+        expect(workflow.isNativeUsagePending(f.parent)).toBe(false);
+    });
+
+    it("gives each use its own token", () => {
+        const [a, b] = [{}, {}];
+        workflow.beginNativeUsage(a);
+        workflow.beginNativeUsage(b);
+
+        expect(a.usageToken).toBeTruthy();
+        expect(a.usageToken).not.toBe(b.usageToken);
+    });
+
+    it("re-renders the card when the final state update failed, so its buttons come back", async () => {
+        const f = startedUse();
+        ui.chat.updateMessage = vi.fn();
+        const update = f.parent.update;
+        f.parent.update = async (data) => {
+            if (data["flags.rsreforged.workflowState"] !== "running") throw new Error("socket dropped");
+            return update(data);
+        };
+
+        await expect(workflow.runNativeUsage(f.activity, {}, { message: f.parent })).rejects.toThrow("socket dropped");
+
+        expect(workflow.isNativeUsagePending(f.parent)).toBe(false);
+        expect(ui.chat.updateMessage).toHaveBeenCalledWith(f.parent);
     });
 });
 
