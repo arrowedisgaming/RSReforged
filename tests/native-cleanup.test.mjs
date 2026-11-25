@@ -32,7 +32,7 @@ function createWorld() {
     function documentFor(source) {
         return {
             ...structuredClone(source),
-            canUserModify: (user, action) => action === "delete" && (user.isGM || user.id === source.author)
+            canUserModify: (user, action) => ["delete", "update"].includes(action) && (user.isGM || user.id === source.author)
         };
     }
 
@@ -87,7 +87,7 @@ function createWorld() {
     globalThis.ChatMessage = {
         implementation: {
             deleteDocuments: async ids => deleteDocuments(ids, globalThis.game.user),
-            // Recorded only: cleanup must never write to existing messages.
+            // Recorded only: deletion cleanup must never write to existing messages.
             updateDocuments: async (changes, options) => {
                 updates.push({ by: globalThis.game.user.id, changes, options });
             }
@@ -281,5 +281,94 @@ it("leaves rolls whose card was deleted before this version as they are, on ever
 
     expect([...world.sources.keys()].sort()).toEqual(["old-attack", "old-damage", "old-manual"]);
     expect(world.deletions).toEqual([]);
+    expect(world.updates).toEqual([]);
+});
+
+// Issue #51: revealing or concealing an RSR usage card does the same to the rolls folded into it.
+
+/** Each connected client reacts to the card's audience change, as Foundry's update hook has it do. */
+async function changeAudience(card, audience, requester) {
+    Object.assign(world.sources.get(card), audience);
+    const pending = [];
+    for (const client of world.clients.filter(c => c.connected)) {
+        world.as(client);
+        const document = client.game.messages.get(card);
+        Object.assign(document, structuredClone(audience));
+        pending.push(client.cleanup.cascadeUsageAudience(document, audience, requester.user.id));
+    }
+    await Promise.all(pending);
+}
+
+const whispered = (source, whisper = ["gm"], blind = false) => ({ ...source, whisper, blind });
+
+it("reveals a revealed card's rolls with it, in one update by the revealing user", async () => {
+    const [gm, player] = [await world.connect("gm"), await world.connect("player")];
+    world.add(whispered(rsrUsage("card", "gm")));
+    world.add(whispered(folded("attack", "card", "gm", "attack")));
+    world.add(whispered(folded("damage", "card", "gm")));
+
+    await changeAudience("card", { whisper: [], blind: false }, gm);
+
+    expect(world.updates).toEqual([{
+        by: "gm",
+        changes: [{ _id: "attack", whisper: [], blind: false }, { _id: "damage", whisper: [], blind: false }],
+        options: undefined
+    }]);
+    expect(player.game.messages.size).toBe(3);
+});
+
+it("conceals a concealed card's rolls with it, keeping a blind card's rolls blind", async () => {
+    const gm = await world.connect("gm");
+    world.add(rsrUsage("card", "gm"));
+    world.add(folded("attack", "card", "gm", "attack"));
+    world.add(unlinked("button-damage", "card", "gm"));
+
+    await changeAudience("card", { whisper: ["gm"], blind: true }, gm);
+
+    expect(world.updates.map(update => update.changes)).toEqual([[
+        { _id: "attack", whisper: ["gm"], blind: true },
+        { _id: "button-damage", whisper: ["gm"], blind: true }
+    ]]);
+});
+
+it("writes nothing when the rolls already have the card's audience, or the change was not to its audience", async () => {
+    const gm = await world.connect("gm");
+    world.add(whispered(rsrUsage("card", "gm"), ["gm", "other"]));
+    world.add(whispered(folded("attack", "card", "gm", "attack"), ["other", "gm"]));
+
+    await changeAudience("card", { whisper: ["gm", "other"] }, gm);
+    world.as(gm);
+    await gm.cleanup.cascadeUsageAudience(gm.game.messages.get("card"), { flags: {} }, "gm");
+
+    expect(world.updates).toEqual([]);
+});
+
+it("has the revealing player update its own rolls and the active GM the ones it may not", async () => {
+    const [player, gm, other] = [await world.connect("player"), await world.connect("gm"), await world.connect("other")];
+    world.add(whispered(rsrUsage("card", "player"), ["gm", "player"]));
+    world.add(whispered(folded("attack", "card", "player", "attack"), ["gm", "player"]));
+    world.add(whispered(folded("gm-damage", "card", "gm"), ["gm", "player"]));
+
+    await changeAudience("card", { whisper: [], blind: false }, player);
+
+    expect(world.updates.map(({ by, changes }) => ({ by, ids: changes.map(change => change._id) }))).toEqual([
+        { by: "player", ids: ["attack"] },
+        { by: "gm", ids: ["gm-damage"] }
+    ]);
+    expect(other.user.isGM).toBe(false);
+});
+
+it("never changes the audience of rolls that do not belong to the changed RSR card", async () => {
+    const gm = await world.connect("gm");
+    world.add(whispered(rsrUsage("card", "gm")));
+    world.add(whispered(rsrUsage("other-card", "gm")));
+    world.add(whispered(vanillaUsage("vanilla", "gm")));
+    world.add(whispered(folded("elsewhere", "other-card", "gm")));
+    world.add(whispered(unlinked("vanilla-damage", "vanilla", "gm")));
+    world.add(whispered({ id: "save", author: "gm", type: "save", system: { origin: "card" } }));
+
+    await changeAudience("card", { whisper: [], blind: false }, gm);
+    await changeAudience("vanilla", { whisper: [], blind: false }, gm);
+
     expect(world.updates).toEqual([]);
 });

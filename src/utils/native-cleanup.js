@@ -3,7 +3,8 @@ import { getOriginId } from './dnd5e-compat.js';
 import { LogUtility } from './log.js';
 
 /**
- * dnd5e 6: deleting an RSR usage card deletes the rolls folded into it (issue #48).
+ * dnd5e 6: deleting an RSR usage card deletes the rolls folded into it (issue #48), and
+ * revealing or concealing one does the same to them (issue #51).
  *
  * The only evidence used is stored on the roll itself, by its own author when it is
  * created: `flags.rsreforged.parentId`, or for an older roll made with a card's Damage
@@ -92,11 +93,42 @@ export async function cascadeUsageDeletion(parent, userId) {
     const ids = allMessages()
         .filter(message => belongsTo(message, parent.id))
         .filter(message => {
-            const allowed = !!deletingUser && canDelete(message, deletingUser);
+            const allowed = !!deletingUser && canModify(message, deletingUser, 'delete');
             return initiator ? allowed : !allowed;
         })
         .map(message => message.id);
     await deleteMessages(ids);
+}
+
+/**
+ * Revealing or concealing an RSR usage card does the same to the rolls folded into it
+ * (issue #51). Foundry changes only the message that was right-clicked, and the rolls' own
+ * rows are hidden, so the card is the only one a user can reach: without this, a revealed
+ * card showed players no results, and a concealed card left its rolls public.
+ * Split like the deletion cascade: the user who changed the card updates the rolls it may,
+ * and the active GM the rest. Rolls that already have the card's audience are not written.
+ */
+export async function cascadeUsageAudience(parent, changes, userId) {
+    if (!isRsrUsageCard(parent) || !('whisper' in changes || 'blind' in changes)) return;
+    const initiator = userId === game.user.id;
+    if (!initiator && !isActiveGM()) return;
+    const updatingUser = initiator ? game.user : game.users?.get?.(userId);
+    const whisper = [...(parent.whisper ?? [])];
+    const blind = parent.blind ?? false;
+    const updates = allMessages()
+        .filter(message => belongsTo(message, parent.id) && !hasAudience(message, whisper, blind))
+        .filter(message => {
+            const allowed = !!updatingUser && canModify(message, updatingUser, 'update');
+            return initiator ? allowed : !allowed;
+        })
+        .map(message => ({ _id: message.id, whisper: [...whisper], blind }));
+    if (updates.length) await ChatMessage.implementation.updateDocuments(updates);
+}
+
+function hasAudience(message, whisper, blind) {
+    const current = message.whisper ?? [];
+    return (message.blind ?? false) === blind
+        && current.length === whisper.length && whisper.every(id => current.includes(id));
 }
 
 /** Active GM only, at ready: delete the rolls whose card was deleted without them. */
@@ -109,9 +141,9 @@ function isActiveGM() {
     return !!game.user?.isGM && game.users?.activeGM?.isSelf === true;
 }
 
-function canDelete(message, user) {
+function canModify(message, user, action) {
     if (user.isGM) return true;
-    return typeof message.canUserModify === 'function' ? message.canUserModify(user, 'delete') : false;
+    return typeof message.canUserModify === 'function' ? message.canUserModify(user, action) : false;
 }
 
 function allMessages() {

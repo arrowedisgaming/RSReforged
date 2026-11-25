@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Revealing a private roll shows players its results.** On dnd5e 6, using Reveal To Everyone on an RSReforged card made only the card public: its attack, damage, healing, and formula rolls stayed private, so players saw the card with no results next to "privately rolled some dice" placeholders. The card's rolls now follow it when you reveal it, and when you make it private. Fixes [#51](https://github.com/arrowedisgaming/RSReforged/issues/51).
+  - A card revealed before this version is still missing its results for players. Make it private and reveal it again to fix it.
+  - When the player changing a card may not update one of its rolls (another user made it), the GM updates it. With no GM online, that roll keeps its old audience.
+  - While a roll is still private, players see dnd5e's placeholder for each of its rolls, as before.
+
 ## [6.0.6] — 2026-11-25
 
 ### Fixed

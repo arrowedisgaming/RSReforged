@@ -228,6 +228,20 @@ it("deletes a deleted RSR card's rolls with the deleting user's ID", async () =>
     await vi.waitFor(() => expect(ChatMessage.deleteDocuments).toHaveBeenCalledWith(["roll"]));
 });
 
+// Issue #51: the wiring of the folded-roll audience cascade.
+it("gives a revealed RSR card's rolls its audience, with the updating user's ID", async () => {
+    hooks.HooksUtility.registerChatHooks();
+    const roll = { id: "roll", type: "damage", whisper: ["gm"], blind: false, flags: { rsreforged: { parentId: "card" } }, system: { origin: "card" }, canUserModify: () => true };
+    game.messages.set("roll", roll);
+    ChatMessage.updateDocuments = vi.fn(async () => {});
+    const card = { id: "card", type: "usage", whisper: [], blind: false, flags: { rsreforged: { workflowVersion: 2, quickRoll: true } } };
+
+    callbacks.get("updateChatMessage")(card, { whisper: [], blind: false }, {}, "someone-else");
+    await vi.waitFor(() => expect(ChatMessage.updateDocuments).not.toHaveBeenCalled());
+    callbacks.get("updateChatMessage")(card, { whisper: [], blind: false }, {}, game.user.id);
+    await vi.waitFor(() => expect(ChatMessage.updateDocuments).toHaveBeenCalledWith([{ _id: "roll", whisper: [], blind: false }]));
+});
+
 it("cleans up the rolls of deleted cards when the world is ready", async () => {
     const cleanup = await import("../src/utils/native-cleanup.js");
     const reconcile = vi.spyOn(cleanup, "deleteOrphanedRolls").mockResolvedValue();

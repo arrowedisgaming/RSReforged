@@ -12,7 +12,7 @@ import { usesNativeWorkflow, getOriginId } from "./dnd5e-compat.js";
 import { NATIVE_ACTIVITY_TYPES, beginNativeUsage, quickRollCardFor, runNativeUsage, recordAmmunitionSnapshot, captureNativeMessageConfig } from "./native-workflow.js";
 import { renderNativeMessage, refreshNativeOrigin, scheduleReconcile, observeNativeSources } from "./native-render.js";
 import { claimNativeThrow, prepareAlternates } from "./native-dice.js";
-import { cascadeUsageDeletion, deleteOrphanedRolls, stampRsrParent } from "./native-cleanup.js";
+import { cascadeUsageAudience, cascadeUsageDeletion, deleteOrphanedRolls, stampRsrParent } from "./native-cleanup.js";
 
 export const HOOKS_CORE = { INIT: "init", READY: "ready" }
 
@@ -383,9 +383,10 @@ export class HooksUtility {
         });
 
         // Native registry updates do not refresh origins after a rolls-only edit.
-        Hooks.on("updateChatMessage", (message, changes) => {
+        Hooks.on("updateChatMessage", (message, changes, options, userId) => {
             if (usesNativeWorkflow() && ("rolls" in changes || "flags" in changes || "whisper" in changes || "blind" in changes)) {
                 refreshNativeOrigin(message, { rollsChanged: "rolls" in changes });
+                cascadeUsageAudience(message, changes, userId).catch(err => LogUtility.logError(`Failed to update the audience of a card's rolls: ${err}`));
             }
         });
         Hooks.on("deleteChatMessage", (message, options, userId) => {
