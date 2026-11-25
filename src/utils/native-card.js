@@ -1,4 +1,4 @@
-import { MODULE_SHORT, ROLL_TYPE } from '../module/const.js';
+import { HEALING_LABEL_KEYS, MODULE_SHORT, ROLL_TYPE } from '../module/const.js';
 import { TEMPLATE } from '../module/templates.js';
 import { BonusManager } from './bonus.js';
 import { ChatUtility } from './chat.js';
@@ -98,7 +98,7 @@ async function _damageSection(parent, child) {
     const section = await _section(child, healing
         ? {
             section: `rsr-section-${ROLL_TYPE.DAMAGE}`,
-            title: CoreUtility.localize('DND5E.HEAL.HealingButton'),
+            title: CoreUtility.localizeFirst(...HEALING_LABEL_KEYS),
             icon: '<i class="fas fa-heart"></i>'
         }
         : {

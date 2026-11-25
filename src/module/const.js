@@ -50,3 +50,9 @@ export const ROLL_TYPE = {
     HEALING: "healing",
     FORMULA: "roll"
 }
+
+/**
+ * Candidate i18n keys for the "Healing" label, most preferred first.
+ * dnd5e 6.1 turned DND5E.HEAL.HealingButton from a string into a { Full, Short } object.
+ */
+export const HEALING_LABEL_KEYS = ["DND5E.HEAL.HealingButton.Full", "DND5E.HEAL.HealingButton"];

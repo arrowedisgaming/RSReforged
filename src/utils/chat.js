@@ -1,4 +1,4 @@
-import { MODULE_SHORT } from "../module/const.js";
+import { HEALING_LABEL_KEYS, MODULE_SHORT } from "../module/const.js";
 import { MODULE_MIDI } from "../module/integration.js";
 import { TEMPLATE } from "../module/templates.js";
 import { ActivityUtility } from "./activity.js";
@@ -1005,7 +1005,7 @@ async function _injectDamageRoll(message, html, { mode = "rsr", contentHtml = ht
     const header = message.flags[MODULE_SHORT].isHealing
         ? {            
             section: `rsr-section-${ROLL_TYPE.DAMAGE}`,
-            title: CoreUtility.localize("DND5E.HEAL.HealingButton"),
+            title: CoreUtility.localizeFirst(...HEALING_LABEL_KEYS),
             icon: "<i class=\"fas fa-heart\"></i>"
         } 
         : {
@@ -1027,7 +1027,7 @@ async function _injectDamageRoll(message, html, { mode = "rsr", contentHtml = ht
 async function _injectDamageButton(message, html) {
     const button = message.flags[MODULE_SHORT].isHealing
         ? {
-            title: CoreUtility.localize("DND5E.HEAL.HealingButton"),
+            title: CoreUtility.localizeFirst(...HEALING_LABEL_KEYS),
             icon: "<i class=\"fas fa-heart\"></i>"
         } 
         : {

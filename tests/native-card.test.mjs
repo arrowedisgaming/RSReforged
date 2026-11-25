@@ -303,6 +303,12 @@ it("titles healing children as healing and notes a damage child's save outcome",
     const heal = await card.renderRsrSection(parent, child("heal", "healing", [damageRoll("healing", 5, 8, 2)]));
     expect(heal.querySelector(".rsr-title").textContent).toContain("DND5E.HEAL.HealingButton");
 
+    // dnd5e 6.1 moved the label to HealingButton.Full; prefer it when it exists.
+    game.i18n.has.mockImplementation((key) => key === "DND5E.HEAL.HealingButton.Full");
+    const heal61 = await card.renderRsrSection(parent, child("heal", "healing", [damageRoll("healing", 5, 8, 2)]));
+    expect(heal61.querySelector(".rsr-title").textContent).toContain("DND5E.HEAL.HealingButton.Full");
+    game.i18n.has.mockImplementation(() => false);
+
     const save = await card.renderRsrSection(parent, child("dmg", "damage", [damageRoll("fire", 8, 6)], { onSave: "half" }));
     expect(save.querySelector(".supplement").textContent).toContain("half");
 });

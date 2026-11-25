@@ -520,6 +520,7 @@ export async function setupFoundryEnv(options = {}) {
         dice3d: null,
         i18n: {
             localize: vi.fn((key) => key),
+            has: vi.fn(() => false),
             format: vi.fn((key, data) => `${key}:${JSON.stringify(data)}`)
         }
     };

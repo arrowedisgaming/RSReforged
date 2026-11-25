@@ -28,6 +28,21 @@ export class CoreUtility {
     }
 
     /**
+     * Localize the first of several candidate keys that resolves to a string.
+     * Used where dnd5e renamed or restructured a key between supported versions.
+     * @param {...String} keys Candidate keys, most preferred first.
+     * A translation in the active language under any candidate outranks an English fallback,
+     * so a language pack still on the older key isn't replaced by English.
+     * @returns {String} The first available localization, or the last key's localization if none exist.
+     */
+    static localizeFirst(...keys) {
+        const key = keys.find(k => game.i18n.has(k, false))
+            ?? keys.find(k => game.i18n.has(k))
+            ?? keys.at(-1);
+        return game.i18n.localize(key);
+    }
+
+    /**
      * Based on the provided event, determine if the keys are pressed to fulfill the specified keybinding.
      * @param {Event} event       Triggering event.
      * @param {string} action     Keybinding action.
