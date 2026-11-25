@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.6] — 2026-11-25
+
+### Fixed
+
+- **Healing rolls are labelled "Healing" again on dnd5e 6.1.** dnd5e 6.1 restructured the translation RSReforged used for the healing section header and Healing button, so both showed the raw key `DND5E.HEAL.HEALINGBUTTON`. RSReforged now reads the 6.1 key and falls back to the 6.0 one. ([#53](https://github.com/arrowedisgaming/RSReforged/issues/53))
+
 ## [6.0.5] — 2026-11-06
 
 ### Fixed
@@ -415,7 +421,8 @@ The first RSReforged release. Forked from [MangoFVTT/fvtt-ready-set-roll-5e@v3.5
 - **MangoFVTT** — author and maintainer of upstream Ready Set Roll for D&D5e (the direct ancestor of this fork).
 - **RedReign** — author of the original [Better Rolls for 5e](https://github.com/RedReign/FoundryVTT-BetterRolls5e), which RSR is a rewrite of.
 
-[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.5...HEAD
+[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.6...HEAD
+[6.0.6]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.5...release-6.0.6
 [6.0.5]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.4...release-6.0.5
 [6.0.4]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.3...release-6.0.4
 [6.0.3]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.2...release-6.0.3
