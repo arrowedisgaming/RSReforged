@@ -7,12 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.7] — 2026-11-25
+
 ### Fixed
 
 - **Revealing a private roll shows players its results.** On dnd5e 6, using Reveal To Everyone on an RSReforged card made only the card public: its attack, damage, healing, and formula rolls stayed private, so players saw the card with no results next to "privately rolled some dice" placeholders. The card's rolls now follow it when you reveal it, and when you make it private. Fixes [#51](https://github.com/arrowedisgaming/RSReforged/issues/51).
   - A card revealed before this version is still missing its results for players. Make it private and reveal it again to fix it.
   - When the player changing a card may not update one of its rolls (another user made it), the GM updates it. With no GM online, that roll keeps its old audience.
   - While a roll is still private, players see dnd5e's placeholder for each of its rolls, as before.
+  - A quick roll still being rolled when its card is revealed or made private gets the card's new audience when it is created. A roll made with the card's Damage button keeps the roll mode it was rolled with.
 
 ## [6.0.6] — 2026-11-25
 
@@ -428,7 +431,8 @@ The first RSReforged release. Forked from [MangoFVTT/fvtt-ready-set-roll-5e@v3.5
 - **MangoFVTT** — author and maintainer of upstream Ready Set Roll for D&D5e (the direct ancestor of this fork).
 - **RedReign** — author of the original [Better Rolls for 5e](https://github.com/RedReign/FoundryVTT-BetterRolls5e), which RSR is a rewrite of.
 
-[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.6...HEAD
+[Unreleased]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.7...HEAD
+[6.0.7]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.6...release-6.0.7
 [6.0.6]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.5...release-6.0.6
 [6.0.5]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.4...release-6.0.5
 [6.0.4]: https://github.com/arrowedisgaming/RSReforged/compare/release-6.0.3...release-6.0.4
