@@ -125,6 +125,32 @@ export async function cascadeUsageAudience(parent, changes, userId) {
     if (updates.length) await ChatMessage.implementation.updateDocuments(updates);
 }
 
+/**
+ * A roll whose own audience was just changed takes its card's audience back if the two now
+ * differ. Two users can reveal and conceal one card at nearly the same moment: the second
+ * change finds the rolls not yet updated by the first and leaves them, and the first user's
+ * update then lands on top. That user's client puts the rolls right here.
+ */
+export async function restoreRollAudience(message, changes, userId) {
+    if (userId !== game.user.id || !('whisper' in changes || 'blind' in changes)) return;
+    const parent = allMessages().find(candidate => isRsrUsageCard(candidate) && belongsTo(message, candidate.id));
+    if (parent) await matchUsageAudience(parent, [message]);
+}
+
+/**
+ * Give the rolls among `messages` their card's audience, where they lack it. For the user
+ * who made them: a quick roll's audience is read when its rolls are created, and the card
+ * can be revealed or concealed while that request is on its way.
+ */
+export async function matchUsageAudience(parent, messages) {
+    const whisper = [...(parent.whisper ?? [])];
+    const blind = parent.blind ?? false;
+    const updates = (messages ?? [])
+        .filter(message => game.messages.has(message.id) && !hasAudience(message, whisper, blind))
+        .map(message => ({ _id: message.id, whisper: [...whisper], blind }));
+    if (updates.length) await ChatMessage.implementation.updateDocuments(updates);
+}
+
 function hasAudience(message, whisper, blind) {
     const current = message.whisper ?? [];
     return (message.blind ?? false) === blind

@@ -372,3 +372,43 @@ it("never changes the audience of rolls that do not belong to the changed RSR ca
 
     expect(world.updates).toEqual([]);
 });
+
+// Two users reveal and conceal one card at nearly the same moment: the conceal finds the
+// rolls still private and leaves them, then the reveal's roll update lands on top.
+it("has the user whose roll update landed late give the roll its card's audience back", async () => {
+    const [gm, player] = [await world.connect("gm"), await world.connect("player")];
+    world.add(whispered(rsrUsage("card", "gm")));
+    world.add(folded("attack", "card", "gm", "attack"));
+    world.add(unlinked("button-damage", "card", "gm"));
+
+    for (const client of [gm, player]) {
+        world.as(client);
+        for (const id of ["attack", "button-damage"]) {
+            await client.cleanup.restoreRollAudience(client.game.messages.get(id), { whisper: [] }, "gm");
+        }
+    }
+
+    expect(world.updates.map(({ by, changes }) => ({ by, changes }))).toEqual([
+        { by: "gm", changes: [{ _id: "attack", whisper: ["gm"], blind: false }] },
+        { by: "gm", changes: [{ _id: "button-damage", whisper: ["gm"], blind: false }] }
+    ]);
+});
+
+it("leaves an updated roll alone when it has its card's audience, has no RSR card, or its audience was not what changed", async () => {
+    const gm = await world.connect("gm");
+    world.add(whispered(rsrUsage("card", "gm")));
+    world.add(vanillaUsage("vanilla", "gm"));
+    world.add(whispered(folded("attack", "card", "gm", "attack")));
+    world.add(folded("damage", "card", "gm"));
+    world.add(whispered(unlinked("vanilla-damage", "vanilla", "gm")));
+    world.add(whispered(folded("orphan", "gone", "gm")));
+    world.as(gm);
+
+    await gm.cleanup.restoreRollAudience(gm.game.messages.get("attack"), { whisper: ["gm"] }, "gm");
+    await gm.cleanup.restoreRollAudience(gm.game.messages.get("damage"), { rolls: [] }, "gm");
+    await gm.cleanup.restoreRollAudience(gm.game.messages.get("vanilla-damage"), { whisper: ["gm"] }, "gm");
+    await gm.cleanup.restoreRollAudience(gm.game.messages.get("orphan"), { whisper: ["gm"] }, "gm");
+    await gm.cleanup.restoreRollAudience(gm.game.messages.get("card"), { whisper: ["gm"] }, "gm");
+
+    expect(world.updates).toEqual([]);
+});

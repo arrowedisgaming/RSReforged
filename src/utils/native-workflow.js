@@ -2,7 +2,7 @@ import { MODULE_SHORT } from '../module/const.js';
 import { ActivityUtility } from './activity.js';
 import { SettingsUtility, SETTING_NAMES } from './settings.js';
 import { LogUtility } from './log.js';
-import { FOLDED_TYPES } from './native-cleanup.js';
+import { FOLDED_TYPES, matchUsageAudience } from './native-cleanup.js';
 
 const pending = new Map();
 const ammunitionSnapshots = new WeakMap();
@@ -140,8 +140,16 @@ async function createBatch(parent, prepared) {
     // Explicit null, not delete: Foundry's ChatMessage#_preCreate restores the dice
     // sound on any roll message whose data has no `sound` key at all.
     datas.forEach((data, index) => { if (index > 0) data.sound = null; });
+    // The card can be revealed or concealed while its rolls evaluate (issue #51), so they
+    // take the audience it has now, not the one it had when they were prepared, and are
+    // checked again in case it changed while they were being created.
+    datas.forEach(data => Object.assign(data, { whisper: [...(parent.whisper ?? [])], blind: parent.blind ?? false }));
     const created = await ChatMessage.implementation.createDocuments(datas);
-    if (game.messages.has(parent.id)) return created;
+    if (game.messages.has(parent.id)) {
+        await matchUsageAudience(parent, created).catch(error =>
+            LogUtility.logWarning(`Could not give a card's rolls its audience: ${error.message}`));
+        return created;
+    }
     const ids = (created ?? []).map(message => message.id).filter(id => game.messages.has(id));
     if (ids.length) await ChatMessage.implementation.deleteDocuments(ids).catch(error =>
         LogUtility.logWarning(`Could not delete the rolls of a deleted card: ${error.message}`));

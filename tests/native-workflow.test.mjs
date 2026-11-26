@@ -425,6 +425,51 @@ it("resolves the RSR quick-roll card a click came from, and nothing else", () =>
     expect(quickRollCardFor(undefined)).toBeNull();
 });
 
+// Issue #51: the usage card can be revealed or concealed while its rolls evaluate, or
+// while they are being created. Either way they end up with the audience it has then.
+describe("usage card audience changed mid-workflow", () => {
+    it("creates the rolls with the audience the card has once they are evaluated", async () => {
+        const f = fixture();
+        const rollDamage = f.rollActivity.rollDamage;
+        f.rollActivity.rollDamage = async (...args) => {
+            const rolls = await rollDamage(...args);
+            Object.assign(f.parent, { whisper: ["gm"], blind: true });
+            return rolls;
+        };
+
+        await workflow.runNativeUsage(f.activity, {}, { message: f.parent });
+
+        expect(of(f.calls, "attack")[3].data).toMatchObject({ whisper: [], blind: false });
+        expect(created()[0].dataArray).toHaveLength(2);
+        for (const data of created()[0].dataArray) expect(data).toMatchObject({ whisper: ["gm"], blind: true });
+    });
+
+    it("gives the rolls the card's audience when it changes while they are being created", async () => {
+        const f = fixture();
+        f.parent.whisper = ["gm"];
+        const [create, update] = [ChatMessage.createDocuments, ChatMessage.updateDocuments];
+        const updated = [];
+        ChatMessage.createDocuments = async (...args) => {
+            const documents = await create.apply(ChatMessage, args);
+            f.parent.whisper = [];
+            return documents;
+        };
+        ChatMessage.updateDocuments = async (changes) => { updated.push(...changes); };
+
+        try {
+            await workflow.runNativeUsage(f.activity, {}, { message: f.parent });
+        } finally {
+            Object.assign(ChatMessage, { createDocuments: create, updateDocuments: update });
+        }
+
+        expect(created()[0].dataArray.map((data) => data.whisper)).toEqual([["gm"], ["gm"]]);
+        expect(updated.map(({ whisper, blind }) => ({ whisper, blind }))).toEqual([
+            { whisper: [], blind: false }, { whisper: [], blind: false }
+        ]);
+        expect(f.parent.flags.rsreforged.workflowState).toBe("complete");
+    });
+});
+
 // Issue #48: the usage card can be deleted while its rolls evaluate. Its deletion cascade
 // has already run by then, so nothing may be created for it, or left behind.
 describe("usage card deleted mid-workflow", () => {
